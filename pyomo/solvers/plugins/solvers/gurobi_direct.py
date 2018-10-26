@@ -13,6 +13,7 @@ import re
 import sys
 import pyomo.common
 from pyutilib.misc import Bunch
+from pyutilib.services import TempfileManager
 from pyomo.core.expr.numvalue import is_fixed
 from pyomo.core.expr.numvalue import value
 from pyomo.repn import generate_standard_repn
@@ -28,6 +29,8 @@ from pyomo.opt.base import SolverFactory
 from pyomo.core.base.suffix import Suffix
 import pyomo.core.base.var
 
+# ESJ: DEBUG
+import pdb
 
 logger = logging.getLogger('pyomo.solvers')
 
@@ -597,6 +600,20 @@ class GurobiDirect(DirectSolver):
             This code in this if statement is only needed for backwards compatability. It is more efficient to set
             _save_results to False and use load_vars, load_duals, etc.
             """
+            if gprob.SolCount == 0 and extract_duals:
+                # ESJ: This is copied from below, but just want to know if it
+                # works...  TODO: You need to figure out where to do this so
+                # that you can also have it when save_results is false!
+                soln_constraints = soln.constraint
+                gurobi_cons = self._solver_model.getConstrs()
+                con_names = self._solver_model.getAttr("ConstrName", gurobi_cons)
+                for name in con_names:
+                    soln_constraints[name] = {}
+
+                vals = self._solver_model.getAttr("FarkasDual", gurobi_cons)
+                for val, name in zip(vals, con_names):
+                    soln_constraints[name]["Dual"] = val
+                    
             if gprob.SolCount > 0:
                 soln_variables = soln.variable
                 soln_constraints = soln.constraint
@@ -661,6 +678,7 @@ class GurobiDirect(DirectSolver):
                         q_vals = self._solver_model.getAttr("QCSlack", gurobi_q_cons)
                         for val, name in zip(q_vals, q_con_names):
                             soln_constraints[name]["Slack"] = val
+                
         elif self._load_solutions:
             if gprob.SolCount > 0:
 
@@ -679,7 +697,7 @@ class GurobiDirect(DirectSolver):
 
         # finally, clean any temporary files registered with the temp file
         # manager, created populated *directly* by this plugin.
-        pyutilib.services.TempfileManager.pop(remove=not self._keepfiles)
+        TempfileManager.pop(remove=not self._keepfiles)
 
         return DirectOrPersistentSolver._postsolve(self)
 
