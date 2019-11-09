@@ -26,6 +26,7 @@ from pyomo.common.modeling import unique_component_name
 from pyomo.core import (
     Any, Block, Constraint, Objective, Param, Var, SortComponents,
     Transformation, TransformationFactory, value, TransformationFactory,
+    ConcreteModel, NonNegativeReals, maximize
 )
 from pyomo.core.base.symbolic import differentiate
 from pyomo.core.base.component import ComponentUID
@@ -37,7 +38,8 @@ from pyomo.opt import SolverFactory
 
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.gdp.util import (
-    verify_successful_solve, NORMAL, INFEASIBLE, NONOPTIMAL
+    verify_successful_solve, NORMAL, INFEASIBLE, NONOPTIMAL,
+    clone_without_expression_components
 )
 
 from six import iterkeys, itervalues, iteritems
@@ -77,7 +79,7 @@ class CuttingPlane_Transformation(Transformation):
         """
     ))
     CONFIG.declare('EPS', ConfigValue(
-        default=0.05,#TODO: this is an experiment... 0.01,
+        default=0.01,
         domain=PositiveFloat,
         description="Epsilon value used to decide when to stop adding cuts",
         doc="""
@@ -107,15 +109,15 @@ class CuttingPlane_Transformation(Transformation):
         self._config = self.CONFIG(kwds.pop('options', {}))
         self._config.set_value(kwds)
 
-        (instance_rBigM, instance_rCHull, var_info, var_map,
-         disaggregated_var_info, rBigM_linear_constraints, 
-         transBlockName) = self._setup_subproblems(
-             instance, bigM)
+        (instance_rBigM, instance_proj, var_info, 
+         #var_map,
+         #disaggregated_var_info, rBigM_linear_constraints, 
+         transBlockName) = self._setup_subproblems( instance, bigM)
 
-        self._generate_cuttingplanes( instance, instance_rBigM, instance_rCHull,
-                                      var_info, var_map, disaggregated_var_info,
-                                      rBigM_linear_constraints, transBlockName)
-
+        self._generate_cuttingplanes( instance, instance_rBigM, instance_proj,
+                                      var_info,# var_map, disaggregated_var_info,
+                                      #rBigM_linear_constraints, 
+                                      transBlockName)
 
     def _setup_subproblems(self, instance, bigM):
         # create transformation block
@@ -123,8 +125,8 @@ class CuttingPlane_Transformation(Transformation):
             instance,
             '_pyomo_gdp_cuttingplane_relaxation')
 
-        # We store a list of all vars so that we can efficiently
-        # generate maps among the subproblems
+        # We store a list of all original vars *before we clone* so that we can
+        # efficiently generate maps among the subproblems
         transBlock.all_vars = list(v for v in instance.component_data_objects(
             Var,
             descend_into=(Block, Disjunct),
@@ -152,6 +154,8 @@ class CuttingPlane_Transformation(Transformation):
         # This relies on relaxIntegrality relaxing variables on deactivated
         # blocks, which should be fine.
         reclassify.apply_to(instance_rCHull)
+        # ESJ TODO: I don't think I actually have to do this. I never solve it
+        # anymore.
         relaxIntegrality.apply_to(instance_rCHull)
 
         #
@@ -166,123 +170,81 @@ class CuttingPlane_Transformation(Transformation):
         #
         instance_rBigM = relaxIntegrality.create_using(instance)
 
-        #
-        # Collect all of the linear constraints that are in the rBigM
-        # instance. We will need these so that we can compare what we get from
-        # FME to them and make sure we aren't adding redundant constraints to
-        # the model. For convenience, we will make sure they are all in the form
-        # lb <= expr (so we will break equality constraints)
-        #
-        rBigM_linear_constraints = []
-        for cons in instance_rBigM.component_data_objects(
-                Constraint,
-                descend_into=Block,
-                sort=SortComponents.deterministic,
-                active=True):
-            body = cons.body
-            if body.polynomial_degree() != 1:
-                # We will never get a nonlinear constraint out of FME, so we
-                # don't risk it being identical to this one.
-                continue
-            
-            std_repn = generate_standard_repn(body)
-            cons_dict = {'lower': cons.lower,
-                         'upper': cons.upper,
-                         'body': std_repn
-            }
-            constraints_to_add = [cons_dict]
-            if cons_dict['upper'] is not None:
-                # if it has both bounds
-                if cons_dict['lower'] is not None:
-                    # copy the constraint and flip
-                    leq_side = {'lower': -cons_dict['upper'],
-                                'upper': None,
-                                'body': generate_standard_repn(-1.0*body)}
-                    constraints_to_add.append(leq_side)
-                    cons_dict['upper'] = None
-
-                elif cons_dict['lower'] is None:
-                    # just flip the constraint
-                    cons_dict['lower'] = -cons_dict['upper']
-                    cons_dict['upper'] = None
-                    cons_dict['body'].linear_coefs = (-1.0*coef for coef in \
-                                                      cons_dict['body'].\
-                                                      linear_coefs)
-
-            # we will store the cut insuring that the constant in the body is
-            # 0--we move all constants to the bounds
-            for cons_dict in constraints_to_add:
-                constant = cons_dict['body'].constant
-                if constant != 0:
-                    if cons_dict['lower'] is not None:
-                        cons_dict['lower'] -= constant
-                    if cons_dict['upper'] is not None:
-                        cons_dict['upper'] -= constant
-                    cons_dict['body'].constant = 0
-
-            rBigM_linear_constraints.extend(constraints_to_add)            
-
-        #
-        # Add the xstar parameter for the CHull problem
-        #
-        transBlock_rCHull = instance_rCHull.component(transBlockName)
-        #
-        # this will hold the solution to rbigm each time we solve it. We
-        # add it to the transformation block so that we don't have to
-        # worry about name conflicts.
-        transBlock_rCHull.xstar = Param(
-            range(len(transBlock.all_vars)), mutable=True, default=None)
-        # we will add a block that we will deactivate to use to store the
-        # extended space cuts. We never need to solve these, but we need them to
-        # be contructed for the sake of Fourier-Motzkin Elimination
-        extendedSpaceCuts = transBlock_rCHull.extendedSpaceCuts = Block()
-        extendedSpaceCuts.deactivate()
-        extendedSpaceCuts.cuts = Constraint(Any)
-
-        transBlock_rBigM = instance_rBigM.component(transBlockName)
-
         # create a map which links all disaggregated variables to their
         # originals on both bigm and rBigm. We will use this to project the cut
         # from the extended space to the space of the bigM problem.
         disaggregatedVarMap = self._get_disaggregated_var_map(instance_rCHull,
                                                               instance,
                                                               instance_rBigM)
+        transBlock_rCHull = instance_rCHull.component(transBlockName)
 
+        # 
+        # Generate the projection subproblem, an LP! :)
         #
-        # Generate the mapping between the variables on all the
-        # instances and the xstar parameter.
+        instance_proj = self._get_projection_subproblem(
+            instance_rCHull,
+            transBlock_rCHull.all_vars,
+            disaggregatedVarMap)
+
+        
+
+        # ESJ TODO: I don't want xstar on separation problem anymore, 
+        # I want it on my projection problem.
         #
+        # Add the xstar parameter for the CHull problem
+        #
+        # transBlock_rCHull = instance_rCHull.component(transBlockName)
+        # #
+        # # this will hold the solution to rbigm each time we solve it. We
+        # # add it to the transformation block so that we don't have to
+        # # worry about name conflicts.
+        # transBlock_rCHull.xstar = Param(
+        #     range(len(transBlock.all_vars)), mutable=True, default=None)
+        # # we will add a block that we will deactivate to use to store the
+        # # extended space cuts. We never need to solve these, but we need them to
+        # # be contructed for the sake of Fourier-Motzkin Elimination
+        # extendedSpaceCuts = transBlock_rCHull.extendedSpaceCuts = Block()
+        # extendedSpaceCuts.deactivate()
+        # extendedSpaceCuts.cuts = Constraint(Any)
+
+        transBlock_rBigM = instance_rBigM.component(transBlockName)
+
+        # TODO: Wait and see what I need
+        # #
+        # # Generate the mapping between the variables on all the
+        # # instances and the xstar parameter.
+        # #
         var_info = tuple(
             (v,
              transBlock_rBigM.all_vars[i],
              transBlock_rCHull.all_vars[i],
-             transBlock_rCHull.xstar[i])
+             instance_proj.xstar[i])
             for i,v in enumerate(transBlock.all_vars))
 
-        # TODO: I don't know a better way to do this
-        disaggregated_var_info = tuple(
-            (v,
-             disaggregatedVarMap[v]['bigm'],
-             disaggregatedVarMap[v]['rBigm'])
-            for v in disaggregatedVarMap.keys())
+        # # TODO: I don't know a better way to do this
+        # disaggregated_var_info = tuple(
+        #     (v,
+        #      disaggregatedVarMap[v]['bigm'],
+        #      disaggregatedVarMap[v]['rBigm'])
+        #     for v in disaggregatedVarMap.keys())
 
-        # this is the map that I need to translate my projected cuts and add
-        # them to bigM and rBigM.
-        # [ESJ 5 March 2019] TODO: If I add xstar to this (or don't) can I just
-        # replace var_info?
-        var_map = ComponentMap((transBlock_rCHull.all_vars[i],
-                                {'bigM': v,
-                                 'rBigM': transBlock_rBigM.all_vars[i]})
-                               for i,v in enumerate(transBlock.all_vars))
+        # # this is the map that I need to translate my projected cuts and add
+        # # them to bigM and rBigM.
+        # # [ESJ 5 March 2019] TODO: If I add xstar to this (or don't) can I just
+        # # replace var_info?
+        # var_map = ComponentMap((transBlock_rCHull.all_vars[i],
+        #                         {'bigM': v,
+        #                          'rBigM': transBlock_rBigM.all_vars[i]})
+        #                        for i,v in enumerate(transBlock.all_vars))
 
         #
         # Add the separation objective to the chull subproblem
         #
-        self._add_separation_objective(var_info, transBlock_rCHull)
+        #self._add_separation_objective(var_info, transBlock_rCHull)
 
-        return (instance_rBigM, instance_rCHull, var_info, var_map,
-                disaggregated_var_info, rBigM_linear_constraints,
-                transBlockName)
+        return (instance_rBigM, instance_proj, var_info, transBlockName)#instance_rCHull, var_info, var_map,
+                # disaggregated_var_info, rBigM_linear_constraints,
+                # transBlockName)
 
     def _get_disaggregated_var_map(self, chull, bigm, rBigm):
         disaggregatedVarMap = ComponentMap()
@@ -295,7 +257,7 @@ class CuttingPlane_Transformation(Transformation):
             iteritems(disjunct._gdp_transformation_info['srcVars']):
                 orig_vars = disaggregatedVarMap.get(disaggregated_var)
                 if orig_vars is None:
-                    # TODO: this is probably expensive, but I don't have another
+                    # TODO: this is expensive, but I don't have another
                     # idea... And I am only going to do it once
                     orig_cuid = ComponentUID(original)
                     disaggregatedVarMap[disaggregated_var] = \
@@ -304,23 +266,147 @@ class CuttingPlane_Transformation(Transformation):
 
         return disaggregatedVarMap
 
+    # This function returns a list of all linear cosntraints on instance,
+    # reorganized so that all are in a^Tx <= b form.
+    def _collect_linear_constraints(self, instance):
+        linear_constraints = []
+        for cons in instance.component_data_objects(
+                Constraint,
+                descend_into=Block,
+                sort=SortComponents.deterministic,
+                active=True):
+            body = cons.body
+            if body.polynomial_degree() != 1:
+                continue
+            
+            std_repn = generate_standard_repn(body)
+            cons_dict = {'lower': cons.lower,
+                         'upper': cons.upper,
+                         'body': std_repn
+            }
+            constraints_to_add = [cons_dict]
+            if not cons_dict['lower'] is None:
+                # if it has both bounds
+                if not cons_dict['upper'] is None:
+                    # copy the constraint and flip
+                    leq_side = {'lower': None,
+                                'upper': -cons_dict['lower'],
+                                'body': generate_standard_repn(-1.0*body)}
+                    constraints_to_add.append(leq_side)
+                    cons_dict['lower'] = None
+
+                else:
+                    # just flip the constraint
+                    cons_dict['upper'] = -cons_dict['lower']
+                    cons_dict['lower'] = None
+                    cons_dict['body'].linear_coefs = (-1.0*coef for coef in \
+                                                      cons_dict['body'].\
+                                                      linear_coefs)
+
+            # we will store the cut insuring that the constant in the body is
+            # 0--we move all constants to the bounds
+            for cons_dict in constraints_to_add:
+                constant = cons_dict['body'].constant
+                if constant != 0:
+                    assert cons_dict['lower'] is None
+                    if cons_dict['upper'] is not None:
+                        cons_dict['upper'] -= constant
+                    cons_dict['body'].constant = 0
+
+            linear_constraints.extend(constraints_to_add)  
+
+        return linear_constraints
+
+    # orig_vars is a list of not-disaggregated variables on rCHull
+    def _get_projection_subproblem(self, instance_rCHull, orig_vars,
+                                   disaggregatedVarMap):
+        # first we need to know the number of linear constraints in chull--we'll
+        # collect a list of constraints now.
+        chull_constraints = self._collect_linear_constraints(instance_rCHull)
+        
+        m = ConcreteModel()
+        mu_index = range(len(chull_constraints))
+        x_index = range(len(orig_vars))
+
+        # these are mu. They have the same index as chull_constraints.
+        m.multipliers = Var(mu_index, domain=NonNegativeReals)
+        # this will hold the current rBigM solution. Note that all_vars and
+        # xstar have the same index.
+        m.xstar = Param(x_index, mutable=True, default=None)
+                            
+        # we need to get from rCHull x to xstar
+        x_map = ComponentMap()
+        for i in x_index:
+            x_map[orig_vars[i]] = m.xstar[i]
+
+        m.bound_region = Constraint(expr=sum(m.multipliers[i] \
+                                             for i in mu_index) <= 1)
+
+        # Build out the objective. While we do so, we can collect the
+        # coefficients we are going to need in the constraints.
+        obj_expr = 0
+        # we will map from disaggregated variables to the corresponding
+        # expression on the LHS of mu^TB = 0.
+        constraint_exprs = ComponentMap()
+        for idx, cons in enumerate(chull_constraints):
+            # get the multiplier for this constraint
+            mu = m.multipliers[idx]
+
+            obj_coef = 0
+            body = cons['body']
+            # we are looping through the terms of a_i^Tx + b_i^Ty and sorting
+            # into original space and lifted space vars
+            for coef, v in zip(body.linear_coefs, body.linear_vars):
+                # first case, we found disaggregated variable, so we are getting
+                # a term in mu^tb_i
+                if v in disaggregatedVarMap:
+                    if constraint_exprs.get(v) is None:
+                        constraint_exprs[v] = 0
+                    constraint_exprs[v] += coef*mu
+                # second case, we found an original variable, so we are adding
+                # to the objective expression
+                else:
+                    obj_coef += coef*x_map[v]
+            # add the term of mu^TAx^*
+            obj_expr += mu*obj_coef
+            # add the term of mu^Tc
+            obj_expr -= mu*value(cons['upper'])
+
+        # this is just some order of them, which is fine, because I just need to
+        # make sure I get each on exactly once (TODO, though in longterm I think
+        # this is a bad idea because its nondeterministic)
+        disaggregatedVars = disaggregatedVarMap.keys()
+        # add the mu^TB = 0 constraints
+        @m.Constraint(range(len(constraint_exprs)))
+        def cancel_lifted_vars(m, i):
+            # the only way the constraint expr could be 0 is if B had a column
+            # of 0s, which it wouldn't because then we wouldn't have that
+            # disaggregated var. So this is OK.
+            return constraint_exprs[disaggregatedVars[i]] == 0
+
+        # add the objective
+        m.obj = Objective(expr=obj_expr, sense=maximize)
+        return m
+
     def _generate_cuttingplanes( self, instance, instance_rBigM,
-                                 instance_rCHull, var_info, var_map,
-                                 disaggregated_var_info,
-                                 rBigM_linear_constraints, transBlockName):
+                                 instance_proj, var_info, transBlockName):#, var_info, var_map,
+                                 # disaggregated_var_info,
+                                 # rBigM_linear_constraints, transBlockName):
 
         opt = SolverFactory(self._config.solver)
         stream_solver = self._config.stream_solver
         opt.options = self._config.solver_options
 
-        improving = True
-        prev_obj = float("inf")
         epsilon = self._config.EPS
-        cuts = None
+        # we will need two maps:
+        xstar_to_xrbigM = dict((id(x_star), x_rbigm) \
+                              for x_bigm, x_rbigm, x_chull, x_star in var_info)
+        xstar_to_xbigM = dict((id(x_star), x_bigm) \
+                              for x_bigm, x_rbigm, x_chull, x_star in var_info)
 
         transBlock = instance.component(transBlockName)
         transBlock_rBigM = instance_rBigM.component(transBlockName)
-        transBlock_rCHull = instance_rCHull.component(transBlockName)
+        #transBlock_rCHull = instance_rCHull.component(transBlockName)
 
         # We try to grab the first active objective. If there is more
         # than one, the writer will yell when we try to solve below. If
@@ -333,12 +419,12 @@ class CuttingPlane_Transformation(Transformation):
 
         # Get list of all variables in the rCHull model which we will use when
         # calculating the composite normal vector.
-        rCHull_vars = [i for i in instance_rCHull.component_data_objects(
-            Var,
-            descend_into=Block,
-            sort=SortComponents.deterministic)]
+        # rCHull_vars = [i for i in instance_rCHull.component_data_objects(
+        #     Var,
+        #     descend_into=Block,
+        #     sort=SortComponents.deterministic)]
 
-        while (improving):
+        while (True):
             # solve rBigM, solution is xstar
             results = opt.solve(instance_rBigM, tee=stream_solver)
             if verify_successful_solve(results) is not NORMAL:
@@ -352,67 +438,35 @@ class CuttingPlane_Transformation(Transformation):
                            % (rBigM_objVal,))
 
             # copy over xstar
-            # DEBUG
-            # print("x* is")
             for x_bigm, x_rbigm, x_chull, x_star in var_info:
                 x_star.value = x_rbigm.value
-                # initialize the X values
-                x_chull.value = x_rbigm.value
-                # DEBUG
-                #print("\t%s: %s" % (x_rbigm.name, x_star.value))
 
-            # compare objectives: check absolute difference close to 0, relative
-            # difference further from 0.
-            obj_diff = prev_obj - rBigM_objVal
-            improving = math.isinf(obj_diff) or \
-                        ( abs(obj_diff) > epsilon if abs(rBigM_objVal) < 1 else
-                          abs(obj_diff/prev_obj) > epsilon )
+            # solve the projection problem
+            opt.solve(instance_proj, tee=stream_solver)
 
-            # solve separation problem to get xhat.
-            opt.solve(instance_rCHull, tee=stream_solver)
-            # DEBUG
-            #print("x_hat is")
-            # for x_hat in rCHull_vars:
-            #    print("\t%s: %s" % (x_hat.name, x_hat.value))
-            # print "Separation obj = %s" % (
-            #    value(next(instance_rCHull.component_data_objects(
-            #    Objective, active=True))),)
-
-            # [JDS 19 Dec 18] Note: we should check that the separation
-            # objective was significantly nonzero.  If it is too close
-            # to zero, either the rBigM solution was in the convex hull,
-            # or the separation vector is so close to zero that the
-            # resulting cut is likely to have numerical issues.
-            if abs(value(transBlock_rCHull.separation_objective)) < epsilon:
-                # [ESJ 15 Feb 19] I think we just want to quit right, we're
-                # going nowhere...?
+            # if the objective was 0 then x* is in rCHull, and we are done
+            v = value(instance_proj.obj)
+            # if this isn't true something went really wrong
+            print("v is: %s" % v)
+            if v < epsilon:
                 break
 
-            cuts = self._create_cuts(var_info, var_map, disaggregated_var_info,
-                                     rCHull_vars, instance_rCHull,
-                                     rBigM_linear_constraints, transBlock,
-                                     transBlock_rBigM, transBlock_rCHull)
-           
-            # We are done if the cut generator couldn't return a valid cut
-            if not cuts:
-                break
-
-            # add cut to rBigm
-            for cut in cuts['rBigM']:
-                transBlock_rBigM.cuts.add(len(transBlock_rBigM.cuts), cut)
-
-            # DEBUG
-            #print("adding this cut to rBigM:\n%s <= 0" % cuts['rBigM'])
-
-            if improving:
-                for cut in cuts['bigM']:
-                    cut_number = len(transBlock.cuts)
-                    logger.warning("GDP.cuttingplane: Adding cut %s to BM model."
-                                   % (cut_number,))
-                    transBlock.cuts.add(cut_number, cut)
-
-            prev_obj = rBigM_objVal
-
+            # add the cut: All we have to do is substitute x for xstar in obj
+            # expr.
+            cut_expr = clone_without_expression_components(
+                instance_proj.obj.expr,
+                substitute=dict((id(instance_proj.multipliers[i]), 
+                                value(instance_proj.multipliers[i])) \
+                                for i in instance_proj.multipliers))
+            transBlock.cuts.add(len(transBlock.cuts),
+                                clone_without_expression_components(
+                                    cut_expr, 
+                                    substitute=xstar_to_xbigM) <= 0)
+            transBlock_rBigM.cuts.add(len(transBlock_rBigM.cuts),
+                                      clone_without_expression_components(
+                                          cut_expr,
+                                          substitute=xstar_to_xrbigM) <= 0)
+            
 
     def _add_relaxation_block(self, instance, name):
         # creates transformation block with a unique name based on name, adds it
