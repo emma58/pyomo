@@ -38,9 +38,9 @@ def check_linear_coef(self, repn, var, coef):
 
 def check_validity(self, body, lower, upper):
     if lower is not None:
-        self.assertGreaterEqual(value(body), lower)
+        self.assertGreaterEqual(value(body), value(lower))
     if upper is not None:
-        self.assertLessEqual(value(body), upper)
+        self.assertLessEqual(value(body), value(upper))
 
 class OneVarDisj(unittest.TestCase):
     @unittest.skipIf('ipopt' not in solvers, "Ipopt solver not available")
@@ -210,9 +210,9 @@ class TwoTermDisj(unittest.TestCase):
             m.x.fix(pt[2])
             m.y.fix(pt[3])
             if lower is not None:
-                self.assertEqual(lower, value(cut_expr))
+                self.assertEqual(value(lower), value(cut_expr))
             if upper is not None:
-                self.assertEqual(upper, value(cut_expr))
+                self.assertEqual(value(upper), value(cut_expr))
 
 
     # [ESJ 15 Mar 19]: This is a slightly weird idea, but I think we've kind of
