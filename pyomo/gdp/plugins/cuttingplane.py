@@ -375,7 +375,7 @@ class CuttingPlane_Transformation(Transformation):
         # this is just some order of them, which is fine, because I just need to
         # make sure I get each on exactly once (TODO, though in longterm I think
         # this is a bad idea because its nondeterministic)
-        disaggregatedVars = disaggregatedVarMap.keys()
+        disaggregatedVars = list(disaggregatedVarMap.keys())
         # add the mu^TB = 0 constraints
         @m.Constraint(range(len(constraint_exprs)))
         def cancel_lifted_vars(m, i):
