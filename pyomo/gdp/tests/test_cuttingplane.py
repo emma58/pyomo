@@ -363,8 +363,8 @@ class Grossmann_TestCases(unittest.TestCase):
             (1,0,1,0,2,8),
             (0,1,0,1,9,2),
             (0,1,0,1,9,3),
-            (0,1,0,1,11,2),
-            (0,1,0,1,11,3)
+            (0,1,0,1,10,2),
+            (0,1,0,1,10,3)
         ]
 
         cuts = m._pyomo_gdp_cuttingplane_relaxation.cuts
