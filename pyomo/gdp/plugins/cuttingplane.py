@@ -460,9 +460,9 @@ class CuttingPlane_Transformation(Transformation):
             # are done
             v = value(instance_proj.obj)
             print("v is: %s" % v)
-            # if v < epsilon:
-            #     set_trace()
-            #     break
+            if v < epsilon:
+                set_trace()
+                break
 
             # add the cut: All we have to do is substitute x for xstar in obj
             # expr.
