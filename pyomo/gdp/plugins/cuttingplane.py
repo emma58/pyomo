@@ -266,7 +266,7 @@ class CuttingPlane_Transformation(Transformation):
 
         return disaggregatedVarMap
 
-    # This function returns a list of all linear cosntraints on instance,
+    # This function returns a list of all linear constraints on instance,
     # reorganized so that all are in a^Tx <= b form.
     def _collect_linear_constraints(self, instance):
         linear_constraints = []
@@ -373,9 +373,16 @@ class CuttingPlane_Transformation(Transformation):
             obj_expr -= mu*value(cons['upper'])
 
         # this is just some order of them, which is fine, because I just need to
-        # make sure I get each on exactly once (TODO, though in longterm I think
-        # this is a bad idea because its nondeterministic)
-        disaggregatedVars = list(disaggregatedVarMap.keys())
+        # make sure I get each one exactly once (TODO, though in longterm I
+        # think this is a bad idea because its nondeterministic)
+        # disaggregatedVars = list(disaggregatedVarMap.keys()) (So you remember,
+        # problem child in 118 bus TS is
+        # constraint_exprs[instance_rCHull._pyomo_gdp_chull_relaxation.relaxedDisjuncts[141].LinePower[71]])
+
+        # [ESJ 11/25/2019] Is it true that not every disaggregated variable need
+        # have appeared in the above set of loops? This is assuming so... If not
+        # we need the above.
+        disaggregatedVars = list(constraint_exprs.keys())
         # add the mu^TB = 0 constraints
         @m.Constraint(range(len(constraint_exprs)))
         def cancel_lifted_vars(m, i):
