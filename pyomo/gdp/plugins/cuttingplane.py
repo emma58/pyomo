@@ -186,8 +186,6 @@ class CuttingPlane_Transformation(Transformation):
             transBlock_rCHull.all_vars,
             disaggregatedVarMap)
 
-        
-
         # ESJ TODO: I don't want xstar on separation problem anymore, 
         # I want it on my projection problem.
         #
@@ -451,12 +449,20 @@ class CuttingPlane_Transformation(Transformation):
             # solve the projection problem
             opt.solve(instance_proj, tee=stream_solver)
 
-            # if the objective was 0 then x* is in rCHull, and we are done
+            # Oops, I think this is wrong, it assumes no degnerate solutions.
+            # The question may be if we have found an interesting set of
+            # multipliers...
+            # TODO: This would make an infinite loop, but we could add a cut and then see if the objective changed or something. I'm not sure if I'm barking up the wrong tree or not. Probably need to play through a small example.
+            # if value(instance_proj.bound_region.body) < 0.5:
+            #     break
+
+            # if the objective was 0 then x* is in rCHull, and we
+            # are done
             v = value(instance_proj.obj)
-            # if this isn't true something went really wrong
             print("v is: %s" % v)
-            if v < epsilon:
-                break
+            # if v < epsilon:
+            #     set_trace()
+            #     break
 
             # add the cut: All we have to do is substitute x for xstar in obj
             # expr.
