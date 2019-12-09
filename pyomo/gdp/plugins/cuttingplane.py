@@ -313,6 +313,25 @@ class CuttingPlane_Transformation(Transformation):
 
             linear_constraints.extend(constraints_to_add)  
 
+        # and we need to catch variable bounds as well
+        for v in instance.component_data_objects(
+                Var, descend_into=Block,
+                sort=SortComponents.deterministic): 
+            constraints_to_add = []
+            if not v.lb is None:
+                cons_dict = {'lower': None,
+                             'upper': -v.lb,
+                             'body': generate_standard_repn(-1.0*v)
+                             }
+                constraints_to_add.append(cons_dict)
+            if not v.ub is None:
+                cons_dict = {'lower': None,
+                             'upper': v.ub,
+                             'body': generate_standard_repn(v)
+                             }
+                constraints_to_add.append(cons_dict)
+            linear_constraints.extend(constraints_to_add)
+
         return linear_constraints
 
     # orig_vars is a list of not-disaggregated variables on rCHull
@@ -391,6 +410,7 @@ class CuttingPlane_Transformation(Transformation):
 
         # add the objective
         m.obj = Objective(expr=obj_expr, sense=maximize)
+
         return m
 
     def _generate_cuttingplanes( self, instance, instance_rBigM,
@@ -461,7 +481,6 @@ class CuttingPlane_Transformation(Transformation):
             v = value(instance_proj.obj)
             print("v is: %s" % v)
             if v < epsilon:
-                set_trace()
                 break
 
             # add the cut: All we have to do is substitute x for xstar in obj
