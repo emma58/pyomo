@@ -598,6 +598,8 @@ class GurobiDirect(DirectSolver):
         self.results.problem.number_of_objectives = 1
         self.results.problem.number_of_solutions = gprob.SolCount
 
+        self.results.problem.number_of_nodes_explored = gprob.NodeCount
+
         # if a solve was stopped by a limit, we still need to check to
         # see if there is a solution available - this may not always
         # be the case, both in LP and MIP contexts.
