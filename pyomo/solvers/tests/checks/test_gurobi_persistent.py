@@ -1,5 +1,6 @@
 import pyutilib.th as unittest
 import pyomo.environ as pe
+from pyomo.gdp import Disjunction
 from pyomo.core.expr.taylor_series import taylor_series_expansion
 try:
     import gurobipy
@@ -7,6 +8,8 @@ try:
     gurobipy_available = True
 except:
     gurobipy_available = False
+
+from nose.tools import set_trace
 
 
 class TestGurobiPersistent(unittest.TestCase):
@@ -309,3 +312,20 @@ class TestGurobiPersistent(unittest.TestCase):
         opt.solve()
         self.assertAlmostEqual(m.x.value, 1)
         self.assertAlmostEqual(m.y.value, 1)
+
+    # ESJ: TODO: This doesn't belong here, but I can't find tests for gurobi
+    # direct at the moment...
+    @unittest.skipIf(not gurobipy_available, "gurobipy is not available")
+    def test_indicator_constraint(self):
+        m = pe.ConcreteModel()
+        m.x = pe.Var(bounds=(-10, 10))
+        m.disjunction = Disjunction(expr=[m.x == 0, m.x >= 4])
+        m.cons = pe.Constraint(expr=m.x>= -4)
+        m.obj = pe.Objective(expr=m.x)
+
+        opt = pe.SolverFactory('gurobi_direct')
+        opt.solve(m)
+        
+        set_trace()
+
+        self.assertAlmostEqual(m.x.value, 0)

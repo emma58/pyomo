@@ -20,6 +20,11 @@ from pyomo.core.kernel.component_map import ComponentMap
 from pyomo.core.kernel.component_set import ComponentSet
 from pyomo.opt.base.formats import ResultsFormat
 from pyutilib.misc import Options
+from pyomo.gdp import Disjunct, Disjunction
+from pyomo.core.base import Constraint
+from pyomo.common.modeling import unique_component_name
+
+from nose.tools import set_trace
 
 class DirectOrPersistentSolver(OptSolver):
     """
@@ -197,44 +202,81 @@ class DirectOrPersistentSolver(OptSolver):
         else:
             self._labeler = NumericLabeler('x')
 
+    def _add_block_contents(self, sub_block):
+        NAME_BUFFER = {}
+        if sub_block.ctype is Disjunct:
+            indicator_var = sub_block.indicator_var
+        else:
+            indicator_var = None
+
+        for con in sub_block.component_data_objects(
+                ctype=pyomo.core.base.constraint.Constraint,
+                descend_into=False,
+                active=True,
+                sort=True):
+            if (not con.has_lb()) and \
+               (not con.has_ub()):
+                assert not con.equality
+                continue  # non-binding, so skip
+            if indicator_var is None:
+                self._add_constraint(con)
+            else:
+                self._add_indicator_constraint(indicator_var, con)
+
+        # ESJ: TODO: Can these be indicated?? 
+        for con in sub_block.component_data_objects(
+                ctype=pyomo.core.base.sos.SOSConstraint,
+                descend_into=False,
+                active=True,
+                sort=True):
+            self._add_sos_constraint(con)
+
+        # create XORs
+        for disj in sub_block.component_data_objects(
+                ctype=Disjunction,
+                descend_into=False,
+                active=True,
+                sort=True):
+            if disj.xor:
+                xor = Constraint(expr=sum(d.indicator_var for d in
+                                          disj.disjuncts) == 1)
+            else:
+                xor = Constraint(expr=sum(d.indicator_var for d in
+                                          disj.disjuncts) >= 1)
+            sub_block.add_component(
+                unique_component_name(sub_block, 
+                                      disj.getname(fully_qualified=True, 
+                                                   name_buffer=NAME_BUFFER) + \
+                                      "_xor"), xor)
+            if indicator_var is None:
+                self._add_constraint(xor)
+            else:
+                self._add_indicator_constraint(indicator_var, xor)
+
+        obj_counter = 0
+        for obj in sub_block.component_data_objects(
+                ctype=pyomo.core.base.objective.Objective,
+                descend_into=False,
+                    active=True):
+            obj_counter += 1
+            if obj_counter > 1:
+                raise ValueError("Solver interface does not "
+                                 "support multiple objectives.")
+            self._set_objective(obj)
+
     def _add_block(self, block):
         for var in block.component_data_objects(
                 ctype=pyomo.core.base.var.Var,
-                descend_into=True,
+                descend_into=(Block, Disjunct),
                 active=True,
                 sort=True):
             self._add_var(var)
 
-        for sub_block in block.block_data_objects(descend_into=True,
-                                                  active=True):
-            for con in sub_block.component_data_objects(
-                    ctype=pyomo.core.base.constraint.Constraint,
-                    descend_into=False,
-                    active=True,
-                    sort=True):
-                if (not con.has_lb()) and \
-                   (not con.has_ub()):
-                    assert not con.equality
-                    continue  # non-binding, so skip
-                self._add_constraint(con)
-
-            for con in sub_block.component_data_objects(
-                    ctype=pyomo.core.base.sos.SOSConstraint,
-                    descend_into=False,
-                    active=True,
-                    sort=True):
-                self._add_sos_constraint(con)
-
-            obj_counter = 0
-            for obj in sub_block.component_data_objects(
-                    ctype=pyomo.core.base.objective.Objective,
-                    descend_into=False,
-                    active=True):
-                obj_counter += 1
-                if obj_counter > 1:
-                    raise ValueError("Solver interface does not "
-                                     "support multiple objectives.")
-                self._set_objective(obj)
+        self._add_block_contents(block)
+        for sub_block in block.component_data_objects((Block, Disjunct),
+                                                      descend_into=True,
+                                                      active=True):
+            self._add_block_contents(sub_block)
 
     """ This method should be implemented by subclasses."""
     def _set_objective(self, obj):
@@ -243,6 +285,11 @@ class DirectOrPersistentSolver(OptSolver):
 
     """ This method should be implemented by subclasses."""
     def _add_constraint(self, con):
+        raise NotImplementedError("This method should be implemented "
+                                  "by subclasses")
+
+    """ This method should be implemented by subclasses."""
+    def _add_indicator_constraint(self, con):
         raise NotImplementedError("This method should be implemented "
                                   "by subclasses")
 

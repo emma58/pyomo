@@ -28,6 +28,8 @@ from pyomo.opt.base import SolverFactory
 from pyomo.core.base.suffix import Suffix
 import pyomo.core.base.var
 
+from nose.tools import set_trace
+
 
 logger = logging.getLogger('pyomo.solvers')
 
@@ -328,6 +330,98 @@ class GurobiDirect(DirectSolver):
         self._solver_con_to_pyomo_con_map[gurobipy_con] = con
 
         self._needs_updated = True
+
+    def _add_indicator_constraint(self, indicator_var, con):
+        if not con.active:
+            return None
+
+        conname = self._symbol_map.getSymbol(con, self._labeler)
+    
+        gurobi_ind_var = self._pyomo_var_to_solver_var_map[indicator_var]
+
+        # the body *has* to be linear
+        repn = generate_standard_repn(con.body)
+        if not repn.is_linear():
+            raise ValueError("Gurobi only allows linear indicator constraints. "
+                             "Found nonlinear constraint %s on a Disjunct. "
+                             "Please use a GDP transformation before solving "
+                             "this model." % con)
+
+        # ESJ: I do not know what this is??
+        if con._linear_canonical_form:
+            gurobi_expr, referenced_vars = self._get_expr_from_pyomo_repn(
+                con.canonical_form(),
+                self._max_constraint_degree)
+        else:
+            gurobi_expr, referenced_vars = self._get_expr_from_pyomo_expr(
+                con.body,
+                self._max_constraint_degree)
+
+        if con.has_lb():
+            if not is_fixed(con.lower):
+                raise ValueError("Lower bound of constraint {0} "
+                                 "is not constant.".format(con))
+        if con.has_ub():
+            if not is_fixed(con.upper):
+                raise ValueError("Upper bound of constraint {0} "
+                                 "is not constant.".format(con))
+
+        if con.equality:
+            gurobipy_con = self._solver_model.addGenConstrIndicator(
+                binvar=gurobi_ind_var, 
+                binval=True, 
+                lhs=gurobi_expr,
+                sense=self._gurobipy.GRB.EQUAL,
+                rhs=value(con.lower),
+                name=conname)
+        elif con.has_lb() and con.has_ub():
+            print("TODO: HERE'S HOPING THAT MAP DOESN'T MATTER!")
+            # ESJ: I think the only way to do this is to output two constraints!
+            # Which is going to break the maps below. :((
+            gurobipy_con = self._solver_model.addGenConstrIndicator(
+                binvar=gurobi_ind_var,
+                binval=True,
+                lhs=gurobi_expr,
+                rhs=value(con.lower),
+                sense=self._gurobipy.GRB.GREATER_EQUAL,
+                name=conname + "_lower")
+
+            gurobipy_con2 = self._solver_model.addGenConstrIndicator(
+                binvar=gurobi_ind_var,
+                binval=True,
+                lhs=gurobi_expr,
+                rhs=value(con.upper),
+                sense=self._gurobipy.GRB.LESS_EQUAL,
+                name=conname + "_upper")
+        elif con.has_lb():
+            gurobipy_con = self._solver_model.addGenConstrIndicator(
+                binvar=gurobi_ind_var,
+                binval=True,
+                lhs=gurobi_expr,
+                rhs=value(con.lower),
+                sense=self._gurobipy.GRB.GREATER_EQUAL,
+                name=conname)
+
+        elif con.has_ub():
+            gurobipy_con = self._solver_model.addGenConstrIndicator(
+                binvar=gurobi_ind_var,
+                binval=True,
+                lhs=gurobi_expr,
+                rhs=value(con.upper),
+                sense=self._gurobipy.GRB.LESS_EQUAL,
+                name=conname)
+        else:
+            raise ValueError("Constraint does not have a lower "
+                             "or an upper bound: {0} \n".format(con))
+
+        for var in referenced_vars:
+            self._referenced_variables[var] += 1
+        self._vars_referenced_by_con[con] = referenced_vars
+        self._pyomo_con_to_solver_con_map[con] = gurobipy_con
+        self._solver_con_to_pyomo_con_map[gurobipy_con] = con
+
+        self._needs_updated = True
+
 
     def _add_sos_constraint(self, con):
         if not con.active:
