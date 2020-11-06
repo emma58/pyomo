@@ -76,13 +76,12 @@ class FileDownloader(object):
                 if not line:
                     continue
                 key,val = line.lower().split('=')
+                if val[0] == val[-1] and val[0] in '"\'':
+                    val = val[1:-1]
                 if key == 'id':
                     dist = val
                 elif key == 'version_id':
-                    if val[0] == val[-1] and val[0] in '"\'':
-                        ver = val[1:-1]
-                    else:
-                        ver = val
+                    ver = val
         return cls._map_dist(dist), ver
 
     @classmethod
@@ -334,7 +333,6 @@ class FileDownloader(object):
                 % (self._fname,))
         zip_file = zipfile.ZipFile(io.BytesIO(self.retrieve_url(url)))
         # Simple sanity checks
-        names = []
         for info in zip_file.infolist():
             f = info.filename
             if f[0] in '\\/' or '..' in f:

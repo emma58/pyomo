@@ -24,6 +24,7 @@ PyomoUnitsContainer. You can use the module level instance already defined as
 this module using common notation.
 
     .. doctest::
+       :skipif: not pint_available
 
        >>> from pyomo.environ import units as u
        >>> print(3.0*u.kg)
@@ -37,6 +38,7 @@ like the objective function, constraint, or expression using
 There are other methods there that may be helpful for verifying correct units on a model.
 
     .. doctest::
+       :skipif: not pint_available
 
        >>> from pyomo.environ import ConcreteModel, Var, Objective
        >>> from pyomo.environ import units as u
@@ -106,6 +108,7 @@ information.
 #    * Extend external function interface to support units for the arguments in addition to the function itself
 
 import six
+import sys
 
 from pyomo.common.dependencies import attempt_import
 from pyomo.core.expr.numvalue import NumericValue, nonpyomo_leaf_types, value, native_numeric_types
@@ -791,7 +794,6 @@ class UnitExtractionVisitor(EXPR.StreamBasedExpressionVisitor):
         for (arg_unit, unit_tuple) in zip(arg_units, list_of_unit_tuples):
             pyomo_arg_unit, pint_arg_unit = self._pyomo_units_container._get_units_tuple(arg_unit)
             pint_child_unit = unit_tuple[1]
-            print(pint_arg_unit, pint_child_unit)
             if not self._pint_units_equivalent(pint_arg_unit, pint_child_unit):
                 raise InconsistentUnitsError(arg_unit, unit_tuple[0], 'Inconsistent units found in ExternalFunction.')
 
@@ -1107,7 +1109,7 @@ class UnitExtractionVisitor(EXPR.StreamBasedExpressionVisitor):
             return (pyomo_unit, pint_unit)
 
         raise TypeError('An unhandled expression node type: {} was encountered while retrieving the'
-                        ' units of expression'.format(str(node_type), str(node)))
+                ' units of expression {}'.format(str(type(node)), str(node)))
 
 
 class PyomoUnitsContainer(object):
@@ -1155,6 +1157,7 @@ class PyomoUnitsContainer(object):
         Then we can add this to the container with:
 
         .. doctest::
+            :skipif: not pint_available
             :hide:
 
             # get a local units object (to avoid duplicate registration
@@ -1165,6 +1168,7 @@ class PyomoUnitsContainer(object):
             ...     tmp = FILE.write("USD = [currency]\\n")
 
         .. doctest::
+            :skipif: not pint_available
 
             >>> u.load_definitions_from_file('my_additional_units.txt')
             >>> print(u.USD)
@@ -1185,6 +1189,7 @@ class PyomoUnitsContainer(object):
         unit, use
 
         .. doctest::
+            :skipif: not pint_available
             :hide:
 
             # get a local units object (to avoid duplicate registration
@@ -1193,6 +1198,7 @@ class PyomoUnitsContainer(object):
             >>> u = _units.PyomoUnitsContainer()
 
         .. doctest::
+            :skipif: not pint_available
 
             >>> u.load_definitions_from_strings(['USD = [currency]'])
             >>> print(u.USD)

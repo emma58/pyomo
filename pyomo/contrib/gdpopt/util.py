@@ -10,13 +10,13 @@ import six
 from pyutilib.misc import Container
 
 from pyomo.common import deprecated
+from pyomo.common.collections import ComponentSet
 from pyomo.contrib.fbbt.fbbt import compute_bounds_on_expr
 from pyomo.contrib.gdpopt.data_class import GDPoptSolveData
 from pyomo.contrib.mcpp.pyomo_mcpp import mcpp_available, McCormick
 from pyomo.core import (Block, Constraint,
                         Objective, Reals, Var, minimize, value, ConstraintList)
 from pyomo.core.expr.current import identify_variables
-from pyomo.core.kernel.component_set import ComponentSet
 from pyomo.gdp import Disjunct, Disjunction
 from pyomo.opt import SolverFactory, SolverResults
 from pyomo.opt.results import ProblemSense
@@ -155,8 +155,10 @@ def process_objective(solve_data, config, move_linear_objective=False, use_mcpp=
         else:
             # Use Pyomo's contrib.fbbt package
             lb, ub = compute_bounds_on_expr(main_obj.expr)
-            util_blk.objective_value.setub(ub)
-            util_blk.objective_value.setlb(lb)
+            if solve_data.results.problem.sense == ProblemSense.minimize:
+                util_blk.objective_value.setlb(lb)
+            else:
+                util_blk.objective_value.setub(ub)
 
         if main_obj.sense == minimize:
             util_blk.objective_constr = Constraint(

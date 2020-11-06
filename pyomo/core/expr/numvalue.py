@@ -15,11 +15,11 @@ __all__ = ('value', 'is_constant', 'is_fixed', 'is_variable_type',
 
 import sys
 import logging
-from six import iteritems, PY3, string_types, text_type, binary_type
+from six import iteritems, PY3
 
 from pyomo.core.expr.expr_common import \
     (_add, _sub, _mul, _div, _pow,
-     _neg, _abs, _inplace, _radd,
+     _neg, _abs, _radd,
      _rsub, _rmul, _rdiv, _rpow,
      _iadd, _isub, _imul, _idiv,
      _ipow, _lt, _le, _eq)
@@ -96,6 +96,8 @@ nonpyomo_leaf_types = set([NonNumericValue])
 native_numeric_types = set([ int, float, bool ])
 native_integer_types = set([ int, bool ])
 native_boolean_types = set([ int, bool, str ])
+native_logical_types = {bool, }
+pyomo_constant_types = set()  # includes NumericConstant
 try:
     native_numeric_types.add(long)
     native_integer_types.add(long)
@@ -116,6 +118,7 @@ if PY3:
 else:
     native_types.add(unicode)
     native_boolean_types.add(unicode)
+
 native_types.update( native_numeric_types )
 native_types.update( native_integer_types )
 native_types.update( native_boolean_types )
@@ -188,7 +191,7 @@ def value(obj, exception=True):
     """
     if obj.__class__ in native_types:
         return obj
-    if obj.__class__ is NumericConstant:
+    if obj.__class__ in pyomo_constant_types:
         #
         # I'm commenting this out for now, but I think we should never expect
         # to see a numeric constant with value None.
@@ -1033,6 +1036,9 @@ class NumericConstant(NumericValue):
         if ostream is None:         #pragma:nocover
             ostream = sys.stdout
         ostream.write(str(self))
+
+
+pyomo_constant_types.add(NumericConstant)
 
 
 # We use as_numeric() so that the constant is also in the cache

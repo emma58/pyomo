@@ -8,20 +8,15 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-from six import string_types
-
 import pyomo.core.expr.current as EXPR
-from pyomo.core.expr.numvalue import nonpyomo_leaf_types, native_numeric_types
 from pyomo.gdp import GDP_Error, Disjunction
 from pyomo.gdp.disjunct import _DisjunctData, Disjunct
-from copy import deepcopy
 
-from pyomo.core.base.component import _ComponentBase, ComponentUID
+from pyomo.core.base.component import _ComponentBase
+
 from pyomo.core import Block, TraversalStrategy
 from pyomo.opt import TerminationCondition, SolverStatus
-from pyomo.common.deprecation import deprecation_warning
 from six import iterkeys
-import sys
 from weakref import ref as weakref_ref
 import logging
 
@@ -296,6 +291,32 @@ def _warn_for_active_disjunct(innerdisjunct, outerdisjunct, NAME_BUFFER):
                         outerdisjunct.getname(
                             fully_qualified=True,
                             name_buffer=NAME_BUFFER)))
+
+
+def _warn_for_active_logical_constraint(logical_statement, disjunct, NAME_BUFFER):
+    # this should only have gotten called if the logical constraint is active
+    assert logical_statement.active
+    problem_statement = logical_statement
+    if logical_statement.is_indexed():
+        for i in logical_statement:
+            if logical_statement[i].active:
+                # a _LogicalConstraintData is active, we will yell about
+                # it specifically.
+                problem_statement = logical_statement[i]
+                break
+        # None of the _LogicalConstraintDatas were actually active. We
+        # are OK and we can deactivate the container.
+        else:
+            logical_statement.deactivate()
+            return
+    # the logical constraint should only have been active if it wasn't transformed
+    _probStatementName = problem_statement.getname(
+        fully_qualified=True, name_buffer=NAME_BUFFER)
+    raise GDP_Error("Found untransformed logical constraint %s in disjunct %s! "
+                    "The logical constraint must be transformed before the "
+                    "disjunct. Use the logical_to_linear transformation."
+                    % (_probStatementName, disjunct.name))
+
 
 def check_model_algebraic(instance):
     """Checks if there are any active Disjuncts or Disjunctions reachable via
