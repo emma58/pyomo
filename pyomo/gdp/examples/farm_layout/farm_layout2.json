@@ -1,0 +1,17 @@
+{
+    "num_rectangles": 2,
+    "area" : {
+	"1" : 40,
+	"2" : 50
+    },
+    "min_length" : {
+	"1" : 1,
+	"2" : 1
+    },
+    "min_width" : {
+	"1" : 1,
+	"2" : 1
+    },
+    "total_width_ub" : 30,
+    "total_length_ub" : 30
+}
