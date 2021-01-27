@@ -124,9 +124,14 @@ def read_json(filename):
     
     return data
 
-if __name__ == "__main__":
-    data = read_json('farm_layout4.json')
+def instantiate_model(filename):
+    data = read_json(filename)
     m = instantiate_farm_layout(data)
+
+    return m
+
+if __name__ == "__main__":
+    m = instantiate_model('farm_layout2.json')
 
     TransformationFactory('gdp.bigm').apply_to(m)
     results = SolverFactory('bonmin').solve(m)
