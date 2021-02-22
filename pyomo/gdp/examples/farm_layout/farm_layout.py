@@ -8,6 +8,7 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
+from __future__ import division
 
 from pyomo.environ import *
 from pyomo.gdp import *
@@ -131,8 +132,25 @@ def instantiate_model(filename):
     return m
 
 if __name__ == "__main__":
-    m = instantiate_model('farm_layout2.json')
+    m = instantiate_model('farm_layout_logcabin9.json')
 
-    TransformationFactory('gdp.bigm').apply_to(m)
-    results = SolverFactory('bonmin').solve(m)
+    bigm = TransformationFactory('gdp.bigm').create_using(m)
+    rbigm = TransformationFactory('core.relax_integer_vars').create_using(bigm)
+    results = SolverFactory('ipopt').solve(rbigm, tee=True)
+
+    # Reference(bigm.Above[...].indicator_var).pprint()
+    # Reference(bigm.Below[...].indicator_var).pprint()
+    # Reference(bigm.RightOf[...].indicator_var).pprint()
+    # Reference(bigm.LeftOf[...].indicator_var).pprint()
+
+    hull = TransformationFactory('gdp.hull').create_using(m)
+    rhull = TransformationFactory('core.relax_integer_vars').create_using(hull)
+
+    results = SolverFactory('ipopt').solve(rhull, tee=True)
+
+    # Reference(hull.Above[...].indicator_var).pprint()
+    # Reference(hull.Below[...].indicator_var).pprint()
+    # Reference(hull.RightOf[...].indicator_var).pprint()
+    # Reference(hull.LeftOf[...].indicator_var).pprint()
+
     set_trace()
