@@ -708,6 +708,9 @@ class SafetyLayout(unittest.TestCase):
 
         self.check_5_rectangle_soln(m)
 
+    # ESJ: These aren't hard problems, but I don't know if we need full tests
+    # fro them because if the model is right on the two above... Anyway, for now
+    # just checking objective values.
     @unittest.skipIf('gurobi' not in solvers, "Gurobi solver not available")
     def test_6_rectangle_bigm(self):
         m = instantiate_safety_layout(join(exdir, 'safety_layout', 
@@ -737,3 +740,23 @@ class SafetyLayout(unittest.TestCase):
         self.assertTrue(results.solver.termination_condition == \
                         TerminationCondition.optimal)
         self.assertAlmostEqual(value(m.obj), 84960.21, places=1)
+
+    @unittest.skipIf('gurobi' not in solvers, "Gurobi solver not available")
+    def test_9_rectangle_bigm(self):
+        m = instantiate_safety_layout(join(exdir, 'safety_layout', 
+                                           'safety_layout9.json'))
+        TransformationFactory('gdp.bigm').apply_to(m)
+        results = SolverFactory('gurobi').solve(m)
+        self.assertTrue(results.solver.termination_condition == \
+                        TerminationCondition.optimal)
+        self.assertAlmostEqual(value(m.obj), 107805.75, places=1)
+
+    @unittest.skipIf('gurobi' not in solvers, "Gurobi solver not available")
+    def test_10_rectangle_bigm(self):
+        m = instantiate_safety_layout(join(exdir, 'safety_layout', 
+                                           'safety_layout10.json'))
+        TransformationFactory('gdp.bigm').apply_to(m)
+        results = SolverFactory('gurobi').solve(m)
+        self.assertTrue(results.solver.termination_condition == \
+                        TerminationCondition.optimal)
+        self.assertAlmostEqual(value(m.obj), 129579.88, places=1)
