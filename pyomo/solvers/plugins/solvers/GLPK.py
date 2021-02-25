@@ -12,8 +12,8 @@ import logging
 import re
 import sys
 import csv
+import subprocess
 
-import pyutilib.subprocess
 from pyomo.common.tempfiles import TempfileManager
 
 from pyomo.common import Executable
@@ -22,7 +22,7 @@ from pyomo.opt import SolverFactory, OptSolver, ProblemFormat, ResultsFormat, So
 from pyomo.opt.base.solvers import _extract_version
 from pyomo.opt.solver import SystemCallSolver
 
-from six import iteritems, string_types
+from six import iteritems
 
 logger = logging.getLogger('pyomo.solvers')
 
@@ -34,10 +34,11 @@ def configure_glpk():
     _glpk_version = _extract_version("")
     if not Executable("glpsol"):
         return
-    errcode, results = pyutilib.subprocess.run(
-        [Executable('glpsol').path(), "--version"], timelimit=2)
-    if errcode == 0:
-        _glpk_version = _extract_version(results)
+    result = subprocess.run([Executable('glpsol').path(), "--version"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            timeout=1, universal_newlines=True)
+    if not result.returncode:
+        _glpk_version = _extract_version(result.stdout)
 
 # Not sure how better to get these constants, but pulled from GLPK
 # documentation and source code (include/glpk.h)
@@ -182,16 +183,12 @@ class GLPKSHELL(SystemCallSolver):
             cmd.insert(0, self._timer)
         for key in self.options:
             opt = self.options[key]
-            if opt is None or (isinstance(opt, string_types) and opt.strip() == ''):
+            if opt is None or (isinstance(opt, str) and opt.strip() == ''):
                 # Handle the case for options that must be
                 # specified without a value
                 cmd.append("--%s" % key)
             else:
                 cmd.extend(["--%s" % key, str(opt)])
-            #if isinstance(opt, basestring) and ' ' in opt:
-            #    cmd.append('--%s "%s"' % (key, str(opt)))
-            #else:
-            #    cmd.append('--%s %s' % (key, str(opt)))
 
         if self._timelimit is not None and self._timelimit > 0.0:
             cmd.extend(['--tmlim', str(self._timelimit)])
