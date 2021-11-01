@@ -66,6 +66,15 @@ def GDPopt_iteration_loop(solve_data, config):
         if algorithm_should_terminate(solve_data, config):
             break
 
+def _terminate_at_iteration_limit(solve_data, config):
+    config.logger.info(
+        'GDPopt unable to converge bounds '
+        'after %s master iterations.'
+        % (solve_data.master_iteration,))
+    config.logger.info(
+        'Final bound values: LB: {:.10g}  UB: {:.10g}'.format(
+            solve_data.LB, solve_data.UB))
+    solve_data.results.solver.termination_condition = tc.maxIterations
 
 def algorithm_should_terminate(solve_data, config):
     """Check if the algorithm should terminate.
@@ -89,14 +98,7 @@ def algorithm_should_terminate(solve_data, config):
 
     # Check iteration limit
     if solve_data.master_iteration >= config.iterlim:
-        config.logger.info(
-            'GDPopt unable to converge bounds '
-            'after %s master iterations.'
-            % (solve_data.master_iteration,))
-        config.logger.info(
-            'Final bound values: LB: {:.10g}  UB: {:.10g}'.format(
-                solve_data.LB, solve_data.UB))
-        solve_data.results.solver.termination_condition = tc.maxIterations
+        _terminate_at_iteration_limit(solve_data, config)
         return True
 
     # Check time limit

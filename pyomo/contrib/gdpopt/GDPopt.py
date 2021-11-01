@@ -38,6 +38,8 @@ from pyomo.common.config import (
     add_docstring_list
 )
 from pyomo.contrib.gdpopt.branch_and_bound import _perform_branch_and_bound
+from pyomo.contrib.gdpopt.enumerate_discrete_decisions import (
+    _enumerate_discrete_decisions)
 from pyomo.contrib.gdpopt.config_options import _get_GDPopt_config
 from pyomo.contrib.gdpopt.iterate import GDPopt_iteration_loop
 from pyomo.contrib.gdpopt.master_initialize import (
@@ -109,10 +111,11 @@ class GDPoptSolver(object):
         config.set_value(kwds)
         if config.strategy is None:
             msg = 'Please specify solution strategy. Options are: \n'
-            msg += '    LOA:  Logic-based Outer Approximation\n'
-            msg += '    GLOA: Global Logic-based Outer Approximation\n'
-            msg += '    LBB:  Logic-based Branch and Bound\n'
-            msg += '    RIC:  Relaxation with Integer Cuts'
+            msg += '    LOA:       Logic-based Outer Approximation\n'
+            msg += '    GLOA:      Global Logic-based Outer Approximation\n'
+            msg += '    LBB:       Logic-based Branch and Bound\n'
+            msg += '    RIC:       Relaxation with Integer Cuts\n'
+            msg += '    enumerate: Enumerate discrete decisions'
             raise ValueError(msg)
 
         with setup_solver_environment(model, config) as solve_data:
@@ -129,14 +132,23 @@ class GDPoptSolver(object):
                 # TODO merge the solver results
                 return presolve_results  # problem presolved
 
-            if solve_data.active_strategy in {'LOA', 'GLOA', 'RIC'}:
+            if solve_data.active_strategy in {'LOA', 'GLOA', 'RIC',
+                                              'enumerate'}:
+                enumerating = solve_data.active_strategy == 'enumerate'
+                if enumerating:
+                    config.init_strategy = 'no_init'
+
                 # Initialize the master problem
                 with time_code(solve_data.timing, 'initialization'):
                     GDPopt_initialize_master(solve_data, config)
 
                 # Algorithm main loop
-                with time_code(solve_data.timing, 'main loop'):
-                    GDPopt_iteration_loop(solve_data, config)
+                if enumerating:
+                    with time_code(solve_data.timing, 'main loop'):
+                        _enumerate_discrete_decisions(solve_data, config)
+                else:
+                    with time_code(solve_data.timing, 'main loop'):
+                        GDPopt_iteration_loop(solve_data, config)
             elif solve_data.active_strategy == 'LBB':
                 _perform_branch_and_bound(solve_data)
             else:

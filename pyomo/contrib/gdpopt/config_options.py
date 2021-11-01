@@ -21,6 +21,7 @@ def _get_GDPopt_config():
         'GLOA',  # Global logic-based outer approximation
         'LBB',  # Logic-based branch-and-bound
         'RIC',  # Relaxation with Integer Cuts
+        'enumerate', # Enumerate all discrete decisions
     }
     CONFIG = ConfigBlock("GDPopt")
     CONFIG.declare("iterlim", ConfigValue(
