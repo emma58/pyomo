@@ -19,9 +19,12 @@ from pyomo.common import deprecated, timing
 from pyomo.common.collections import ComponentSet, Bunch
 from pyomo.contrib.fbbt.fbbt import compute_bounds_on_expr
 from pyomo.contrib.gdpopt.data_class import GDPoptSolveData
+from pyomo.contrib.gdpopt.enumerate_discrete_decisions import (
+    _precalculate_discrete_solutions)
 from pyomo.contrib.mcpp.pyomo_mcpp import mcpp_available, McCormick
 from pyomo.core import (Block, Constraint,
-                        Objective, Reals, Var, minimize, value, ConstraintList)
+                        Objective, Reals, Var, minimize, value, ConstraintList,
+                        LogicalConstraint)
 from pyomo.core.expr.current import identify_variables
 from pyomo.gdp import Disjunct, Disjunction
 from pyomo.opt import SolverFactory, SolverResults
@@ -119,7 +122,7 @@ def process_objective(solve_data, config, move_linear_objective=False,
 
     Check that the model has only 1 valid objective.
     If the objective is nonlinear, move it into the constraints.
-    If no objective function exists, emit a warning and create a dummy 
+    If no objective function exists, emit a warning and create a dummy
     objective.
 
     Parameters
@@ -292,7 +295,7 @@ def is_feasible(model, config):
     return True
 
 
-def build_ordered_component_lists(model, solve_data):
+def build_ordered_component_lists(model, solve_data, config):
     """Define lists used for future data transfer.
 
     Also attaches ordered lists of the variables, constraints, disjuncts, and
@@ -352,7 +355,9 @@ def build_ordered_component_lists(model, solve_data):
         var_set.add(disj.binary_indicator_var)
 
     # We use component_data_objects rather than list(var_set) in order to
-    # preserve a deterministic ordering.
+    # preserve a deterministic ordering. [ESJ 11/3/2021]: TODO: This is a bug,
+    # we will miss variables that aren't on the subtree being solved. We found
+    # them above, but we are losing them below.
     var_list = list(
         v for v in model.component_data_objects(
             ctype=Var, descend_into=(Block, Disjunct))
@@ -369,6 +374,65 @@ def build_ordered_component_lists(model, solve_data):
         if v in var_set and v.is_continuous())
     setattr(util_blk, 'continuous_variable_list', continuous_variable_list)
 
+    if config.strategy == 'enumerate':
+        # we need some more information about the discrete variables
+
+        # First, build out the list of Boolean indicator_vars for each of the
+        # Disjuncts, grouped by Disjunction. We will then just enumerate over
+        # the cartesian product of this list of sets, and that will give the set
+        # of indicator_vars to set to True
+        boolean_variable_list = [v for v in
+                                 get_boolean_vars_from_constraints(model)]
+        disjunctions = []
+        indicator_vars = ComponentSet()
+        indicator_binaries = set()
+        for i, disjunction in enumerate(util_blk.disjunction_list):
+            disjunctions.append([])
+            disjuncts = disjunctions[i]
+            for disjunct in disjunction.disjuncts:
+                v = disjunct.indicator_var
+                disjuncts.append(v)
+                indicator_vars.add(v)
+                indicator_binaries.add(id(disjunct.binary_indicator_var))
+        setattr(util_blk, 'boolean_vars_by_disjunction', disjunctions)
+        setattr(util_blk, 'boolean_indicator_vars', indicator_vars)
+
+        # now we want any BooleanVars on the model that aren't indicator_vars
+        non_indicator_booleans = [v for v in boolean_variable_list if v not in
+                                  indicator_vars]
+        setattr(util_blk, 'non_indicator_boolean_vars', non_indicator_booleans)
+
+        # now we want any discrete variables on the model
+        discrete_var_values = []
+        discrete_vars = []
+        for v in util_blk.discrete_variable_list:
+            # We skip the indicator_vars because we know for sure we have
+            # those. If someone called logical_to_linear first, there still
+            # could be duplicates here, but it's recommended they don't do that,
+            # and nothing will go wrong, this will just be even less
+            # efficient. So I think let's live with that.
+            if id(v) not in indicator_binaries:
+                discrete_vars.append(v)
+                discrete_var_values.append(range(v.lb, v.ub + 1))
+        setattr(util_blk, 'non_indicator_discrete_vars', discrete_vars)
+        setattr(util_blk, 'non_indicator_discrete_var_values',
+                discrete_var_values)
+
+        setattr(util_blk, 'discrete_realizations',
+                [soln for soln in
+                 _precalculate_discrete_solutions(disjunctions,
+                                                  non_indicator_booleans,
+                                                  discrete_var_values)])
+
+def get_boolean_vars_from_constraints(block):
+    seen = set()
+    for c in block.component_data_objects(LogicalConstraint,
+                                          descend_into=(Block,Disjunct),
+                                          active=True):
+        for var in identify_variables(c.expr, include_fixed=False):
+            if id(var) not in seen:
+                seen.add(id(var))
+                yield var
 
 def setup_results_object(solve_data, config):
     """Record problem statistics for original model."""
@@ -430,7 +494,7 @@ def setup_results_object(solve_data, config):
 
 
 def constraints_in_True_disjuncts(model, config):
-    """Yield constraints in disjuncts where the indicator value is set or 
+    """Yield constraints in disjuncts where the indicator value is set or
     fixed to True."""
     for constr in model.component_data_objects(Constraint):
         yield constr
@@ -502,7 +566,7 @@ def lower_logger_level_to(logger, level=None):
 
 
 @contextmanager
-def create_utility_block(model, name, solve_data):
+def create_utility_block(model, name, solve_data, config):
     created_util_block = False
     # Create a model block on which to store GDPopt-specific utility
     # modeling objects.
@@ -519,7 +583,7 @@ def create_utility_block(model, name, solve_data):
 
         # Save ordered lists of main modeling components, so that data can
         # be easily transferred between future model clones.
-        build_ordered_component_lists(model, solve_data)
+        build_ordered_component_lists(model, solve_data, config)
     yield
     if created_util_block:
         model.del_component(name)
@@ -534,7 +598,7 @@ def setup_solver_environment(model, config):
     min_logging_level = logging.INFO if config.tee else None
     with time_code(solve_data.timing, 'total', is_main_timer=True), \
             lower_logger_level_to(config.logger, min_logging_level), \
-            create_utility_block(model, 'GDPopt_utils', solve_data):
+            create_utility_block(model, 'GDPopt_utils', solve_data, config):
 
         # Create a working copy of the original model
         solve_data.original_model = model
@@ -587,6 +651,6 @@ def setup_solver_environment(model, config):
 
 
 def indent(text, prefix):
-    """This should be replaced with textwrap.indent when we stop supporting 
+    """This should be replaced with textwrap.indent when we stop supporting
     python 2.7."""
     return ''.join(prefix + line for line in text.splitlines(True))

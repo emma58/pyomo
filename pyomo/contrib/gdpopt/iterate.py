@@ -8,8 +8,12 @@ from pyomo.contrib.gdpopt.mip_solve import solve_LOA_master
 from pyomo.contrib.gdpopt.nlp_solve import (solve_global_subproblem,
                                             solve_local_subproblem)
 from pyomo.opt import TerminationCondition as tc
+from pyomo.core.base.objective import Objective, minimize
+from pyomo.core.expr.numvalue import value
 from pyomo.contrib.gdpopt.util import time_code, get_main_elapsed_time
-
+from pyomo.contrib.gdpopt.enumerate_discrete_decisions import (
+    _fix_discrete_solution)
+from nose.tools import set_trace
 
 def GDPopt_iteration_loop(solve_data, config):
     """Algorithm main loop.
@@ -17,16 +21,33 @@ def GDPopt_iteration_loop(solve_data, config):
     Returns True if successful convergence is obtained. False otherwise.
 
     """
+    enumerating = solve_data.active_strategy == 'enumerate'
+    num_discrete_solns = None
+    if enumerating:
+        num_discrete_solns = len(
+            solve_data.linear_GDP.GDPopt_utils.discrete_realizations)
+
     while solve_data.master_iteration < config.iterlim:
         # Set iteration counters for new master iteration.
         solve_data.master_iteration += 1
         solve_data.mip_iteration = 0
         solve_data.nlp_iteration = 0
 
-        # print line for visual display
-        config.logger.info(
-            '---GDPopt Master Iteration %s---'
-            % solve_data.master_iteration)
+        if enumerating:
+            # Warn people if they're insane
+            config.logger.info('---GDPopt Enumeration Iteration %s of %s---' %
+                               (solve_data.master_iteration,
+                                num_discrete_solns))
+
+            # 'fix' a master solution so that master will be a feasibility
+            # problem
+            _fix_discrete_solution(solve_data, solve_data.master_iteration - 1)
+
+        else:
+            # print line for visual display
+            config.logger.info(
+                '---GDPopt Master Iteration %s---'
+                % solve_data.master_iteration)
 
         # solve linear master problem
         with time_code(solve_data.timing, 'mip'):
@@ -35,6 +56,15 @@ def GDPopt_iteration_loop(solve_data, config):
         # Check termination conditions
         if algorithm_should_terminate(solve_data, config):
             break
+
+        # go to next discrete solution without solving the subproblem, if this
+        # one wasn't feasible.
+        if enumerating and not mip_result.feasible:
+            if solve_data.master_iteration < num_discrete_solns:
+                continue
+            else: # we're done
+                _close_enumeration_bounds(solve_data)
+                break
 
         # Solve NLP subproblem
         if solve_data.active_strategy == 'LOA':
@@ -53,30 +83,44 @@ def GDPopt_iteration_loop(solve_data, config):
             with time_code(solve_data.timing, 'nlp'):
                 nlp_result = solve_local_subproblem(mip_result, solve_data,
                                                     config)
+        elif enumerating:
+            with time_code(solve_data.timing, 'nlp'):
+                nlp_result = solve_global_subproblem(mip_result, solve_data,
+                                                     config)
         else:
             raise ValueError('Unrecognized strategy: ' +
                              solve_data.active_strategy)
 
         # Add integer cut
-        add_integer_cut(
-            mip_result.var_values, solve_data.linear_GDP, solve_data, config,
-            feasible=nlp_result.feasible)
+        if not enumerating:
+            add_integer_cut(mip_result.var_values, solve_data.linear_GDP,
+                            solve_data, config, feasible=nlp_result.feasible)
 
         # Check termination conditions
-        if algorithm_should_terminate(solve_data, config):
+        if algorithm_should_terminate(solve_data, config, num_discrete_solns):
             break
 
-def _terminate_at_iteration_limit(solve_data, config):
-    config.logger.info(
-        'GDPopt unable to converge bounds '
-        'after %s master iterations.'
-        % (solve_data.master_iteration,))
-    config.logger.info(
-        'Final bound values: LB: {:.10g}  UB: {:.10g}'.format(
-            solve_data.LB, solve_data.UB))
-    solve_data.results.solver.termination_condition = tc.maxIterations
+def _close_enumeration_bounds(solve_data):
+    if solve_data.best_solution_found is None:
+        # the problem is infeasible: We never solved a subproblem
+        solve_data.results.solver.termination_condition = tc.infeasible
+        objective = next(
+            solve_data.working_model.component_data_objects(Objective,
+                                                            active=True))
+        if objective.sense == minimize:
+            solve_data.LB = float('inf')
+        else:
+            solve_data.UB = -float('inf')
+    else:
+        # we know the optimal solution: set the bounds accordingly
+        obj_val = value(next(
+            solve_data.best_solution_found.component_data_objects(
+                Objective, active=True)))
+        solve_data.LB = obj_val
+        solve_data.UB = obj_val
+        solve_data.results.solver.termination_condition = tc.optimal
 
-def algorithm_should_terminate(solve_data, config):
+def algorithm_should_terminate(solve_data, config, num_enumeration_iters=None):
     """Check if the algorithm should terminate.
 
     Termination conditions based on solver options and progress.
@@ -96,9 +140,23 @@ def algorithm_should_terminate(solve_data, config):
             solve_data.results.solver.termination_condition = tc.optimal
         return True
 
+    # Check if we're done enumerating
+    if num_enumeration_iters is not None and \
+       solve_data.master_iteration >= num_enumeration_iters:
+        _close_enumeration_bounds(solve_data)
+        return True
+
     # Check iteration limit
     if solve_data.master_iteration >= config.iterlim:
-        _terminate_at_iteration_limit(solve_data, config)
+        config.logger.info(
+            'GDPopt unable to converge bounds '
+            'after %s master iterations.'
+            % (solve_data.master_iteration,))
+        config.logger.info(
+            'Final bound values: LB: {:.10g}  UB: {:.10g}'.format(
+                solve_data.LB, solve_data.UB))
+        solve_data.results.solver.termination_condition = tc.maxIterations
+
         return True
 
     # Check time limit

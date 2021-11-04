@@ -22,6 +22,7 @@ def solve_linear_GDP(linear_GDP_model, solve_data, config):
     """Solves the linear GDP model and attempts to resolve solution issues."""
     m = linear_GDP_model
     GDPopt = m.GDPopt_utils
+    enumerating = config.strategy == 'enumerate'
     # Transform disjunctions
     _bigm = TransformationFactory('gdp.bigm')
     _bigm.handlers[Port] = False
@@ -111,7 +112,9 @@ def solve_linear_GDP(linear_GDP_model, solve_data, config):
         # resolve with a solver option flag on.
         results, terminate_cond = distinguish_mip_infeasible_or_unbounded(
             m, config)
-    if terminate_cond is tc.unbounded:
+    # ESJ TODO: make sure this is tested for enumeration--that we get a mip
+    # solution when we skip this
+    if not enumerating and terminate_cond is tc.unbounded:
         # Solution is unbounded. Add an arbitrary bound to the objective and
         # resolve.  This occurs when the objective is nonlinear. The nonlinear
         # objective is moved to the constraints, and deactivated for the linear
@@ -141,9 +144,13 @@ def solve_linear_GDP(linear_GDP_model, solve_data, config):
     if terminate_cond in {tc.optimal, tc.locallyOptimal, tc.feasible}:
         pass
     elif terminate_cond is tc.infeasible:
-        config.logger.info(
-            'Linear GDP is now infeasible. '
-            'GDPopt has finished exploring feasible discrete configurations.')
+        if enumerating:
+            config.logger.info('Discrete solution is not feasible.')
+        else:
+            config.logger.info(
+                'Linear GDP is now infeasible. '
+                'GDPopt has finished exploring feasible discrete '
+                'configurations.')
         mip_result.feasible = False
     elif terminate_cond is tc.maxTimeLimit:
         # TODO check that status is actually ok and everything is feasible
@@ -154,9 +161,10 @@ def solve_linear_GDP(linear_GDP_model, solve_data, config):
           results.solution.status is SolutionStatus.feasible):
         # load the solution and suppress the warning message by setting
         # solver status to ok.
-        config.logger.info(
-            'Linear GDP solver reported feasible solution, '
-            'but not guaranteed to be optimal.')
+        if not enumerating:
+            config.logger.info(
+                'Linear GDP solver reported feasible solution, '
+                'but not guaranteed to be optimal.')
     else:
         raise ValueError(
             'GDPopt unable to handle linear GDP '
@@ -195,6 +203,7 @@ def solve_LOA_master(solve_data, config):
     GDPopt = m.GDPopt_utils
     solve_data.mip_iteration += 1
     main_objective = next(m.component_data_objects(Objective, active=True))
+    enumerating = solve_data.active_strategy == 'enumerate'
 
     if solve_data.active_strategy == 'LOA':
         # Set up augmented Lagrangean penalty objective
@@ -211,17 +220,20 @@ def solve_LOA_master(solve_data, config):
 
         obj_expr = GDPopt.oa_obj.expr
         base_obj_expr = main_objective.expr
-    elif solve_data.active_strategy in {'GLOA', 'RIC'}:
+    elif solve_data.active_strategy in {'GLOA', 'RIC', 'enumerate'}:
+        # ESJ: TODO: For enumerate this should be a feasibility problem, but the
+        # problem is I don't know how to make it so in not a solver-specific way
         obj_expr = base_obj_expr = main_objective.expr
     else:
         raise ValueError('Unrecognized strategy: ' + solve_data.active_strategy)
 
     mip_result = solve_linear_GDP(m, solve_data, config)
     if mip_result.feasible:
-        if main_objective.sense == minimize:
-            solve_data.LB = max(value(obj_expr), solve_data.LB)
-        else:
-            solve_data.UB = min(value(obj_expr), solve_data.UB)
+        if not enumerating:
+            if main_objective.sense == minimize:
+                solve_data.LB = max(value(obj_expr), solve_data.LB)
+            else:
+                solve_data.UB = min(value(obj_expr), solve_data.UB)
         solve_data.iteration_log[
             (solve_data.master_iteration,
              solve_data.mip_iteration,
@@ -239,7 +251,7 @@ def solve_LOA_master(solve_data, config):
                 solve_data.nlp_iteration,
                 value(obj_expr),
                 solve_data.LB, solve_data.UB))
-    else:
+    elif not enumerating:
         # Master problem was infeasible.
         if solve_data.master_iteration == 1:
             config.logger.warning(

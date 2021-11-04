@@ -811,3 +811,27 @@ def makeThreeTermDisjunctionWithOneVarInOneDisjunct():
     m.disjunction = Disjunction(expr=[m.d1, m.d2, m.d3])
 
     return m
+
+
+##
+# For GDPopt tests
+##
+
+def makeTwoTermLinearWithQuadraticObj():
+    m = ConcreteModel()
+    m.x = Var(bounds=(-1, 10))
+    m.y = Var(bounds=(2, 3))
+    m.d = Disjunction(expr=[
+        [m.x + m.y >= 5], [m.x - m.y <= 3]
+    ])
+    m.o = Objective(expr=m.x ** 2)
+    return m
+
+def makeInfeasibleModel():
+    m = ConcreteModel()
+    m.x = Var(bounds=(0, 2))
+    m.d = Disjunction(expr=[
+        [m.x ** 2 >= 3, m.x >= 3],
+        [m.x ** 2 <= -1, m.x <= -1]])
+    m.o = Objective(expr=m.x)
+    return m

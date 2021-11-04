@@ -26,6 +26,7 @@ from pyomo.contrib.gdpopt.util import is_feasible, time_code
 from pyomo.environ import ( ConcreteModel, Objective, SolverFactory, Var, value,
                             Integers, Block, Constraint, maximize)
 from pyomo.gdp import Disjunct, Disjunction
+from pyomo.gdp.tests import models
 from pyomo.contrib.mcpp.pyomo_mcpp import mcpp_available
 from pyomo.opt import TerminationCondition
 
@@ -184,12 +185,7 @@ class TestGDPopt(unittest.TestCase):
 
     def test_infeasible_GDP(self):
         """Test for infeasible GDP."""
-        m = ConcreteModel()
-        m.x = Var(bounds=(0, 2))
-        m.d = Disjunction(expr=[
-            [m.x ** 2 >= 3, m.x >= 3],
-            [m.x ** 2 <= -1, m.x <= -1]])
-        m.o = Objective(expr=m.x)
+        m = models.makeInfeasibleModel()
         output = StringIO()
         with LoggingIntercept(output, 'pyomo.contrib.gdpopt', logging.WARNING):
             SolverFactory('gdpopt').solve(
@@ -200,13 +196,7 @@ class TestGDPopt(unittest.TestCase):
                           output.getvalue().strip())
 
     def test_GDP_nonlinear_objective(self):
-        m = ConcreteModel()
-        m.x = Var(bounds=(-1, 10))
-        m.y = Var(bounds=(2, 3))
-        m.d = Disjunction(expr=[
-            [m.x + m.y >= 5], [m.x - m.y <= 3]
-        ])
-        m.o = Objective(expr=m.x ** 2)
+        m = models.makeTwoTermLinearWithQuadraticObj()
         SolverFactory('gdpopt').solve(
             m, strategy='LOA',
             mip_solver=mip_solver,
@@ -214,13 +204,8 @@ class TestGDPopt(unittest.TestCase):
         )
         self.assertAlmostEqual(value(m.o), 0)
 
-        m = ConcreteModel()
-        m.x = Var(bounds=(-1, 10))
-        m.y = Var(bounds=(2, 3))
-        m.d = Disjunction(expr=[
-            [m.x + m.y >= 5], [m.x - m.y <= 3]
-        ])
-        m.o = Objective(expr=-m.x ** 2, sense=maximize)
+        m.o.deactivate()
+        m.o2 = Objective(expr=-m.x**2, sense=maximize)
         SolverFactory('gdpopt').solve(
             m, strategy='LOA',
             mip_solver=mip_solver,

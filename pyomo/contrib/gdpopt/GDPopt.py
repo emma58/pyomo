@@ -38,8 +38,6 @@ from pyomo.common.config import (
     add_docstring_list
 )
 from pyomo.contrib.gdpopt.branch_and_bound import _perform_branch_and_bound
-from pyomo.contrib.gdpopt.enumerate_discrete_decisions import (
-    _enumerate_discrete_decisions)
 from pyomo.contrib.gdpopt.config_options import _get_GDPopt_config
 from pyomo.contrib.gdpopt.iterate import GDPopt_iteration_loop
 from pyomo.contrib.gdpopt.master_initialize import (
@@ -134,21 +132,18 @@ class GDPoptSolver(object):
 
             if solve_data.active_strategy in {'LOA', 'GLOA', 'RIC',
                                               'enumerate'}:
-                enumerating = solve_data.active_strategy == 'enumerate'
-                if enumerating:
+                if solve_data.active_strategy == 'enumerate':
+                    # We don't want to add cuts to the master: the whole point
+                    # of enumerating is to not mess with it.
                     config.init_strategy = 'no_init'
+                    config.mip_presolve = False
 
                 # Initialize the master problem
                 with time_code(solve_data.timing, 'initialization'):
                     GDPopt_initialize_master(solve_data, config)
 
-                # Algorithm main loop
-                if enumerating:
-                    with time_code(solve_data.timing, 'main loop'):
-                        _enumerate_discrete_decisions(solve_data, config)
-                else:
-                    with time_code(solve_data.timing, 'main loop'):
-                        GDPopt_iteration_loop(solve_data, config)
+                with time_code(solve_data.timing, 'main loop'):
+                    GDPopt_iteration_loop(solve_data, config)
             elif solve_data.active_strategy == 'LBB':
                 _perform_branch_and_bound(solve_data)
             else:

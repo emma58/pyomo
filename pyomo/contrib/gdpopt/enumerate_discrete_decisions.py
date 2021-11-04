@@ -2,72 +2,49 @@
 #
 #  Pyomo: Python Optimization Modeling Objects
 #  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
-#  Under the terms of Contract DE-NA0003525 with National Technology and 
-#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain 
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-from pyomo.contrib.gdpopt.nlp_solve import solve_global_subproblem
-from pyomo.contrib.gdpopt.data_class import MasterProblemResult
-from pyomo.contrib.gdpopt.iterate import _terminate_at_iteration_limit
-
-from pyomo.opt import TerminationCondition as tc
-from pyomo.common.collections import ComponentSet
+"""Utility functions for the enumeration strategy."""
 
 from itertools import product
+from nose.tools import set_trace
+from pyomo.common.collections import ComponentSet
 
-def _enumerate_discrete_decisions(solve_data, config):
-    """Main loop for the enumeration strategy. Note that we enumerate over all 
-    the possible decisions for the indicator variables, so the subproblems 
-    might be MINLPs if there are discrete decisions on the model.
+def _precalculate_discrete_solutions(disjunctions, non_indicator_boolean_vars,
+                                     discrete_var_values):
+    # now we will calculate all the possible indicator_var realizations, and
+    # then multiply those out by all the boolean var realizations and all the
+    # integer var realizations.
+    realizations = []
+    for true_indicators in product(*disjunctions):
+        for boolean_realization in product(
+                [True, False], repeat=len(non_indicator_boolean_vars)):
+            for integer_realization in product(*discrete_var_values):
+                yield (ComponentSet(true_indicators), boolean_realization,
+                       integer_realization)
 
-    Returns True if it enumerates all decisions or terminates at the iteration 
-    limit.
-    """
-    # Build out the list of BooleanVars for each of the Disjuncts, grouped by
-    # Disjunction. We will then just enumerate over the cartesian product of
-    # this list of sets, and that will give the set of BooleanVars to set to
-    # True
-    m = solve_data.working_model
-    GDPopt_util = m.GDPopt_utils
-    disjunctions = []
-    for i, disjunction in enumerate(GDPopt_util.disjunction_list):
-        disjunctions.append([])
-        disjuncts = disjunctions[i]
-        for disjunct in disjunction.disjuncts:
-            v = disjunct.indicator_var
-            disjuncts.append(v)
-            v.fix(False)
+def _fix_discrete_solution(solve_data, idx):
+    util_blk = solve_data.linear_GDP.GDPopt_utils
+    (true_indicators, boolean_realization,
+     integer_realization) = util_blk.discrete_realizations[idx]
 
-    for true_vars in product(*disjunctions):
-        solve_data.master_iteration += 1
-        # print line for visual display
-        config.logger.info( '---GDPopt Iteration %s---' %
-                            solve_data.master_iteration)
+    for boolean_var in util_blk.boolean_indicator_vars:
+        binary = 1 if boolean_var in true_indicators else 0
+        # 'Fix' to value, but do it via the bounds so that we will have
+        # something sent to solver, making *it* check the feasibility problem.
+        boolean_var.get_associated_binary().setlb(binary)
+        boolean_var.get_associated_binary().setub(binary)
 
-        for v in true_vars:
-            v.fix(True)
-        # all the other vars are already False
+    for var, val in zip(util_blk.non_indicator_boolean_vars,
+                             boolean_realization):
+        binary = 1 if val else 0
+        var.get_associated_binary().setlb(binary)
+        var.get_associated_binary().setub(binary)
 
-        mip_results = MasterProblemResult()
-        mip_results.disjunct_values = list(disj.binary_indicator_var.value for
-                                           disj in GDPopt_util.disjunct_list)
-
-        # solve the NLP subproblem globally. (This will keep track of the best
-        # solution found)
-        nlp_result = solve_global_subproblem(mip_results, solve_data, config)
-
-        if solve_data.master_iteration >= config.iterlim:
-            _terminate_at_iteration_limit(solve_data, config)
-            return True
-
-        # restore state of boolean vars
-        for v in true_vars:
-            v.fix(False)
-
-    # By virtue of finishing the above loop, the bounds have closed.
-    solve_data.LB = solve_data.UB
-    solve_data.results.solver.termination_condition = tc.optimal
-    
-    return True
+    for var, val in zip(util_blk.non_indicator_discrete_vars,
+                             integer_realization):
+        var.fix(val)

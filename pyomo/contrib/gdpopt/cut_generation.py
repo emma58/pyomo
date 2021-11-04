@@ -30,7 +30,7 @@ def add_subproblem_cuts(subprob_result, solve_data, config):
         return add_outer_approximation_cuts(subprob_result, solve_data, config)
     elif config.strategy == "GLOA":
         return add_affine_cuts(subprob_result, solve_data, config)
-    elif config.strategy == 'RIC':
+    elif config.strategy == 'RIC' or config.strategy == 'enumerate':
         pass
     else:
         raise ValueError('Unrecognized strategy: ' + config.strategy)
