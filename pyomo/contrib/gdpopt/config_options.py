@@ -121,7 +121,7 @@ def _add_OA_configs(CONFIG):
     ))
     CONFIG.declare("mip_presolve", ConfigValue(
         default=True,
-        description="Flag to enable or diable GDPopt MIP presolve. "
+        description="Flag to enable or disable GDPopt MIP presolve. "
         "Default=True.",
         domain=bool
     ))
