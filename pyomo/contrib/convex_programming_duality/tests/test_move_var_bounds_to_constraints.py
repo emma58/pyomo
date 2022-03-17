@@ -11,7 +11,7 @@
 import pyomo.common.unittest as unittest
 from pyomo.core import (
     ConcreteModel, Var, Constraint, NonNegativeReals, NonPositiveReals,
-    PositiveIntegers, NegativeIntegers, Block, Binary, NonPositiveReals)
+    PositiveIntegers, NegativeIntegers, Block, Binary)
 from pyomo.core.base import TransformationFactory
 # register the transformation
 from pyomo.contrib.convex_programming_duality.\
