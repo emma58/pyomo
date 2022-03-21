@@ -15,6 +15,7 @@ from pyomo.core.base import (
 from pyomo.common.config import ConfigBlock, ConfigValue
 from pyomo.core.plugins.transform.hierarchy import Transformation
 from pyomo.common.modeling import unique_component_name
+from pyomo.util.vars_from_expressions import get_vars_from_components
 from pyomo.common.collections import ComponentSet, ComponentMap
 from pyomo.repn import generate_standard_repn
 # register the transformation
@@ -106,23 +107,40 @@ class Linearly_Constrained_Dual(Transformation):
         config = self.CONFIG(kwds.pop('options', {}))
         config.set_value(kwds)
 
-        TransformationFactory(
-            'contrib.move_var_bounds_to_constraints').apply_to(instance)
+        try:
+            fixed_vars = []
+            if not config.assume_fixed_vars_permanent:
+                for v in get_vars_from_components(instance, ctype=(Constraint,
+                                                                   Objective),
+                                                  include_fixed=True,
+                                                  active=True,
+                                                  descend_into=Block):
+                    if v.fixed:
+                        fixed_vars.append(v)
+                        v.unfix()
 
-        primal_obj = self._get_objective(instance)
-        obj_coefs = self._get_obj_coef_map(primal_obj.expr)
+            TransformationFactory(
+                'contrib.move_var_bounds_to_constraints').apply_to(instance)
 
-        dual_block = self._create_transformation_block(instance,
-                                                       config.dual_block_name)
-        
-        (primal_constraints, 
-         primal_variables) = self._create_dual_variables(instance, dual_block,
-                                                         primal_obj.sense)
+            primal_obj = self._get_objective(instance)
+            primal_obj.deactivate()
+            obj_coefs = self._get_obj_coef_map(primal_obj.expr)
 
-        self._create_dual_objective_and_constraints(primal_constraints,
-                                                    primal_variables, obj_coefs,
-                                                    dual_block,
-                                                    primal_obj.sense)
+            dual_block = self._create_transformation_block(
+                instance, config.dual_block_name)
+
+            (primal_constraints, 
+             primal_variables) = self._create_dual_variables(instance,
+                                                             dual_block,
+                                                             primal_obj.sense)
+
+            self._create_dual_objective_and_constraints(primal_constraints,
+                                                        primal_variables,
+                                                        obj_coefs, dual_block,
+                                                        primal_obj.sense)
+        finally:
+            for v in fixed_vars:
+                v.fix()
 
     def _get_objective(self, instance):
         active_objectives = [obj for obj in
@@ -164,6 +182,7 @@ class Linearly_Constrained_Dual(Transformation):
             dual_block.add_component(unique_component_name(
                 dual_block, '%s_dual' % cons.name), duals)
             for idx, cons in cons.items():
+                cons.deactivate()
                 # idx could be None if this thing wasn't indexed, but it's okay
                 lower = cons.lower
                 upper = cons.upper

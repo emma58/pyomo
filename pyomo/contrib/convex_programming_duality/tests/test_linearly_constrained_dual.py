@@ -70,7 +70,13 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         check_linear_coef(self, repn, d2, 0.2)
         self.assertEqual(repn.constant, 0)
 
-    def test_minimization_dual(self):
+    def check_original_components_deactivated(self, m):
+        self.assertFalse(m.obj.active)
+        self.assertFalse(m.equality.active)
+        self.assertFalse(m.geq.active)
+        self.assertFalse(m.leq.active)
+
+    def make_minimization_model(self):
         m = ConcreteModel()
         m.x = Var(domain=Reals)
         m.y = Var(domain=NonNegativeReals)
@@ -79,11 +85,17 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m.geq = Constraint(expr=m.x >= 0.2)
         m.leq = Constraint(expr=m.x - m.y <= 0)
 
+        return m
+
+    def test_minimization_dual(self):
+        m = self.make_minimization_model()
+
         TransformationFactory(
             'contrib.convex_linearly_constrained_dual').apply_to(m)
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
         self.check_transformation_block(blk)
+        self.check_original_components_deactivated(m)
         
     def test_maximization_dual(self):
         pass
@@ -108,9 +120,19 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
         self.check_transformation_block(blk)
+        self.check_original_components_deactivated(m)
 
     def test_fixed_vars_not_fixed_forever(self):
-        pass
+        m = self.make_minimization_model()
+        m.x.fix(13)
+
+        TransformationFactory(
+            'contrib.convex_linearly_constrained_dual').apply_to(
+                m, assume_fixed_vars_permanent=False)
+
+        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        self.check_transformation_block(blk)
+        self.check_original_components_deactivated(m)
 
     def test_vars_treated_as_rhs(self):
         pass
@@ -128,7 +150,47 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
             'contrib.convex_linearly_constrained_dual').apply_to(m)
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
-        
+        self.assertEqual(len(blk.component_map(Var)), 1)
+        self.assertEqual(len(blk.component_map(Constraint)), 1)
+        self.assertEqual(len(blk.component_map(Objective)), 1)
+
+        d = blk.component("cons_dual")
+        self.assertIsInstance(d, Var)
+        self.assertEqual(d.domain, NonNegativeReals)
+        dual_constraints = blk.component("x")
+        self.assertIsInstance(dual_constraints, Constraint)
+        self.assertEqual(len(dual_constraints), 3)
+
+        c1 = dual_constraints[1]
+        self.assertEqual(c1.upper, 1)
+        self.assertIsNone(c1.lower)
+        repn = generate_standard_repn(c1.body)
+        self.assertEqual(repn.constant, 0)
+        check_linear_coef(self, repn, d, 1)
+        self.assertEqual(len(repn.linear_vars), 1)
+
+        c2 = dual_constraints[2]
+        self.assertEqual(c2.upper, 1)
+        self.assertIsNone(c2.lower)
+        repn = generate_standard_repn(c2.body)
+        self.assertEqual(repn.constant, 0)
+        check_linear_coef(self, repn, d, 2)
+        self.assertEqual(len(repn.linear_vars), 1)
+
+        c3 = dual_constraints[3]
+        self.assertEqual(c3.upper, 0)
+        self.assertIsNone(c2.lower)
+        repn = generate_standard_repn(c3.body)
+        self.assertEqual(repn.constant, 0)
+        check_linear_coef(self, repn, d, 3)
+        self.assertEqual(len(repn.linear_vars), 1)
+
+        obj = blk.component("dual_obj")
+        self.assertIsInstance(obj, Objective)
+        repn = generate_standard_repn(obj.expr)
+        self.assertEqual(repn.constant, 0)
+        check_linear_coef(self, repn, d, 7)
+        self.assertEqual(len(repn.linear_vars), 1)
 
     def test_deactivated_primal_constraints_ignored(self):
         pass
