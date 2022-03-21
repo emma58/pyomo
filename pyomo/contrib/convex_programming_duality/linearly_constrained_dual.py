@@ -14,10 +14,13 @@ from pyomo.core.base import (
     value)
 from pyomo.common.config import ConfigBlock, ConfigValue
 from pyomo.core.plugins.transform.hierarchy import Transformation
+from pyomo.core.expr.numvalue import is_potentially_variable
 from pyomo.common.modeling import unique_component_name
 from pyomo.util.vars_from_expressions import get_vars_from_components
 from pyomo.common.collections import ComponentSet, ComponentMap
 from pyomo.repn import generate_standard_repn
+from pyomo.contrib.fme.fourier_motzkin_elimination import \
+    vars_to_eliminate_list as var_list
 # register the transformation
 from pyomo.contrib.convex_programming_duality.\
     move_var_bounds_to_constraints import Move_Variable_Bounds_to_Constraints
@@ -93,6 +96,20 @@ class Linearly_Constrained_Dual(Transformation):
         '_pyomo_contrib_linearly_constrained_dual'
         """
     ))
+    CONFIG.declare('treat_as_data', ConfigValue(
+        default=[],
+        domain=var_list,
+        description="List of primal variables that should be treated as data. "
+        "That is, the primal does not optimize them, so the dual should be "
+        "taken treating them as coefficients or right-hand side constants.",
+        doc="""
+        List of primal variables that should be treated as data. (This is a
+        common situation in bilevel programming, when taking the dual of an
+        inner problem that involves but does not optimize outer-problem
+        variables.) Variables in this list will be treated as coefficients or
+        right-hand-side constants, depending on where they appear.
+        """
+    ))
     _domains = {
         (minimize, 'leq') : NonPositiveReals,
         (minimize, 'geq') : NonNegativeReals,
@@ -118,6 +135,8 @@ class Linearly_Constrained_Dual(Transformation):
                     if v.fixed:
                         fixed_vars.append(v)
                         v.unfix()
+            for v in config.treat_as_data:
+                v.fix()
 
             TransformationFactory(
                 'contrib.move_var_bounds_to_constraints').apply_to(instance)
@@ -139,6 +158,8 @@ class Linearly_Constrained_Dual(Transformation):
                                                         obj_coefs, dual_block,
                                                         primal_obj.sense)
         finally:
+            for v in config.treat_as_data:
+                v.unfix()
             for v in fixed_vars:
                 v.fix()
 
@@ -153,7 +174,7 @@ class Linearly_Constrained_Dual(Transformation):
         return active_objectives[0]
 
     def _get_obj_coef_map(self, expr):
-        repn = generate_standard_repn(expr)
+        repn = generate_standard_repn(expr, compute_values=False)
         if not repn.is_linear():
             raise NotImplementedError("Objective is nonlinear!")
         return ComponentMap([(var, coef) for coef, var in 
@@ -186,7 +207,7 @@ class Linearly_Constrained_Dual(Transformation):
                 # idx could be None if this thing wasn't indexed, but it's okay
                 lower = cons.lower
                 upper = cons.upper
-                body = generate_standard_repn(cons.body)
+                body = generate_standard_repn(cons.body, compute_values=False)
                 if not body.is_linear():
                     raise ValueError(
                         "Detected nonlinear constraint body in constraint "
@@ -272,7 +293,7 @@ class Linearly_Constrained_Dual(Transformation):
             for dual_var, (cons_type, coef_map, primal_rhs) in \
                 primal_constraints.items():
                 coef = coef_map.get(primal_var, 0)
-                if coef != 0:
+                if is_potentially_variable(coef) or value(coef) != 0:
                     expr += coef*dual_var
             dual_constraint_exprs[dual_consData] = [dual_cons_type, expr,
                                                     dual_rhs]
@@ -289,7 +310,7 @@ class Linearly_Constrained_Dual(Transformation):
         obj_expr = 0
         for dual_var, (cons_type, coef_map, rhs) in \
                 primal_constraints.items():
-            if rhs != 0:
+            if is_potentially_variable(rhs) or value(rhs) != 0:
                 obj_expr += rhs*dual_var
         dual_block.add_component(unique_component_name(dual_block, "dual_obj"),
                                  Objective(expr=obj_expr, sense=minimize if

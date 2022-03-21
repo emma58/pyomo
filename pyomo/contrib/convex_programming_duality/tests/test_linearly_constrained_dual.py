@@ -12,7 +12,7 @@ import pyomo.common.unittest as unittest
 from pyomo.core import ( ConcreteModel, Var, Constraint, NonNegativeReals,
                          NonPositiveReals, Block, Reals, NonNegativeReals,
                          Objective, value, maximize, minimize, Integers,
-                         ConstraintList)
+                         ConstraintList, Binary)
 from pyomo.core.base import TransformationFactory
 # register the transformation
 from pyomo.contrib.convex_programming_duality.linearly_constrained_dual import \
@@ -51,7 +51,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
 
         c2 = blk.component("y")
         self.assertIsInstance(c2, Constraint)
-        self.assertEqual(c2.upper, 3)
+        self.assertEqual(value(c2.upper), 3)
         self.assertIsNone(c2.lower)
         repn = generate_standard_repn(c2.body)
         self.assertTrue(repn.is_linear())
@@ -129,6 +129,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
                 m, assume_fixed_vars_permanent=True)
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk.pprint()
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
 
@@ -143,9 +144,6 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
-
-    def test_vars_treated_as_rhs(self):
-        pass
 
     def test_indexed_constraints_make_indexed_dual_vars(self):
         m = ConcreteModel()
@@ -301,3 +299,91 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.check_original_components_deactivated(m)
 
         self.assertFalse(m.silly_cons.active)
+
+    def check_quadratic_term_coef(self, repn, v1, v2, coef):
+        idx = None
+        for i, (term1, term2) in enumerate(repn.quadratic_vars):
+            if (term1 is v1 and term2 is v2) or (term1 is v2 and term2 is v1):
+                idx = i
+                break
+        self.assertIsNotNone(idx)
+        self.assertEqual(repn.quadratic_coefs[idx], coef)
+
+    def check_vars_treated_as_data_block(self, m, blk):
+        self.assertEqual(len(blk.component_map(Objective)), 1)
+        self.assertEqual(len(blk.component_map(Constraint)), 1)
+        self.assertEqual(len(blk.component_map(Var)), 2)
+
+        # dual vars
+        d1 = blk.component("c1_dual")
+        d2 = blk.component("c2_dual")
+        self.assertEqual(d1.domain, Reals)
+        self.assertEqual(d2.domain, NonNegativeReals)
+
+        # obj
+        obj = blk.component("dual_obj")
+        repn = generate_standard_repn(obj.expr)
+        self.assertEqual(repn.constant, 0)
+        self.assertTrue(repn.is_quadratic())
+        self.assertEqual(len(repn.quadratic_vars), 2)
+        self.assertEqual(len(repn.linear_vars), 1)
+        self.check_quadratic_term_coef(repn, m.y[2], d1, 4)
+        self.check_quadratic_term_coef(repn, m.y[2], d2, -4)
+        check_linear_coef(self, repn, d2, 5)
+        
+        # constraints
+        c = blk.component("x")
+        self.assertEqual(len(c), 2)
+        c1 = c[1]
+        self.assertIsNone(c1.lower)
+        self.assertEqual(c1.upper, 0)
+        repn = generate_standard_repn(c1.body)
+        self.assertEqual(repn.constant, 0)
+        self.assertTrue(repn.is_linear())
+        self.assertEqual(len(repn.linear_vars), 2)
+        check_linear_coef(self, repn, d1, -1)
+        check_linear_coef(self, repn, m.y[1], -1)
+
+        c2 = c[2]
+        self.assertIsNone(c2.lower)
+        self.assertEqual(c2.upper, 3)
+        repn = generate_standard_repn(c2.body)
+        self.assertEqual(repn.constant, 0)
+        self.assertEqual(len(repn.linear_vars), 1)
+        self.assertEqual(len(repn.quadratic_vars), 1)
+        self.assertTrue(repn.is_quadratic())
+        self.check_quadratic_term_coef(repn, m.y[2], d2, 1)
+        check_linear_coef(self, repn, d1, 8)
+
+    def test_vars_treated_as_data(self):
+        m = ConcreteModel()
+        m.y = Var([1, 2, 3], domain=Binary)
+        m.x = Var([1, 2], domain=NonNegativeReals)
+        m.obj = Objective(expr=m.y[1]*m.x[1] + 3*m.x[2])
+        m.c1 = Constraint(expr=-m.x[1] + 8*m.x[2] == 4*m.y[2])
+        m.c2 = Constraint(expr=m.y[2]*(4 + m.x[2]) >= 5)
+
+        TransformationFactory(
+            'contrib.convex_linearly_constrained_dual').apply_to(
+                m, treat_as_data=m.y)
+
+        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        self.check_vars_treated_as_data_block(m, blk)
+
+    def test_vars_treated_as_data_and_others_fixed(self):
+        m = ConcreteModel()
+        m.y = Var([1, 2, 3], domain=Binary)
+        m.x = Var([1, 2], domain=NonNegativeReals)
+        m.obj = Objective(expr=m.y[1]*m.x[1] + 3*m.x[2])
+        m.c1 = Constraint(expr=-m.x[1] + 8*m.x[2] == 4*m.y[2])
+        m.c2 = Constraint(expr=m.y[2]*(4 + m.x[2]) >= 5)
+
+        m.x[2].fix(17)
+
+        TransformationFactory(
+            'contrib.convex_linearly_constrained_dual').apply_to(
+                m, treat_as_data=m.y, assume_fixed_vars_permanent=True)
+        m.x[2].unfix()
+
+        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        self.check_vars_treated_as_data_block(m, blk)
