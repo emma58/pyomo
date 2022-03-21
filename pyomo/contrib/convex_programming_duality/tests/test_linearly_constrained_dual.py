@@ -9,9 +9,10 @@
 #  ___________________________________________________________________________
 
 import pyomo.common.unittest as unittest
-from pyomo.core import (
-    ConcreteModel, Var, Constraint, NonNegativeReals, NonPositiveReals, Block,
-    Reals, NonNegativeReals, Objective, value, maximize, Integers)
+from pyomo.core import ( ConcreteModel, Var, Constraint, NonNegativeReals,
+                         NonPositiveReals, Block, Reals, NonNegativeReals,
+                         Objective, value, maximize, minimize, Integers,
+                         ConstraintList)
 from pyomo.core.base import TransformationFactory
 # register the transformation
 from pyomo.contrib.convex_programming_duality.linearly_constrained_dual import \
@@ -21,14 +22,14 @@ from pyomo.gdp.tests.common_tests import check_linear_coef
 from pytest import set_trace
 
 class TestLinearlyConstrainedDual(unittest.TestCase):
-    def check_transformation_block(self, blk):
+    def check_transformation_block(self, blk, geq_dual=None):
         self.assertIsInstance(blk, Block)
 
         self.assertEqual(len(blk.component_map(Var)), 3)
         d1 = blk.component("equality_dual")
         self.assertIsInstance(d1, Var)
         self.assertEqual(d1.domain, Reals)
-        d2 = blk.component("geq_dual")
+        d2 = blk.component("geq_dual") if geq_dual is None else geq_dual
         self.assertIsInstance(d2, Var)
         self.assertEqual(d2.domain, NonNegativeReals)
         d3 = blk.component("leq_dual")
@@ -96,12 +97,21 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
-        
-    def test_maximization_dual(self):
-        pass
 
     def test_var_bounds_that_are_constraints_get_dual_vars(self):
-        pass
+        m = self.make_minimization_model()
+        # move this constraint to the variable bounds
+        m.geq.deactivate()
+        m.x.setlb(0.2)
+
+        TransformationFactory(
+            'contrib.convex_linearly_constrained_dual').apply_to(
+                m, assume_fixed_vars_permanent=True)
+
+        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        d = blk.component("_pyomo_contrib_var_bounds_constraints.x_lb_dual")
+        self.check_transformation_block(blk, geq_dual=d)
+        self.check_original_components_deactivated(m)
 
     def test_fixed_vars_fixed_forever(self):
         m = ConcreteModel()
@@ -138,7 +148,93 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         pass
 
     def test_indexed_constraints_make_indexed_dual_vars(self):
-        pass
+        m = ConcreteModel()
+        m.x = Var([1, 2], domain=NonNegativeReals)
+        m.y = Var(domain=Reals)
+        m.z = Var(domain=NonPositiveReals)
+        m.c1 = ConstraintList()
+        m.c1.add(m.x[1] - m.y >= 5)
+        m.c1.add(m.x[2] <= 89)
+        @m.Constraint([1,2])
+        def c2(m, i):
+            return 3*m.z == 2*m.x[i] + i
+        m.obj = Objective(expr=54*m.x[1] + 6*m.z, sense=maximize)
+
+        TransformationFactory(
+            'contrib.convex_linearly_constrained_dual').apply_to(
+                m, assume_fixed_vars_permanent=False)
+
+        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        self.assertEqual(len(blk.component_map(Objective)), 1)
+        self.assertEqual(len(blk.component_map(Constraint)), 3)
+        self.assertEqual(len(blk.component_map(Var)), 2)
+
+        # dual vars
+        c1_duals = blk.component("c1_dual")
+        self.assertIsInstance(c1_duals, Var)
+        self.assertEqual(len(c1_duals), 2)
+        d1 = c1_duals[1]
+        d2 = c1_duals[2]
+        self.assertEqual(d1.domain, NonPositiveReals)
+        self.assertEqual(d2.domain, NonNegativeReals)
+        c2_duals = blk.component("c2_dual")
+        self.assertIsInstance(c2_duals, Var)
+        self.assertEqual(len(c2_duals), 2)
+        d3 = c2_duals[1]
+        d4 = c2_duals[2]
+        self.assertEqual(d3.domain, Reals)
+        self.assertEqual(d4.domain, Reals)
+
+        # obj
+        obj = blk.component("dual_obj")
+        repn = generate_standard_repn(obj.expr)
+        self.assertEqual(repn.constant, 0)
+        self.assertEqual(len(repn.linear_vars), 4)
+        check_linear_coef(self, repn, d1, 5)
+        check_linear_coef(self, repn, d2, 89)
+        check_linear_coef(self, repn, d3, 1)
+        check_linear_coef(self, repn, d4, 2)
+        self.assertEqual(obj.sense, minimize)
+
+        # dual constraints: This is kind of redundant with the next test, but
+        # I'm going to check anyway, partly because this is a maximization
+        # problem.
+        dual_cons1 = blk.component("x")
+        self.assertEqual(len(dual_cons1), 2)
+        c1 = dual_cons1[1]
+        self.assertEqual(c1.lower, 54)
+        self.assertIsNone(c1.upper)
+        repn = generate_standard_repn(c1.body)
+        self.assertEqual(repn.constant, 0)
+        self.assertEqual(len(repn.linear_vars), 2)
+        check_linear_coef(self, repn, d1, 1)
+        check_linear_coef(self, repn, d3, -2)
+
+        c2 = dual_cons1[2]
+        self.assertEqual(c2.lower, 0)
+        self.assertIsNone(c2.upper)
+        repn = generate_standard_repn(c2.body)
+        self.assertEqual(repn.constant, 0)
+        self.assertEqual(len(repn.linear_vars), 2)
+        check_linear_coef(self, repn, d2, 1)
+        check_linear_coef(self, repn, d4, -2)
+
+        dual_cons2 = blk.component("y")
+        self.assertEqual(dual_cons2.lower, 0)
+        self.assertEqual(dual_cons2.upper, 0)
+        repn = generate_standard_repn(dual_cons2.body)
+        self.assertEqual(repn.constant, 0)
+        self.assertEqual(len(repn.linear_vars), 1)
+        check_linear_coef(self, repn, d1, -1)
+
+        dual_cons3 = blk.component("z")
+        self.assertIsNone(dual_cons3.lower)
+        self.assertEqual(dual_cons3.upper, 6)
+        repn = generate_standard_repn(dual_cons3.body)
+        self.assertEqual(repn.constant, 0)
+        self.assertEqual(len(repn.linear_vars), 2)
+        check_linear_coef(self, repn, d3, 3)
+        check_linear_coef(self, repn, d4, 3)        
 
     def test_indexed_vars_make_indexed_dual_constraints(self):
         m = ConcreteModel()
