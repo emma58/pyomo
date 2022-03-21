@@ -2,8 +2,8 @@
 #
 #  Pyomo: Python Optimization Modeling Objects
 #  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
-#  Under the terms of Contract DE-NA0003525 with National Technology and 
-#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain 
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
@@ -45,14 +45,14 @@ class Linearly_Constrained_Dual(Transformation):
     min  (1/2)x^TDx + c^Tx
     s.t. Ax >= b,
 
-    this transformation will deactivate the original model and add a block 
+    this transformation will deactivate the original model and add a block
     containing the model:
 
     max  b^Ty
     s.t. A^Ty <= c
          y >= 0
 
-    or 
+    or
 
     max  -(1/2)t^TDt + b^ty
     s.t. A^Ty + Dt = c
@@ -70,12 +70,12 @@ class Linearly_Constrained_Dual(Transformation):
         "side and treated as data.",
         doc="""
         Whether or not to treat fixed variables as data or variables.
-        
+
         When True, fixed variables will be moved to the right-hand
         side and treated as data. This means that if they are later
         unfixed, the dual will no longer be correct.
 
-        When False, fixed variables will be treated as primal 
+        When False, fixed variables will be treated as primal
         variables, and the dual will be correct whether or not they
         are later unfixed.
         """
@@ -86,11 +86,11 @@ class Linearly_Constrained_Dual(Transformation):
         description="Optional name for the Block that will hold the "
         "dual model.",
         doc="""
-        Optional name (str) to use for the Block that the 
-        transformation creates to hold the dual model. Note that 
+        Optional name (str) to use for the Block that the
+        transformation creates to hold the dual model. Note that
         this name must be unique with respect to the Block the
         transformation is applied to.
-        
+
         If not specified, the transformation will generate a unique
         name for the Block beginning with:
         '_pyomo_contrib_linearly_constrained_dual'
@@ -148,7 +148,7 @@ class Linearly_Constrained_Dual(Transformation):
             dual_block = self._create_transformation_block(
                 instance, config.dual_block_name)
 
-            (primal_constraints, 
+            (primal_constraints,
              primal_variables) = self._create_dual_variables(instance,
                                                              dual_block,
                                                              primal_obj.sense)
@@ -169,7 +169,7 @@ class Linearly_Constrained_Dual(Transformation):
                                  Objective, active=True, descend_into=Block)]
         if len(active_objectives) > 1:
             raise ValueError("There is more than one active objective on "
-                             "the primal model: %s" % 
+                             "the primal model: %s" %
                              ", ".join([obj.name for obj in active_objectives]))
         return active_objectives[0]
 
@@ -177,7 +177,7 @@ class Linearly_Constrained_Dual(Transformation):
         repn = generate_standard_repn(expr, compute_values=False)
         if not repn.is_linear():
             raise NotImplementedError("Objective is nonlinear!")
-        return ComponentMap([(var, coef) for coef, var in 
+        return ComponentMap([(var, coef) for coef, var in
                              zip(repn.linear_coefs, repn.linear_vars)])
 
     def _create_transformation_block(self, instance, nm):
@@ -194,7 +194,7 @@ class Linearly_Constrained_Dual(Transformation):
         primal_vars = ComponentSet()
         primal_var_list = []
         for cons in instance.component_objects(
-                Constraint, active=True, descend_into=Block, 
+                Constraint, active=True, descend_into=Block,
                 sort=SortComponents.deterministic):
             if cons.is_indexed():
                 duals = Var(Any, dense=False)
@@ -225,7 +225,7 @@ class Linearly_Constrained_Dual(Transformation):
                     # It's an equality
                     if value(lower) == value(upper):
                         duals[idx].domain = Reals
-                        primal_constraints[duals[idx]] = ('eq', coef_map, 
+                        primal_constraints[duals[idx]] = ('eq', coef_map,
                                                           lower - body_constant)
                     else: # It's actually two constraints: a <= and a >=
                         leq_idx = '%s_leq' % idx
@@ -249,7 +249,7 @@ class Linearly_Constrained_Dual(Transformation):
                     duals[idx].domain = self._domains[sense, 'leq']
                     primal_constraints[duals[idx]] = ('leq', coef_map, upper -
                                                       body_constant)
-            
+
         return (primal_constraints, primal_var_list)
 
     def _create_dual_objective_and_constraints(self, primal_constraints,
@@ -306,7 +306,7 @@ class Linearly_Constrained_Dual(Transformation):
                 cons.set_value(expr <= rhs)
             else:
                 cons.set_value(expr >= rhs)
-                
+
         obj_expr = 0
         for dual_var, (cons_type, coef_map, rhs) in \
                 primal_constraints.items():
@@ -315,4 +315,3 @@ class Linearly_Constrained_Dual(Transformation):
         dual_block.add_component(unique_component_name(dual_block, "dual_obj"),
                                  Objective(expr=obj_expr, sense=minimize if
                                            sense == maximize else maximize))
-        

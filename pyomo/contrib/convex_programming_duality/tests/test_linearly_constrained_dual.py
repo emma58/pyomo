@@ -2,8 +2,8 @@
 #
 #  Pyomo: Python Optimization Modeling Objects
 #  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
-#  Under the terms of Contract DE-NA0003525 with National Technology and 
-#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain 
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
@@ -64,7 +64,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(len(repn.linear_vars), 2)
         check_linear_coef(self, repn, d1, 1)
         check_linear_coef(self, repn, d3, -1)
-        
+
         self.assertEqual(len(blk.component_map(Objective)), 1)
         obj = blk.component("dual_obj")
         self.assertIsInstance(obj, Objective)
@@ -241,7 +241,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear_vars), 2)
         check_linear_coef(self, repn, d3, 3)
-        check_linear_coef(self, repn, d4, 3)        
+        check_linear_coef(self, repn, d4, 3)
 
     def test_indexed_vars_make_indexed_dual_constraints(self):
         m = ConcreteModel()
@@ -343,7 +343,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.check_quadratic_term_coef(repn, m.y[2], d1, 4)
         self.check_quadratic_term_coef(repn, m.y[2], d2, -4)
         check_linear_coef(self, repn, d2, 5)
-        
+
         # constraints
         c = blk.component("x")
         self.assertEqual(len(c), 2)
@@ -398,7 +398,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
 
         TransformationFactory(
             'contrib.convex_linearly_constrained_dual').apply_to(
-                m, treat_as_data=[m.y[1], m.y[2]], 
+                m, treat_as_data=[m.y[1], m.y[2]],
                 assume_fixed_vars_permanent=True)
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
