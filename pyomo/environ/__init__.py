@@ -35,6 +35,7 @@ _packages = [
     'pyomo.contrib.ampl_function_demo',
     'pyomo.contrib.appsi',
     'pyomo.contrib.community_detection',
+    'pyomo.contrib.convex_programming_duality',
     'pyomo.contrib.example',
     'pyomo.contrib.fme',
     'pyomo.contrib.gdp_bounds',
