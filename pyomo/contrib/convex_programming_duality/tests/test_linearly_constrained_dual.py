@@ -193,4 +193,15 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(len(repn.linear_vars), 1)
 
     def test_deactivated_primal_constraints_ignored(self):
-        pass
+        m = self.make_minimization_model()
+        m.silly_cons = Constraint(expr=m.x + 45*m.y == 9)
+        m.silly_cons.deactivate()
+
+        TransformationFactory(
+            'contrib.convex_linearly_constrained_dual').apply_to(m)
+
+        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        self.check_transformation_block(blk)
+        self.check_original_components_deactivated(m)
+
+        self.assertFalse(m.silly_cons.active)
