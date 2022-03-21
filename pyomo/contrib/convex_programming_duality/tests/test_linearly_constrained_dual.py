@@ -51,11 +51,16 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
 
         c2 = blk.component("y")
         self.assertIsInstance(c2, Constraint)
-        self.assertEqual(value(c2.upper), 3)
-        self.assertIsNone(c2.lower)
         repn = generate_standard_repn(c2.body)
+        # I have an example where the RHS involves a fixed var, so it might be
+        # in the body.
+        self.assertIn(repn.constant, [0, -3])
+        if repn.constant == 0:
+            self.assertEqual(value(c2.upper), 3)
+        else:# repn.constant == -3:
+            self.assertEqual(value(c2.upper), 0)
+        self.assertIsNone(c2.lower)
         self.assertTrue(repn.is_linear())
-        self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear_vars), 2)
         check_linear_coef(self, repn, d1, 1)
         check_linear_coef(self, repn, d3, -1)
@@ -129,7 +134,6 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
                 m, assume_fixed_vars_permanent=True)
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
-        blk.pprint()
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
 
@@ -187,6 +191,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         obj = blk.component("dual_obj")
         repn = generate_standard_repn(obj.expr)
         self.assertEqual(repn.constant, 0)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(len(repn.linear_vars), 4)
         check_linear_coef(self, repn, d1, 5)
         check_linear_coef(self, repn, d2, 89)
@@ -203,6 +208,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(c1.lower, 54)
         self.assertIsNone(c1.upper)
         repn = generate_standard_repn(c1.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear_vars), 2)
         check_linear_coef(self, repn, d1, 1)
@@ -212,6 +218,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(c2.lower, 0)
         self.assertIsNone(c2.upper)
         repn = generate_standard_repn(c2.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear_vars), 2)
         check_linear_coef(self, repn, d2, 1)
@@ -221,6 +228,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(dual_cons2.lower, 0)
         self.assertEqual(dual_cons2.upper, 0)
         repn = generate_standard_repn(dual_cons2.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear_vars), 1)
         check_linear_coef(self, repn, d1, -1)
@@ -229,6 +237,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertIsNone(dual_cons3.lower)
         self.assertEqual(dual_cons3.upper, 6)
         repn = generate_standard_repn(dual_cons3.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear_vars), 2)
         check_linear_coef(self, repn, d3, 3)
@@ -259,6 +268,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(c1.upper, 1)
         self.assertIsNone(c1.lower)
         repn = generate_standard_repn(c1.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, d, 1)
         self.assertEqual(len(repn.linear_vars), 1)
@@ -267,6 +277,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(c2.upper, 1)
         self.assertIsNone(c2.lower)
         repn = generate_standard_repn(c2.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, d, 2)
         self.assertEqual(len(repn.linear_vars), 1)
@@ -275,6 +286,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         self.assertEqual(c3.upper, 0)
         self.assertIsNone(c2.lower)
         repn = generate_standard_repn(c3.body)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, d, 3)
         self.assertEqual(len(repn.linear_vars), 1)
@@ -282,6 +294,7 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         obj = blk.component("dual_obj")
         self.assertIsInstance(obj, Objective)
         repn = generate_standard_repn(obj.expr)
+        self.assertTrue(repn.is_linear())
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, d, 7)
         self.assertEqual(len(repn.linear_vars), 1)
@@ -346,9 +359,12 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
 
         c2 = c[2]
         self.assertIsNone(c2.lower)
-        self.assertEqual(c2.upper, 3)
         repn = generate_standard_repn(c2.body)
-        self.assertEqual(repn.constant, 0)
+        self.assertIn(repn.constant, (0, -3))
+        if repn.constant == 0:
+            self.assertEqual(value(c2.upper), 3)
+        else:
+            self.assertEqual(value(c2.upper), 0)
         self.assertEqual(len(repn.linear_vars), 1)
         self.assertEqual(len(repn.quadratic_vars), 1)
         self.assertTrue(repn.is_quadratic())
@@ -374,16 +390,16 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m = ConcreteModel()
         m.y = Var([1, 2, 3], domain=Binary)
         m.x = Var([1, 2], domain=NonNegativeReals)
-        m.obj = Objective(expr=m.y[1]*m.x[1] + 3*m.x[2])
-        m.c1 = Constraint(expr=-m.x[1] + 8*m.x[2] == 4*m.y[2])
-        m.c2 = Constraint(expr=m.y[2]*(4 + m.x[2]) >= 5)
+        m.obj = Objective(expr=m.y[1]*m.x[1] + 3*m.x[2] + m.y[3]*m.x[2])
+        m.c1 = Constraint(expr=-m.x[1] + 8*m.x[2] == 4*m.y[2] + m.y[3])
+        m.c2 = Constraint(expr=m.y[2]*(4*(m.y[3] + 1) + m.x[2]) >= 5)
 
-        m.x[2].fix(17)
+        m.y[3].fix(0)
 
         TransformationFactory(
             'contrib.convex_linearly_constrained_dual').apply_to(
-                m, treat_as_data=m.y, assume_fixed_vars_permanent=True)
-        m.x[2].unfix()
+                m, treat_as_data=[m.y[1], m.y[2]], 
+                assume_fixed_vars_permanent=True)
 
         blk = m.component('_pyomo_contrib_linearly_constrained_dual')
         self.check_vars_treated_as_data_block(m, blk)
