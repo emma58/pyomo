@@ -2,8 +2,8 @@
 #
 #  Pyomo: Python Optimization Modeling Objects
 #  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
-#  Under the terms of Contract DE-NA0003525 with National Technology and 
-#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain 
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
@@ -31,10 +31,10 @@ class Move_Variable_Bounds_to_Constraints(Transformation):
         description="Optional name for the Block that will hold the "
         "new constraints.",
         doc="""
-        Optional name (str) to use for the Block that the 
-        transformation creates to hold the constraints enforcing 
+        Optional name (str) to use for the Block that the
+        transformation creates to hold the constraints enforcing
         the variable bounds.
-        
+
         If not specified, the transformation will generate a unique
         name for the Block beginning with:
         '_pyomo_contrib_var_bounds_constraints'

@@ -15,13 +15,13 @@ from pyomo.core import ( ConcreteModel, Var, Constraint, NonNegativeReals,
                          ConstraintList, Binary)
 from pyomo.core.base import TransformationFactory
 # register the transformation
-from pyomo.contrib.convex_programming_duality.linearly_constrained_dual import \
-    Linearly_Constrained_Dual
+from pyomo.contrib.convex_programming_duality.linear_programming_dual import \
+    Linear_Programming_Dual
 from pyomo.repn import generate_standard_repn
 from pyomo.gdp.tests.common_tests import check_linear_coef
 from pytest import set_trace
 
-class TestLinearlyConstrainedDual(unittest.TestCase):
+class TestLinearProgrammingDual(unittest.TestCase):
     def check_transformation_block(self, blk, geq_dual=None):
         self.assertIsInstance(blk, Block)
 
@@ -96,10 +96,9 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
     def test_minimization_dual(self):
         m = self.make_minimization_model()
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(m)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(m)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
 
@@ -109,11 +108,10 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m.geq.deactivate()
         m.x.setlb(0.2)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(
-                m, assume_fixed_vars_permanent=True)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(
+            m, assume_fixed_vars_permanent=True)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         d = blk.component("_pyomo_contrib_var_bounds_constraints.x_lb_dual")
         self.check_transformation_block(blk, geq_dual=d)
         self.check_original_components_deactivated(m)
@@ -129,11 +127,10 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m.geq = Constraint(expr=m.x >= 0.2)
         m.leq = Constraint(expr=m.x - m.y  + m.jk <= 6)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(
-                m, assume_fixed_vars_permanent=True)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(
+            m, assume_fixed_vars_permanent=True)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
 
@@ -141,11 +138,10 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m = self.make_minimization_model()
         m.x.fix(13)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(
-                m, assume_fixed_vars_permanent=False)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(
+            m, assume_fixed_vars_permanent=False)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
 
@@ -162,11 +158,10 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
             return 3*m.z == 2*m.x[i] + i
         m.obj = Objective(expr=54*m.x[1] + 6*m.z, sense=maximize)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(
-                m, assume_fixed_vars_permanent=False)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(
+            m, assume_fixed_vars_permanent=False)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.assertEqual(len(blk.component_map(Objective)), 1)
         self.assertEqual(len(blk.component_map(Constraint)), 3)
         self.assertEqual(len(blk.component_map(Var)), 2)
@@ -249,10 +244,9 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m.obj = Objective(expr=m.x[1] + m.x[2])
         m.cons = Constraint(expr=m.x[1] + 2*m.x[2] + 3*m.x[3] >= 7)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(m)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(m)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.assertEqual(len(blk.component_map(Var)), 1)
         self.assertEqual(len(blk.component_map(Constraint)), 1)
         self.assertEqual(len(blk.component_map(Objective)), 1)
@@ -304,10 +298,9 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m.silly_cons = Constraint(expr=m.x + 45*m.y == 9)
         m.silly_cons.deactivate()
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(m)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(m)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.check_transformation_block(blk)
         self.check_original_components_deactivated(m)
 
@@ -379,11 +372,10 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
         m.c1 = Constraint(expr=-m.x[1] + 8*m.x[2] == 4*m.y[2])
         m.c2 = Constraint(expr=m.y[2]*(4 + m.x[2]) >= 5)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(
-                m, treat_as_data=m.y)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(
+            m, treat_as_data=m.y)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.check_vars_treated_as_data_block(m, blk)
 
     def test_vars_treated_as_data_and_others_fixed(self):
@@ -396,10 +388,8 @@ class TestLinearlyConstrainedDual(unittest.TestCase):
 
         m.y[3].fix(0)
 
-        TransformationFactory(
-            'contrib.convex_linearly_constrained_dual').apply_to(
-                m, treat_as_data=[m.y[1], m.y[2]],
-                assume_fixed_vars_permanent=True)
+        TransformationFactory('contrib.linear_programming_dual').apply_to(
+            m, treat_as_data=[m.y[1], m.y[2]], assume_fixed_vars_permanent=True)
 
-        blk = m.component('_pyomo_contrib_linearly_constrained_dual')
+        blk = m.component('_pyomo_contrib_linear_programming_dual')
         self.check_vars_treated_as_data_block(m, blk)

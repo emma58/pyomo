@@ -2,8 +2,8 @@
 #
 #  Pyomo: Python Optimization Modeling Objects
 #  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
-#  Under the terms of Contract DE-NA0003525 with National Technology and 
-#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain 
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
@@ -52,7 +52,7 @@ class TestMoveVarBoundsToConstraints(unittest.TestCase):
         TransformationFactory(
             'contrib.move_var_bounds_to_constraints').apply_to(
                 m, bound_constraint_block_name='bounds')
-        
+
         bounds = m.component('bounds')
         self.assertIsInstance(bounds, Block)
         self.assertEqual(len(bounds.component_map(Constraint)), 2)
@@ -84,7 +84,7 @@ class TestMoveVarBoundsToConstraints(unittest.TestCase):
         TransformationFactory(
             'contrib.move_var_bounds_to_constraints').apply_to(
                 m, bound_constraint_block_name='bounds')
-        
+
         bounds = m.component('bounds')
         self.assertIsInstance(bounds, Block)
         m.pprint()

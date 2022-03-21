@@ -27,23 +27,13 @@ from pyomo.contrib.convex_programming_duality.\
 
 from pytest import set_trace
 
-@TransformationFactory.register('contrib.convex_linearly_constrained_dual',
-                                doc="Take the dual of linear programs and "
-                                "convex linearly-constrained quadratic "
-                                "programs.")
-class Linearly_Constrained_Dual(Transformation):
-    """Take dual of linear programs and of convex linearly-constrained quadratic
-    programs.
-
-    That is, given problems of the form:
+@TransformationFactory.register('contrib.linear_programming_dual',
+                                doc="Take the dual of linear programs")
+class Linear_Programming_Dual(Transformation):
+    """Take dual of linear programs. That is, given problems of the form:
     min  c^Tx
     s.t. Ax >= b
           x >= 0
-
-    or:
-
-    min  (1/2)x^TDx + c^Tx
-    s.t. Ax >= b,
 
     this transformation will deactivate the original model and add a block
     containing the model:
@@ -51,16 +41,8 @@ class Linearly_Constrained_Dual(Transformation):
     max  b^Ty
     s.t. A^Ty <= c
          y >= 0
-
-    or
-
-    max  -(1/2)t^TDt + b^ty
-    s.t. A^Ty + Dt = c
-         y >= 0
-
-    respectively.
     """
-    CONFIG = ConfigBlock("contrib.linearly_constrained_dual")
+    CONFIG = ConfigBlock("contrib.linear_programming_dual")
     CONFIG.declare('assume_fixed_vars_permanent', ConfigValue(
         default=False,
         domain=bool,
@@ -93,7 +75,7 @@ class Linearly_Constrained_Dual(Transformation):
 
         If not specified, the transformation will generate a unique
         name for the Block beginning with:
-        '_pyomo_contrib_linearly_constrained_dual'
+        '_pyomo_contrib_linear_programming_dual'
         """
     ))
     CONFIG.declare('treat_as_data', ConfigValue(
@@ -118,7 +100,7 @@ class Linearly_Constrained_Dual(Transformation):
     }
 
     def __init__(self):
-        super(Linearly_Constrained_Dual, self).__init__()
+        super(Linear_Programming_Dual, self).__init__()
 
     def _apply_to(self, instance, **kwds):
         config = self.CONFIG(kwds.pop('options', {}))
@@ -176,14 +158,14 @@ class Linearly_Constrained_Dual(Transformation):
     def _get_obj_coef_map(self, expr):
         repn = generate_standard_repn(expr, compute_values=False)
         if not repn.is_linear():
-            raise NotImplementedError("Objective is nonlinear!")
+            raise ValueError("The active objective is nonlinear!")
         return ComponentMap([(var, coef) for coef, var in
                              zip(repn.linear_coefs, repn.linear_vars)])
 
     def _create_transformation_block(self, instance, nm):
         if nm is None:
             nm = unique_component_name(
-                instance, '_pyomo_contrib_linearly_constrained_dual')
+                instance, '_pyomo_contrib_linear_programming_dual')
         transBlock = Block()
         instance.add_component(nm, transBlock)
 
@@ -209,9 +191,10 @@ class Linearly_Constrained_Dual(Transformation):
                 upper = cons.upper
                 body = generate_standard_repn(cons.body, compute_values=False)
                 if not body.is_linear():
+                    # Remind people to read:
                     raise ValueError(
                         "Detected nonlinear constraint body in constraint "
-                        "'%s': The 'linearly_constrained_dual' transformation "
+                        "'%s': The 'linear_programming_dual' transformation "
                         "requires all the constraints be linear." % cons.name)
                 coef_map = ComponentMap()
                 for coef, var in zip(body.linear_coefs, body.linear_vars):
