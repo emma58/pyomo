@@ -14,8 +14,6 @@ from pyomo.common.config import ConfigBlock, ConfigValue
 from pyomo.core.plugins.transform.hierarchy import Transformation
 from pyomo.common.modeling import unique_component_name
 
-from pytest import set_trace
-
 @TransformationFactory.register('contrib.move_var_bounds_to_constraints',
                                 doc="Release bounds on Var objects and add "
                                 "them as constraints on the model.")

@@ -25,8 +25,6 @@ from pyomo.contrib.fme.fourier_motzkin_elimination import \
 from pyomo.contrib.convex_programming_duality.\
     move_var_bounds_to_constraints import Move_Variable_Bounds_to_Constraints
 
-from pytest import set_trace
-
 @TransformationFactory.register('contrib.linear_programming_dual',
                                 doc="Take the dual of linear programs")
 class Linear_Programming_Dual(Transformation):

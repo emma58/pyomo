@@ -19,7 +19,6 @@ from pyomo.contrib.convex_programming_duality.linear_programming_dual import \
     Linear_Programming_Dual
 from pyomo.repn import generate_standard_repn
 from pyomo.gdp.tests.common_tests import check_linear_coef
-from pytest import set_trace
 
 class TestLinearProgrammingDual(unittest.TestCase):
     def check_transformation_block(self, blk, geq_dual=None):
