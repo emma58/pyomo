@@ -399,7 +399,7 @@ def check_indexed_xor_constraints_with_targets(self, transformation):
         targets=[m.disjunction[1],
                  m.disjunction[3]])
 
-    xorC = m.disjunction[1].algebraic_constraint().parent_component()
+    xorC = m.disjunction[1].algebraic_constraint.parent_component()
     self.assertIsInstance(xorC, Constraint)
     self.assertEqual(len(xorC), 2)
 
@@ -453,7 +453,7 @@ def check_xor_constraint_mapping(self, transformation):
     transBlock = m.component("_pyomo_gdp_%s_reformulation" % transformation)
     self.assertIs( trans.get_src_disjunction(transBlock.disjunction_xor),
                    m.disjunction)
-    self.assertIs( m.disjunction.algebraic_constraint(),
+    self.assertIs( m.disjunction.algebraic_constraint,
                    transBlock.disjunction_xor)
 
 
@@ -471,9 +471,9 @@ def check_xor_constraint_mapping_two_disjunctions(self, transformation):
     self.assertIs( trans.get_src_disjunction(transBlock2.disjunction2_xor),
                    m.disjunction2)
 
-    self.assertIs( m.disjunction.algebraic_constraint(),
+    self.assertIs( m.disjunction.algebraic_constraint,
                    transBlock.disjunction_xor)
-    self.assertIs( m.disjunction2.algebraic_constraint(),
+    self.assertIs( m.disjunction2.algebraic_constraint,
                    transBlock2.disjunction2_xor)
 
 def check_disjunct_mapping(self, transformation):
@@ -1426,7 +1426,7 @@ def check_mappings_between_disjunctions_and_xors(self, transformation):
 
     # check disjunction mappings
     for disjunction, xor in disjunctionPairs:
-        self.assertIs(disjunction.algebraic_constraint(), xor)
+        self.assertIs(disjunction.algebraic_constraint, xor)
         self.assertIs(transform.get_src_disjunction(xor), disjunction)
 
 def check_disjunct_targets_inactive(self, transformation, **kwargs):
@@ -1531,15 +1531,15 @@ def check_disjunctData_only_targets_transformed(self, transformation):
 def check_all_components_transformed(self, m):
     # checks that all the disjunctive components claim to be transformed in the
     # makeNestedDisjunctions_NestedDisjuncts model.
-    self.assertIsInstance(m.disj.algebraic_constraint(), Constraint)
-    self.assertIsInstance(m.d1.disj2.algebraic_constraint(), Constraint)
+    self.assertIsInstance(m.disj.algebraic_constraint, Constraint)
+    self.assertIsInstance(m.d1.disj2.algebraic_constraint, Constraint)
     self.assertIsInstance(m.d1.transformation_block(), _BlockData)
     self.assertIsInstance(m.d2.transformation_block(), _BlockData)
     self.assertIsInstance(m.d1.d3.transformation_block(), _BlockData)
     self.assertIsInstance(m.d1.d4.transformation_block(), _BlockData)
 
 def check_transformation_blocks_nestedDisjunctions(self, m, transformation):
-    disjunctionTransBlock = m.disj.algebraic_constraint().parent_block()
+    disjunctionTransBlock = m.disj.algebraic_constraint.parent_block()
     transBlocks = disjunctionTransBlock.relaxedDisjuncts
     self.assertTrue(len(transBlocks), 4)
     self.assertIs(transBlocks[0], m.d1.transformation_block())
@@ -1551,7 +1551,7 @@ def check_transformation_blocks_nestedDisjunctions(self, m, transformation):
     if transformation == 'hull':
         # we only moved the references up, these still point to the inner
         # transformation blocks
-        inner = m.d1.disj2.algebraic_constraint().parent_block().\
+        inner = m.d1.disj2.algebraic_constraint.parent_block().\
                 relaxedDisjuncts
         self.assertIs(inner[0], m.d1.d3.transformation_block())
         self.assertIs(inner[1], m.d1.d4.transformation_block())

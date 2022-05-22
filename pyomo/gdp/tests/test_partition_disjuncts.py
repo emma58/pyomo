@@ -853,7 +853,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
             compute_bounds_method=compute_fbbt_bounds)
 
         b = m.component("_pyomo_gdp_partition_disjuncts_reformulation")
-        self.assertIs(m.disjunction.algebraic_constraint(), b.disjunction)
+        self.assertIs(m.disjunction.algebraic_constraint, b.disjunction)
 
     def add_disjunction(self, b):
         m = b.model()

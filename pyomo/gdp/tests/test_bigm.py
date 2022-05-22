@@ -2064,11 +2064,11 @@ class DisjunctionInDisjunct(unittest.TestCase, CommonTests):
             ct.check_linear_coef(self, repn, x[i], -6)
 
     def check_hierarchical_nested_model(self, m, bigm):
-        outer_xor = m.disjunction_block.disjunction.algebraic_constraint()
+        outer_xor = m.disjunction_block.disjunction.algebraic_constraint
         ct.check_two_term_disjunction_xor(self, outer_xor, m.disj1,
                                           m.disjunct_block.disj2)
 
-        inner_xor = m.disjunct_block.disj2.disjunction.algebraic_constraint()
+        inner_xor = m.disjunct_block.disj2.disjunction.algebraic_constraint
         xformed = bigm.get_transformed_constraints(inner_xor)
         self.assertEqual(len(xformed), 2)
         leq = xformed[0]

@@ -322,7 +322,7 @@ class Hull_Reformulation(Transformation):
 
         # check if the constraint already exists
         if disjunction._algebraic_constraint is not None:
-            return disjunction._algebraic_constraint()
+            return disjunction._algebraic_constraint
 
         # add the XOR (or OR) constraints to parent block (with
         # unique name) It's indexed if this is an
@@ -332,7 +332,7 @@ class Hull_Reformulation(Transformation):
             unique_component_name(transBlock,
                                   disjunction.getname(
                                       fully_qualified=True) + '_xor'), orC)
-        disjunction._algebraic_constraint = weakref_ref(orC)
+        disjunction._algebraic_constraint = orC
 
         return orC
 
@@ -347,7 +347,7 @@ class Hull_Reformulation(Transformation):
         # which case we will use the same transformation block we created
         # before.
         if obj._algebraic_constraint is not None:
-            transBlock = obj._algebraic_constraint().parent_block()
+            transBlock = obj._algebraic_constraint.parent_block()
         else:
             transBlock = self._add_transformation_block(obj.parent_block())
         # and create the xor constraint
@@ -378,7 +378,7 @@ class Hull_Reformulation(Transformation):
             # be really confusing that the XOR constraint goes to that old block
             # but we create a new one here.)
             if obj.parent_component()._algebraic_constraint is not None:
-                transBlock = obj.parent_component()._algebraic_constraint().\
+                transBlock = obj.parent_component()._algebraic_constraint.\
                              parent_block()
             else:
                 transBlock = self._add_transformation_block(obj.parent_block())
@@ -492,7 +492,7 @@ class Hull_Reformulation(Transformation):
         orConstraint.add(index, (or_expr, 1))
         # map the DisjunctionData to its XOR constraint to mark it as
         # transformed
-        obj._algebraic_constraint = weakref_ref(orConstraint[index])
+        obj._algebraic_constraint = orConstraint[index]
 
         # add the reaggregation constraints
         for i, var in enumerate(varsToDisaggregate):
@@ -701,7 +701,7 @@ class Hull_Reformulation(Transformation):
                 # untransformed, but we'll wait to yell until the next loop
                 continue
             # get this disjunction's relaxation block.
-            transBlock = obj.algebraic_constraint().parent_block()
+            transBlock = obj.algebraic_constraint.parent_block()
 
             self._transfer_var_references(transBlock, destinationBlock)
 

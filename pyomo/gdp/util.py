@@ -277,7 +277,7 @@ def get_src_disjunction(xor_constraint):
     for disjunction in m.component_data_objects(Disjunction,
                                                 descend_into=(Block, Disjunct)):
         if disjunction._algebraic_constraint:
-            if disjunction._algebraic_constraint() is xor_constraint:
+            if disjunction._algebraic_constraint is xor_constraint:
                 return disjunction
     raise GDP_Error("It appears that '%s' is not an XOR or OR constraint "
                     "resulting from transforming a Disjunction."

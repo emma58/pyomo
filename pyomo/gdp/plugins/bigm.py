@@ -308,7 +308,7 @@ class BigM_Transformation(Transformation):
 
         # first check if the constraint already exists
         if disjunction._algebraic_constraint is not None:
-            return disjunction._algebraic_constraint()
+            return disjunction._algebraic_constraint
 
         # add the XOR (or OR) constraints to parent block (with unique name)
         # It's indexed if this is an IndexedDisjunction, not otherwise
@@ -322,7 +322,7 @@ class BigM_Transformation(Transformation):
         orCname = unique_component_name( transBlock, disjunction.getname(
             fully_qualified=True) + nm)
         transBlock.add_component(orCname, orC)
-        disjunction._algebraic_constraint = weakref_ref(orC)
+        disjunction._algebraic_constraint = orC
 
         return orC
 
@@ -334,7 +334,7 @@ class BigM_Transformation(Transformation):
         # transformation, we already have a transformation block for it. We'll
         # use that.
         if obj._algebraic_constraint is not None:
-            transBlock = obj._algebraic_constraint().parent_block()
+            transBlock = obj._algebraic_constraint.parent_block()
         else:
             transBlock = self._add_transformation_block(obj.parent_block())
 
@@ -358,7 +358,7 @@ class BigM_Transformation(Transformation):
             # be really confusing that the XOR constraint goes to that old block
             # but we create a new one here.)
             if obj.parent_component()._algebraic_constraint is not None:
-                transBlock = obj.parent_component()._algebraic_constraint().\
+                transBlock = obj.parent_component()._algebraic_constraint.\
                              parent_block()
             else:
                 transBlock = self._add_transformation_block(obj.parent_block())
@@ -392,7 +392,7 @@ class BigM_Transformation(Transformation):
             xorConstraint[index] = or_expr >= 1
         # Mark the DisjunctionData as transformed by mapping it to its XOR
         # constraint.
-        obj._algebraic_constraint = weakref_ref(xorConstraint[index])
+        obj._algebraic_constraint = xorConstraint[index]
 
         # and deactivate for the writers
         obj.deactivate()
@@ -478,7 +478,7 @@ class BigM_Transformation(Transformation):
                 # untransformed, but we'll wait to yell until the next loop
                 continue
             # get this disjunction's relaxation block.
-            transBlock = obj.algebraic_constraint().parent_block()
+            transBlock = obj.algebraic_constraint.parent_block()
 
             # move transBlock up to parent component
             self._transfer_transBlock_data(transBlock, destinationBlock)

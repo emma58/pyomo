@@ -548,15 +548,15 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         self.assertIs(hull.get_src_var(x), m.disj1.x)
 
         # there is a spare x on disjunction1's block
-        x2 = m.disjunction1.algebraic_constraint().parent_block().\
+        x2 = m.disjunction1.algebraic_constraint.parent_block().\
              _disaggregatedVars[0]
         self.assertIs(hull.get_disaggregated_var(m.disj1.x, m.disj2), x2)
         self.assertIs(hull.get_src_var(x2), m.disj1.x)
 
         # and both a spare x and y on disjunction2's block
-        x2 = m.disjunction2.algebraic_constraint().parent_block().\
+        x2 = m.disjunction2.algebraic_constraint.parent_block().\
              _disaggregatedVars[0]
-        y1 = m.disjunction2.algebraic_constraint().parent_block().\
+        y1 = m.disjunction2.algebraic_constraint.parent_block().\
              _disaggregatedVars[1]
         self.assertIs(hull.get_disaggregated_var(m.disj1.x, m.disj4), x2)
         self.assertIs(hull.get_src_var(x2), m.disj1.x)
@@ -794,7 +794,7 @@ class MultiTermDisj(unittest.TestCase, CommonTests):
         self.assertEqual(x1.ub, 8)
         self.assertIs(hull.get_src_var(x1), m.x)
 
-        x2 = m.disjunction.algebraic_constraint().parent_block().\
+        x2 = m.disjunction.algebraic_constraint.parent_block().\
              _disaggregatedVars[0]
         self.assertIs(hull.get_src_var(x2), m.x)
         self.assertIs(hull.get_disaggregated_var(m.x, m.d2), x2)
@@ -1489,7 +1489,7 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         self.assertEqual(repn.constant, 0)
         ct.check_linear_coef(self, repn, m.d1.indicator_var, 1)
         ct.check_linear_coef(self, repn, m.d2.indicator_var, 1)
-        self.assertIs(xor, m.disj.algebraic_constraint())
+        self.assertIs(xor, m.disj.algebraic_constraint)
         self.assertIs(m.disj, hull.get_src_disjunction(xor))
 
         # so should the outer disaggregation constraint
@@ -1698,7 +1698,7 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         # circle, like so:
         orig_inner_xor = m.d1._pyomo_gdp_hull_reformulation.component(
             "d1.disj2_xor")
-        self.assertIs(m.d1.disj2.algebraic_constraint(), orig_inner_xor)
+        self.assertIs(m.d1.disj2.algebraic_constraint, orig_inner_xor)
         self.assertFalse(orig_inner_xor.active)
         trans_list = hull.get_transformed_constraints(orig_inner_xor)
         self.assertEqual(len(trans_list), 1)
