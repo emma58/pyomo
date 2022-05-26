@@ -10,6 +10,7 @@
 #  ___________________________________________________________________________
 
 import pyomo.common.unittest as unittest
+from pyomo.common.dependencies import dill_available
 from pyomo.common.deprecation import RenamedClass
 
 from pyomo.environ import (TransformationFactory, Block, Set, Constraint,
@@ -2633,6 +2634,13 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         # of the Disjuncts
         m = models.makeBooleanVarsOnDisjuncts()
         ct.check_solution_obeys_logical_constraints(self, 'bigm', m)
+
+    def test_pickle(self):
+        ct.check_transformed_model_pickles(self, 'bigm')
+
+    @unittest.skipIf(not dill_available, "Dill is not available")
+    def test_dill_pickle(self):
+        ct.check_transformed_model_pickles_with_dill(self, 'bigm')
 
 if __name__ == '__main__':
     unittest.main()
