@@ -29,6 +29,7 @@ from pyomo.core.base.external import ExternalFunction
 from pyomo.core.base import Transformation, TransformationFactory, Reference
 import pyomo.core.expr.current as EXPR
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
+from pyomo.gdp.transformed_disjunct import _TransformedDisjunct
 from pyomo.gdp.util import (
     is_child_of, get_src_disjunction, get_src_constraint,
     get_transformed_constraints, _get_constraint_transBlock, get_src_disjunct,
@@ -275,7 +276,8 @@ class BigM_Transformation(Transformation):
             '_pyomo_gdp_bigm_reformulation')
         transBlock = Block()
         instance.add_component(transBlockName, transBlock)
-        transBlock.relaxedDisjuncts = Block(NonNegativeIntegers)
+        # AGH... How do we both support pickling and not freak out the writers?!
+        transBlock.relaxedDisjuncts = _TransformedDisjunct(NonNegativeIntegers)
         transBlock.lbub = Set(initialize=['lb', 'ub'])
 
         return transBlock
