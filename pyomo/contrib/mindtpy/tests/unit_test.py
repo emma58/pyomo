@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -21,7 +22,8 @@ from pyomo.contrib.mindtpy.util import get_primal_integral, get_dual_integral, s
 from pyomo.contrib.mindtpy.nlp_solve import handle_subproblem_other_termination, handle_feasibility_subproblem_tc, solve_subproblem, handle_nlp_subproblem_tc
 from pyomo.core.base import TransformationFactory
 from pyomo.opt import TerminationCondition as tc
-from pyomo.contrib.gdpopt.util import create_utility_block, time_code, process_objective, setup_results_object
+from pyomo.contrib.gdpopt.util import time_code
+from pyomo.contrib.mindtpy.util import create_utility_block, process_objective, setup_results_object
 from pyomo.contrib.mindtpy.initialization import MindtPy_initialize_main, init_rNLP
 from pyomo.contrib.mindtpy.feasibility_pump import generate_norm_constraint, handle_fp_main_tc
 from pyomo.core import Block, ConstraintList
@@ -67,7 +69,7 @@ class TestMindtPy(unittest.TestCase):
             MindtPy = solve_data.working_model.MindtPy_utils
             setup_results_object(solve_data, config)
             process_objective(solve_data, config,
-                              move_linear_objective=(config.init_strategy == 'FP'
+                              move_objective=(config.init_strategy == 'FP'
                                                      or config.add_regularization is not None),
                               use_mcpp=config.use_mcpp,
                               update_var_con_list=config.add_regularization is None
@@ -330,17 +332,6 @@ class TestMindtPy(unittest.TestCase):
             check_config(config)
             self.assertEqual(config.regularization_mip_threads, 8)
 
-            config.mip_solver = 'cplex'
-            config.single_tree = True
-            check_config(config)
-            self.assertEqual(config.mip_solver, 'cplex_persistent')
-            self.assertEqual(config.threads, 1)
-
-            config.add_slack = True
-            config.max_slack == 0.0
-            check_config(config)
-            self.assertEqual(config.add_slack, False)
-
             config.strategy = 'GOA'
             config.add_slack = True
             config.use_mcpp = False
@@ -363,7 +354,7 @@ class TestMindtPy(unittest.TestCase):
             config.add_no_good_cuts = False
             config.use_tabu_list = True
             check_config(config)
-            self.assertIs(config.init_strategy, 'FP')
+            self.assertEqual(config.init_strategy, 'FP')
             self.assertEqual(config.iteration_limit, 0)
             self.assertEqual(config.add_no_good_cuts, True)
             self.assertEqual(config.use_tabu_list, False)

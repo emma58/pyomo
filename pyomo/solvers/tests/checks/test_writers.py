@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -105,7 +106,7 @@ def create_method(test_name, model,
                     model_class.model.solutions.store_to(results)
                 except ValueError:
                     pass
-            self.fail("Solution mismatch for plugin "+name
+            self.fail("Solution mismatch for plugin "+test_name
                       +', '+io+
                       " interface and problem type "
                       +model_class.description+"\n"+rc[1]+"\n"

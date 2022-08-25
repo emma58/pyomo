@@ -7,24 +7,21 @@ from pyomo.core.base.var import _GeneralVarData, Var
 from pyomo.core.base.param import _ParamData, Param
 from pyomo.core.base.block import _BlockData, Block
 from pyomo.core.base.objective import _GeneralObjectiveData
-from pyomo.common.collections import ComponentMap, ComponentSet, OrderedSet
-from collections import OrderedDict
+from pyomo.common.collections import ComponentMap
 from .utils.get_objective import get_objective
-from .utils.identify_named_expressions import identify_named_expressions
+from .utils.collect_vars_and_named_exprs import collect_vars_and_named_exprs
 from pyomo.common.timing import HierarchicalTimer
 from pyomo.common.config import ConfigDict, ConfigValue, NonNegativeFloat
 from pyomo.common.errors import ApplicationError
 from pyomo.opt.base import SolverFactory as LegacySolverFactory
 from pyomo.common.factory import Factory
-import logging
 import os
 from pyomo.opt.results.results_ import SolverResults as LegacySolverResults
 from pyomo.opt.results.solution import Solution as LegacySolution, SolutionStatus as LegacySolutionStatus
 from pyomo.opt.results.solver import TerminationCondition as LegacyTerminationCondition, SolverStatus as LegacySolverStatus
-from pyomo.core.kernel.objective import minimize, maximize
+from pyomo.core.kernel.objective import minimize
 from pyomo.core.base import SymbolMap
 import weakref
-from io import StringIO
 from .cmodel import cmodel, cmodel_available
 from pyomo.core.staleflag import StaleFlagManager
 from pyomo.core.expr.numvalue import NumericConstant
@@ -158,7 +155,6 @@ class SolutionLoaderBase(abc.ABC):
         for v, val in self.get_primals(vars_to_load=vars_to_load).items():
             v.set_value(val, skip_validation=True)
         StaleFlagManager.mark_all_as_stale(delayed=True)
-        
 
     @abc.abstractmethod
     def get_primals(self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None) -> Mapping[_GeneralVarData, float]:
@@ -256,6 +252,7 @@ class SolutionLoader(SolutionLoaderBase):
             primals = ComponentMap()
             for v in vars_to_load:
                 primals[v] = self._primals[id(v)][1]
+            return primals
 
     def get_duals(self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None) -> Dict[_GeneralConstraintData, float]:
         if cons_to_load is None:
@@ -739,7 +736,7 @@ Notes:
 
 
 class PersistentBase(abc.ABC):
-    def __init__(self):
+    def __init__(self, only_child_vars=True):
         self._model = None
         self._active_constraints = dict()  # maps constraint to (lower, body, upper)
         self._vars = dict()  # maps var id to (var, lb, ub, fixed, domain, value)
@@ -755,6 +752,8 @@ class PersistentBase(abc.ABC):
         self._vars_referenced_by_con = dict()
         self._vars_referenced_by_obj = list()
         self._expr_types = None
+        self.use_extensions = False
+        self._only_child_vars = only_child_vars
 
     @property
     def update_config(self):
@@ -769,7 +768,8 @@ class PersistentBase(abc.ABC):
         self.__init__()
         self.update_config = saved_update_config
         self._model = model
-        self._expr_types = cmodel.PyomoExprTypes()
+        if self.use_extensions and cmodel_available:
+            self._expr_types = cmodel.PyomoExprTypes()
         self.add_block(model)
         if self._objective is None:
             self.set_objective(None)
@@ -799,14 +799,36 @@ class PersistentBase(abc.ABC):
     def _add_constraints(self, cons: List[_GeneralConstraintData]):
         pass
 
+    def _check_for_new_vars(self, variables: List[_GeneralVarData]):
+        new_vars = dict()
+        for v in variables:
+            v_id = id(v)
+            if v_id not in self._referenced_variables:
+                new_vars[v_id] = v
+        self.add_variables(list(new_vars.values()))
+
+    def _check_to_remove_vars(self, variables: List[_GeneralVarData]):
+        vars_to_remove = dict()
+        for v in variables:
+            v_id = id(v)
+            ref_cons, ref_sos, ref_obj = self._referenced_variables[v_id]
+            if len(ref_cons) == 0 and len(ref_sos) == 0 and ref_obj is None:
+                vars_to_remove[v_id] = v
+        self.remove_variables(list(vars_to_remove.values()))
+
     def add_constraints(self, cons: List[_GeneralConstraintData]):
         all_fixed_vars = dict()
-        expr_types = self._expr_types
         for con in cons:
             if con in self._named_expressions:
                 raise ValueError('constraint {name} has already been added'.format(name=con.name))
             self._active_constraints[con] = (con.lower, con.body, con.upper)
-            named_exprs, variables, fixed_vars, external_functions = cmodel.prep_for_repn(con.body, expr_types)
+            if self.use_extensions and cmodel_available:
+                tmp = cmodel.prep_for_repn(con.body, self._expr_types)
+            else:
+                tmp = collect_vars_and_named_exprs(con.body)
+            named_exprs, variables, fixed_vars, external_functions = tmp
+            if not self._only_child_vars:
+                self._check_for_new_vars(variables)
             self._named_expressions[con] = [(e, e.expr) for e in named_exprs]
             if len(external_functions) > 0:
                 self._external_functions[con] = external_functions
@@ -831,6 +853,8 @@ class PersistentBase(abc.ABC):
                 raise ValueError('constraint {name} has already been added'.format(name=con.name))
             self._active_constraints[con] = tuple()
             variables = con.get_variables()
+            if not self._only_child_vars:
+                self._check_for_new_vars(variables)
             self._named_expressions[con] = list()
             self._vars_referenced_by_con[con] = variables
             for v in variables:
@@ -845,13 +869,20 @@ class PersistentBase(abc.ABC):
         if self._objective is not None:
             for v in self._vars_referenced_by_obj:
                 self._referenced_variables[id(v)][2] = None
+            if not self._only_child_vars:
+                self._check_to_remove_vars(self._vars_referenced_by_obj)
             self._external_functions.pop(self._objective, None)
         if obj is not None:
             self._objective = obj
             self._objective_expr = obj.expr
             self._objective_sense = obj.sense
-            expr_types = cmodel.PyomoExprTypes()
-            named_exprs, variables, fixed_vars, external_functions = cmodel.prep_for_repn(obj.expr, expr_types)
+            if self.use_extensions and cmodel_available:
+                tmp = cmodel.prep_for_repn(obj.expr, self._expr_types)
+            else:
+                tmp = collect_vars_and_named_exprs(obj.expr)
+            named_exprs, variables, fixed_vars, external_functions = tmp
+            if not self._only_child_vars:
+                self._check_for_new_vars(variables)
             self._obj_named_expressions = [(i, i.expr) for i in named_exprs]
             if len(external_functions) > 0:
                 self._external_functions[obj] = external_functions
@@ -873,17 +904,18 @@ class PersistentBase(abc.ABC):
             self._set_objective(obj)
 
     def add_block(self, block):
-        param_dict = OrderedDict()
-        for p in block.component_objects(Param, descend_into=True, sort=False):
+        param_dict = dict()
+        for p in block.component_objects(Param, descend_into=True):
             if p.mutable:
                 for _p in p.values():
                     param_dict[id(_p)] = _p
         self.add_params(list(param_dict.values()))
-        self.add_variables(list(OrderedDict((id(var), var) for var in block.component_data_objects(Var, descend_into=True, sort=False)).values()))
+        if self._only_child_vars:
+            self.add_variables(list(dict((id(var), var) for var in block.component_data_objects(Var, descend_into=True)).values()))
         self.add_constraints([con for con in block.component_data_objects(Constraint, descend_into=True,
-                                                                          active=True, sort=False)])
+                                                                          active=True)])
         self.add_sos_constraints([con for con in block.component_data_objects(SOSConstraint, descend_into=True,
-                                                                              active=True, sort=False)])
+                                                                              active=True)])
         obj = get_objective(block)
         if obj is not None:
             self.set_objective(obj)
@@ -899,6 +931,8 @@ class PersistentBase(abc.ABC):
                 raise ValueError('cannot remove constraint {name} - it was not added'.format(name=con.name))
             for v in self._vars_referenced_by_con[con]:
                 self._referenced_variables[id(v)][0].pop(con)
+            if not self._only_child_vars:
+                self._check_to_remove_vars(self._vars_referenced_by_con[con])
             del self._active_constraints[con]
             del self._named_expressions[con]
             self._external_functions.pop(con, None)
@@ -915,6 +949,7 @@ class PersistentBase(abc.ABC):
                 raise ValueError('cannot remove constraint {name} - it was not added'.format(name=con.name))
             for v in self._vars_referenced_by_con[con]:
                 self._referenced_variables[id(v)][1].pop(con)
+            self._check_to_remove_vars(self._vars_referenced_by_con[con])
             del self._active_constraints[con]
             del self._named_expressions[con]
             del self._vars_referenced_by_con[con]
@@ -946,11 +981,12 @@ class PersistentBase(abc.ABC):
 
     def remove_block(self, block):
         self.remove_constraints([con for con in block.component_data_objects(ctype=Constraint, descend_into=True,
-                                                                             active=True, sort=False)])
+                                                                             active=True)])
         self.remove_sos_constraints([con for con in block.component_data_objects(ctype=SOSConstraint, descend_into=True,
-                                                                                 active=True, sort=False)])
-        self.remove_variables(list(OrderedDict((id(var), var) for var in block.component_data_objects(ctype=Var, descend_into=True, sort=False)).values()))
-        self.remove_params(list(OrderedDict((id(p), p) for p in block.component_data_objects(ctype=Param, descend_into=True, sort=False)).values()))
+                                                                                 active=True)])
+        if self._only_child_vars:
+            self.remove_variables(list(dict((id(var), var) for var in block.component_data_objects(ctype=Var, descend_into=True)).values()))
+        self.remove_params(list(dict((id(p), p) for p in block.component_data_objects(ctype=Param, descend_into=True)).values()))
 
     @abc.abstractmethod
     def _update_variables(self, variables: List[_GeneralVarData]):
@@ -981,19 +1017,21 @@ class PersistentBase(abc.ABC):
         current_cons_dict = dict()
         current_sos_dict = dict()
         timer.start('vars')
-        if config.check_for_new_or_removed_vars or config.update_vars:
-            current_vars_dict = {id(v): v for v in self._model.component_data_objects(Var, descend_into=True, sort=False)}
+        if self._only_child_vars and (config.check_for_new_or_removed_vars or config.update_vars):
+            current_vars_dict = {id(v): v for v in self._model.component_data_objects(Var, descend_into=True)}
             for v_id, v in current_vars_dict.items():
                 if v_id not in self._vars:
                     new_vars.append(v)
             for v_id, v_tuple in self._vars.items():
                 if v_id not in current_vars_dict:
                     old_vars.append(v_tuple[0])
+        elif config.update_vars:
+            start_vars = {v_id: v_tuple[0] for v_id, v_tuple in self._vars.items()}
         timer.stop('vars')
         timer.start('params')
         if config.check_for_new_or_removed_params:
             current_params_dict = dict()
-            for p in self._model.component_objects(Param, descend_into=True, sort=False):
+            for p in self._model.component_objects(Param, descend_into=True):
                 if p.mutable:
                     for _p in p.values():
                         current_params_dict[id(_p)] = _p
@@ -1006,8 +1044,8 @@ class PersistentBase(abc.ABC):
         timer.stop('params')
         timer.start('cons')
         if config.check_for_new_or_removed_constraints or config.update_constraints:
-            current_cons_dict = {c: None for c in self._model.component_data_objects(Constraint, descend_into=True, active=True, sort=False)}
-            current_sos_dict = {c: None for c in self._model.component_data_objects(SOSConstraint, descend_into=True, active=True, sort=False)}
+            current_cons_dict = {c: None for c in self._model.component_data_objects(Constraint, descend_into=True, active=True)}
+            current_sos_dict = {c: None for c in self._model.component_data_objects(SOSConstraint, descend_into=True, active=True)}
             for c in current_cons_dict.keys():
                 if c not in self._vars_referenced_by_con:
                     new_cons.append(c)
@@ -1079,11 +1117,15 @@ class PersistentBase(abc.ABC):
             self.add_sos_constraints(sos_to_update)
         timer.stop('cons')
         timer.start('vars')
-        if config.update_vars:
+        if self._only_child_vars and config.update_vars:
             vars_to_check = list()
             for v_id, v in current_vars_dict.items():
                 if v_id not in new_vars_set:
                     vars_to_check.append(v)
+        elif config.update_vars:
+            end_vars = {v_id: v_tuple[0] for v_id, v_tuple in self._vars.items()}
+            vars_to_check = [v for v_id, v in end_vars.items() if v_id in start_vars]
+        if config.update_vars:
             vars_to_update = list()
             for v in vars_to_check:
                 _v, lb, ub, fixed, domain_interval, value = self._vars[id(v)]

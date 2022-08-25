@@ -19,8 +19,8 @@ from pyomo.repn.plugins.ampl.ampl_ import set_pyomo_amplfunc_env
 
 
 class NLWriter(PersistentBase):
-    def __init__(self):
-        super(NLWriter, self).__init__()
+    def __init__(self, only_child_vars=True):
+        super(NLWriter, self).__init__(only_child_vars=only_child_vars)
         self._config = WriterConfig()
         self._writer = None
         self._symbol_map = SymbolMap()
@@ -49,7 +49,7 @@ class NLWriter(PersistentBase):
     def set_instance(self, model):
         saved_config = self.config
         saved_update_config = self.update_config
-        self.__init__()
+        self.__init__(only_child_vars=self._only_child_vars)
         self.config = saved_config
         self.update_config = saved_update_config
         self._model = model
@@ -102,7 +102,6 @@ class NLWriter(PersistentBase):
         for c in cons:
             cc = self._pyomo_con_to_solver_con_map.pop(c)
             self._writer.remove_constraint(cc)
-            self._con_labeler.remove_obj(c)
             del self._solver_con_to_pyomo_con_map[cc]
 
     def _remove_sos_constraints(self, cons: List[_SOSConstraintData]):
@@ -114,13 +113,11 @@ class NLWriter(PersistentBase):
             cvar = self._pyomo_var_to_solver_var_map.pop(id(v))
             del self._solver_var_to_pyomo_var_map[cvar]
             # self._symbol_map.removeSymbol(v)
-            self._var_labeler.remove_obj(v)
 
     def _remove_params(self, params: List[_ParamData]):
         for p in params:
             del self._pyomo_param_to_solver_param_map[id(p)]
             self._symbol_map.removeSymbol(p)
-            self._param_labeler.remove_obj(p)
 
     def _update_variables(self, variables: List[_GeneralVarData]):
         cmodel.process_pyomo_vars(self._expr_types, variables, self._pyomo_var_to_solver_var_map,

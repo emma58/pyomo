@@ -3,7 +3,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -53,16 +54,17 @@
 """
 from __future__ import division
 import logging
-from pyomo.contrib.gdpopt.util import (copy_var_list_values, create_utility_block,
-                                       time_code, setup_results_object, process_objective, lower_logger_level_to)
+from pyomo.contrib.gdpopt.util import (copy_var_list_values, 
+                                       time_code, lower_logger_level_to)
 from pyomo.contrib.mindtpy.initialization import MindtPy_initialize_main
 from pyomo.contrib.mindtpy.iterate import MindtPy_iteration_loop
-from pyomo.contrib.mindtpy.util import model_is_valid, set_up_solve_data, set_up_logger, get_primal_integral, get_dual_integral
+from pyomo.contrib.mindtpy.util import model_is_valid, set_up_solve_data, set_up_logger, get_primal_integral, get_dual_integral, setup_results_object, process_objective, create_utility_block
 from pyomo.core import (Block, ConstraintList, NonNegativeReals,
-                        Var, VarList, TransformationFactory, RangeSet, minimize)
+                        Var, VarList, TransformationFactory, RangeSet, minimize, Constraint, Objective)
 from pyomo.opt import SolverFactory
 from pyomo.contrib.mindtpy.config_options import _get_MindtPy_config, check_config
 from pyomo.common.config import add_docstring_list
+from pyomo.util.vars_from_expressions import get_vars_from_components
 
 __version__ = (0, 1, 0)
 
@@ -123,7 +125,9 @@ class MindtPySolver(object):
         }), preserve_implicit=True)  # TODO: do we need to set preserve_implicit=True?
         config.set_value(kwds)
         set_up_logger(config)
-        check_config(config)
+        new_logging_level = logging.INFO if config.tee else None
+        with lower_logger_level_to(config.logger, new_logging_level):
+            check_config(config)
 
         solve_data = set_up_solve_data(model, config)
 
@@ -131,7 +135,6 @@ class MindtPySolver(object):
             TransformationFactory('contrib.integer_to_binary'). \
                 apply_to(solve_data.working_model)
 
-        new_logging_level = logging.INFO if config.tee else None
         with time_code(solve_data.timing, 'total', is_main_timer=True), \
                 lower_logger_level_to(config.logger, new_logging_level), \
                 create_utility_block(solve_data.working_model, 'MindtPy_utils', solve_data):
@@ -145,7 +148,7 @@ class MindtPySolver(object):
             setup_results_object(solve_data, config)
             # In the process_objective function, as long as the objective function is nonlinear, it will be reformulated and the variable/constraint/objective lists will be updated.
             # For OA/GOA/LP-NLP algorithm, if the objective funtion is linear, it will not be reformulated as epigraph constraint.
-            # If the objective function is linear, it will be reformulated as epigraph constraint only if the Feasibility Pump or ROA/RLP-NLP algorithm is activated. (move_linear_objective = True)
+            # If the objective function is linear, it will be reformulated as epigraph constraint only if the Feasibility Pump or ROA/RLP-NLP algorithm is activated. (move_objective = True)
             # In some cases, the variable/constraint/objective lists will not be updated even if the objective is epigraph-reformulated.
             # In Feasibility Pump, since the distance calculation only includes discrete variables and the epigraph slack variables are continuous variables, the Feasibility Pump algorithm will not affected even if the variable list are updated.
             # In ROA and RLP/NLP, since the distance calculation does not include these epigraph slack variables, they should not be added to the variable list. (update_var_con_list = False)
@@ -153,15 +156,18 @@ class MindtPySolver(object):
             # This is because the epigraph constraint is very "flat" for branching rules. The original objective function will be used for the main problem and epigraph reformulation will be used for the projection problem.
             # TODO: The logic here is too complicated, can we simplify it?
             process_objective(solve_data, config,
-                              move_linear_objective=(config.init_strategy == 'FP'
-                                                     or config.add_regularization is not None),
+                              move_objective=(config.init_strategy == 'FP'
+                                                     or config.add_regularization is not None
+                                                     or config.move_objective),
                               use_mcpp=config.use_mcpp,
                               update_var_con_list=config.add_regularization is None,
-                              partition_nonlinear_terms=config.partition_obj_nonlinear_terms
+                              partition_nonlinear_terms=config.partition_obj_nonlinear_terms,
+                              obj_handleable_polynomial_degree=solve_data.mip_objective_polynomial_degree,
+                              constr_handleable_polynomial_degree=solve_data.mip_constraint_polynomial_degree
                               )
             # The epigraph constraint is very "flat" for branching rules.
             # If ROA/RLP-NLP is activated and the original objective function is linear, we will use the original objective for the main mip.
-            if MindtPy.objective_list[0].expr.polynomial_degree() in {1, 0} and config.add_regularization is not None:
+            if MindtPy.objective_list[0].expr.polynomial_degree() in solve_data.mip_objective_polynomial_degree and config.add_regularization is not None:
                 MindtPy.objective_list[0].activate()
                 MindtPy.objective_constr.deactivate()
                 MindtPy.objective.deactivate()
@@ -235,11 +241,25 @@ class MindtPySolver(object):
                     from_list=solve_data.best_solution_found.MindtPy_utils.variable_list,
                     to_list=MindtPy.variable_list,
                     config=config)
-                copy_var_list_values(
-                    MindtPy.variable_list,
-                    [i for i in solve_data.original_model.component_data_objects(
-                        Var) if not i.fixed],
-                    config)
+                # The original does not have variable list. Use get_vars_from_components() should be used for both working_model and original_model to exclude the unused variables.
+                solve_data.working_model.MindtPy_utils.deactivate()
+                if solve_data.working_model.find_component("_int_to_binary_reform") is not None:
+                    solve_data.working_model._int_to_binary_reform.deactivate()
+                copy_var_list_values(list(get_vars_from_components(block=solve_data.working_model, 
+                                         ctype=(Constraint, Objective), 
+                                         include_fixed=False, 
+                                         active=True,
+                                         sort=True, 
+                                         descend_into=True,
+                                         descent_order=None)),
+                                    list(get_vars_from_components(block=solve_data.original_model, 
+                                         ctype=(Constraint, Objective), 
+                                         include_fixed=False, 
+                                         active=True,
+                                         sort=True, 
+                                         descend_into=True,
+                                         descent_order=None)),
+                                    config=config)
                 # exclude fixed variables here. This is consistent with the definition of variable_list in GDPopt.util
             if solve_data.objective_sense == minimize:
                 solve_data.results.problem.lower_bound = solve_data.dual_bound

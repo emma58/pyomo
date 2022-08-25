@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -13,7 +14,7 @@ __all__ = ['Expression', '_ExpressionData']
 import sys
 import logging
 from weakref import ref as weakref_ref
-from typing import overload
+from pyomo.common.pyomo_typing import overload
 
 from pyomo.common.log import is_debug_set
 from pyomo.common.deprecation import deprecated, RenamedClass
@@ -22,6 +23,7 @@ from pyomo.common.formatting import tabular_writer
 from pyomo.common.timing import ConstructionTimer
 
 from pyomo.core.base.component import ComponentData, ModelComponentFactory
+from pyomo.core.base.global_set import UnindexedComponent_index
 from pyomo.core.base.indexed_component import (
     IndexedComponent,
     UnindexedComponent_set, )
@@ -193,7 +195,21 @@ class _GeneralExpressionDataImpl(_ExpressionData):
 
     def set_value(self, expr):
         """Set the expression on this expression."""
-        self._expr = as_numeric(expr) if (expr is not None) else None
+        if expr is None:
+            self._expr = None
+            return
+        expr = as_numeric(expr)
+        # In-place operators will leave self as an argument.  We need to
+        # replace that with the current expression in order to avoid
+        # loops in the expression tree.
+        if expr.is_expression_type():
+            _args = expr.args
+            if any(arg is self for arg in _args):
+                new_args = _args.__class__(
+                    arg.expr if arg is self else arg for arg in _args
+                )
+                expr = expr.create_node_with_local_data(new_args)
+        self._expr = expr
 
     def is_constant(self):
         """A boolean indicating whether this expression is constant."""
@@ -228,6 +244,7 @@ class _GeneralExpressionData(_GeneralExpressionDataImpl,
         # Inlining ComponentData.__init__
         self._component = weakref_ref(component) if (component is not None) \
                           else None
+        self._index = NOTSET
 
 
 @ModelComponentFactory.register(
@@ -280,7 +297,7 @@ class Expression(IndexedComponent):
         return (
             [('Size', len(self)),
              ('Index', None if (not self.is_indexed())
-                  else self._index)
+                  else self._index_set)
              ],
             self.items(),
             ("Expression",),
@@ -373,6 +390,7 @@ class ScalarExpression(_GeneralExpressionData, Expression):
     def __init__(self, *args, **kwds):
         _GeneralExpressionData.__init__(self, expr=None, component=self)
         Expression.__init__(self, *args, **kwds)
+        self._index = UnindexedComponent_index
 
     #
     # Since this class derives from Component and
@@ -467,7 +485,7 @@ class IndexedExpression(Expression):
 
     #
     # Leaving this method for backward compatibility reasons
-    # Note: It allows adding members outside of self._index.
+    # Note: It allows adding members outside of self._index_set.
     #       This has always been the case. Not sure there is
     #       any reason to maintain a reference to a separate
     #       index set if we allow this.

@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -13,7 +14,7 @@ from __future__ import division
 from math import copysign
 from pyomo.core import minimize, value
 from pyomo.core.expr import current as EXPR
-from pyomo.contrib.gdpopt.util import identify_variables, time_code
+from pyomo.contrib.gdpopt.util import time_code
 from pyomo.contrib.mcpp.pyomo_mcpp import McCormick as mc, MCPP_Error
 
 
@@ -47,10 +48,10 @@ def add_oa_cuts(target_model, dual_values, solve_data, config,
     with time_code(solve_data.timing, 'OA cut generation'):
         for index, constr in enumerate(target_model.MindtPy_utils.constraint_list):
             # TODO: here the index is correlated to the duals, try if this can be fixed when temp duals are removed.
-            if constr.body.polynomial_degree() in {0, 1}:
+            if constr.body.polynomial_degree() in solve_data.mip_constraint_polynomial_degree:
                 continue
 
-            constr_vars = list(identify_variables(constr.body))
+            constr_vars = list(EXPR.identify_variables(constr.body))
             jacs = solve_data.jacobians
 
             # Equality constraint (makes the problem nonconvex)
@@ -126,7 +127,7 @@ def add_ecp_cuts(target_model, solve_data, config,
     """
     with time_code(solve_data.timing, 'ECP cut generation'):
         for constr in target_model.MindtPy_utils.nonlinear_constraint_list:
-            constr_vars = list(identify_variables(constr.body))
+            constr_vars = list(EXPR.identify_variables(constr.body))
             jacs = solve_data.jacobians
 
             if constr.has_lb() and constr.has_ub():
@@ -256,7 +257,7 @@ def add_affine_cuts(solve_data, config):
 
         for constr in m.MindtPy_utils.nonlinear_constraint_list:
             vars_in_constr = list(
-                identify_variables(constr.body))
+                EXPR.identify_variables(constr.body))
             if any(var.value is None for var in vars_in_constr):
                 continue  # a variable has no values
 

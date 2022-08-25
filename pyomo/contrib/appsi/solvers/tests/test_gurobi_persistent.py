@@ -105,7 +105,6 @@ def create_pmedian_model():
     return model
 
 
-@unittest.skipUnless(cmodel_available, 'appsi extensions are not available')
 class TestGurobiPersistentSimpleLPUpdates(unittest.TestCase):
     def setUp(self):
         self.m = pe.ConcreteModel()
@@ -180,7 +179,7 @@ class TestGurobiPersistentSimpleLPUpdates(unittest.TestCase):
         finally:
             Gurobi._available = _avail
 
-@unittest.skipUnless(cmodel_available, 'appsi extensions are not available')
+
 class TestGurobiPersistent(unittest.TestCase):
     def test_range_constraints(self):
         m = pe.ConcreteModel()
@@ -408,7 +407,6 @@ class TestGurobiPersistent(unittest.TestCase):
         self.assertAlmostEqual(pe.value(m.obj.expr), 6.592304628123309)
 
 
-@unittest.skipUnless(cmodel_available, 'appsi extensions are not available')
 class TestManualModel(unittest.TestCase):
     def setUp(self):
         opt = Gurobi()
@@ -516,7 +514,7 @@ class TestManualModel(unittest.TestCase):
 
         opt = self.opt
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumQConstrs'), 0)
+        self.assertEqual(opt._solver_model.getAttr('NumQConstrs'), 1)
 
         opt.remove_constraints([m.c1])
         opt.update()
@@ -538,7 +536,7 @@ class TestManualModel(unittest.TestCase):
         opt = self.opt
         opt.config.symbolic_solver_labels = True
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumConstrs'), 0)
+        self.assertEqual(opt._solver_model.getAttr('NumConstrs'), 1)
 
         opt.remove_constraints([m.c2])
         opt.update()
@@ -597,7 +595,7 @@ class TestManualModel(unittest.TestCase):
 
         opt = self.opt
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumSOS'), 0)
+        self.assertEqual(opt._solver_model.getAttr('NumSOS'), 1)
 
         opt.remove_sos_constraints([m.c1])
         opt.update()
@@ -634,7 +632,7 @@ class TestManualModel(unittest.TestCase):
 
         opt = self.opt
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumVars'), 0)
+        self.assertEqual(opt._solver_model.getAttr('NumVars'), 2)
 
         opt.remove_variables([m.x])
         opt.update()

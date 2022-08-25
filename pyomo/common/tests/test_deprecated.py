@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -423,6 +424,25 @@ class TestRelocated(unittest.TestCase):
             LOG.getvalue().replace('\n', ' '),
             "DEPRECATED: the 'oldName' class has been moved to "
             "'pyomo.common.tests.test_deprecated.TestRelocated'")
+
+    def test_relocated_module(self):
+        with LoggingIntercept() as LOG:
+            # Can import attributes defined only in the new module
+            from pyomo.common.tests.relo_mod import ReloClass
+        self.assertRegex(
+            LOG.getvalue().replace('\n', ' '),
+            r"DEPRECATED: The 'pyomo\.common\.tests\.relo_mod' module has "
+            r"been moved to 'pyomo\.common\.tests\.relo_mod_new'. Please "
+            r"update your import. \(deprecated in 1\.2\) \(called from "
+            r".*test_deprecated\.py")
+        with LoggingIntercept() as LOG:
+            # Second import: no warning
+            import pyomo.common.tests.relo_mod as relo
+        self.assertEqual(LOG.getvalue(), '')
+        import pyomo.common.tests.relo_mod_new as relo_new
+        self.assertIs(relo, relo_new)
+        self.assertEqual(relo.RELO_ATTR, 42)
+        self.assertIs(ReloClass, relo_new.ReloClass)
 
 
 class TestRenamedClass(unittest.TestCase):

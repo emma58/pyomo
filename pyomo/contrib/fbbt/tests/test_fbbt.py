@@ -1,9 +1,10 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
-#  Under the terms of Contract DE-NA0003525 with National Technology and 
-#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain 
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
@@ -468,8 +469,8 @@ class FbbtTestBase(object):
                 else:
                     xu = m.x.ub
                 _x = np.exp(np.log(y) / _exp_val)
-                self.assertTrue(np.all(xl <= _x))
-                self.assertTrue(np.all(xu >= _x))
+                self.assertTrue(np.all(xl - 1e-14 <= _x))
+                self.assertTrue(np.all(xu + 1e-14 >= _x))
 
     def test_sqrt(self):
         m = pyo.ConcreteModel()
@@ -540,6 +541,86 @@ class FbbtTestBase(object):
             self.assertTrue(np.all(xl <= x))
             self.assertTrue(np.all(xu >= x))
 
+    def test_abs(self):
+        m = pyo.ConcreteModel()
+        m.x = pyo.Var()
+        m.y = pyo.Var()
+        m.c = pyo.Constraint(expr=abs(m.x) == m.y)
+
+        self.tightener(m)
+        self.assertEqual(m.x.lb, None)
+        self.assertEqual(m.x.ub, None)
+        self.assertAlmostEqual(m.y.lb, 0)
+        self.assertEqual(m.y.ub, None)
+
+        m.x.setlb(None)
+        m.x.setub(None)
+        m.y.setlb(2)
+        m.y.setub(4)
+        self.tightener(m)
+        self.assertAlmostEqual(m.x.lb, -4)
+        self.assertAlmostEqual(m.x.ub, 4)
+        self.assertAlmostEqual(m.y.lb, 2)
+        self.assertAlmostEqual(m.y.ub, 4)
+
+        m.x.setlb(None)
+        m.x.setub(None)
+        m.y.setlb(-5)
+        m.y.setub(4)
+        self.tightener(m)
+        self.assertAlmostEqual(m.x.lb, -4)
+        self.assertAlmostEqual(m.x.ub, 4)
+        self.assertAlmostEqual(m.y.lb, 0)
+        self.assertAlmostEqual(m.y.ub, 4)
+
+        m.x.setlb(None)
+        m.x.setub(None)
+        m.y.setlb(-5)
+        m.y.setub(-4)
+        with self.assertRaises(InfeasibleConstraintException):
+            self.tightener(m)
+
+        m.x.setlb(None)
+        m.x.setub(None)
+        m.y.setlb(-5)
+        m.y.setub(0)
+        self.tightener(m)
+        self.assertAlmostEqual(m.x.lb, 0)
+        self.assertAlmostEqual(m.x.ub, 0)
+        self.assertAlmostEqual(m.y.lb, 0)
+        self.assertAlmostEqual(m.y.ub, 0)
+
+        m.x.setlb(-5)
+        m.x.setub(5)
+        m.y.setlb(None)
+        m.y.setub(None)
+        self.tightener(m)
+        self.assertAlmostEqual(m.x.lb, -5)
+        self.assertAlmostEqual(m.x.ub, 5)
+        self.assertAlmostEqual(m.y.lb, 0)
+        self.assertAlmostEqual(m.y.ub, 5)
+
+        m.x.setlb(-5)
+        m.x.setub(-2)
+        m.y.setlb(None)
+        m.y.setub(None)
+        self.tightener(m)
+        self.assertAlmostEqual(m.x.lb, -5)
+        self.assertAlmostEqual(m.x.ub, -2)
+        self.assertAlmostEqual(m.y.lb, 2)
+        self.assertAlmostEqual(m.y.ub, 5)
+
+        m.x.setlb(2)
+        m.x.setub(5)
+        m.y.setlb(None)
+        m.y.setub(None)
+        self.tightener(m)
+        self.assertAlmostEqual(m.x.lb, 2)
+        self.assertAlmostEqual(m.x.ub, 5)
+        self.assertAlmostEqual(m.y.lb, 2)
+        self.assertAlmostEqual(m.y.ub, 5)
+
+
     def test_log(self):
         if not numpy_available:
             raise unittest.SkipTest('Numpy is not available')
@@ -559,8 +640,8 @@ class FbbtTestBase(object):
             else:
                 xu = pyo.value(m.x.ub)
             x = np.exp(z)
-            self.assertTrue(np.all(xl <= x))
-            self.assertTrue(np.all(xu >= x))
+            self.assertTrue(np.all(xl - 1e-14 <= x))
+            self.assertTrue(np.all(xu + 1e-14 >= x))
 
     def test_log10(self):
         if not numpy_available:

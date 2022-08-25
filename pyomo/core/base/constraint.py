@@ -1,7 +1,9 @@
+
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -16,20 +18,21 @@ import sys
 import logging
 import math
 from weakref import ref as weakref_ref
-from typing import overload
+from pyomo.common.pyomo_typing import overload
 
 from pyomo.common.deprecation import RenamedClass
 from pyomo.common.errors import DeveloperError
 from pyomo.common.formatting import tabular_writer
 from pyomo.common.log import is_debug_set
+from pyomo.common.modeling import NOTSET
 from pyomo.common.timing import ConstructionTimer
 from pyomo.core.expr import logical_expr
 from pyomo.core.expr.numvalue import (
     NumericValue, value, as_numeric, is_fixed, native_numeric_types,
+    native_types,
 )
-from pyomo.core.base.component import (
-    ActiveComponentData, ModelComponentFactory,
-)
+from pyomo.core.base.component import ActiveComponentData, ModelComponentFactory
+from pyomo.core.base.global_set import UnindexedComponent_index
 from pyomo.core.base.indexed_component import (
     ActiveIndexedComponent, UnindexedComponent_set, rule_wrapper,
 )
@@ -43,6 +46,7 @@ from pyomo.core.base.initializer import (
 logger = logging.getLogger('pyomo.core')
 
 _inf = float('inf')
+_nonfinite_values = {_inf, -_inf}
 _rule_returned_none_error = """Constraint '%s': rule returned None.
 
 Constraint rules must return either a valid expression, a 2- or 3-member
@@ -137,6 +141,7 @@ class _ConstraintData(ActiveComponentData):
         #   - ComponentData
         self._component = weakref_ref(component) if (component is not None) \
                           else None
+        self._index = NOTSET
         self._active = True
 
     #
@@ -313,14 +318,16 @@ class _GeneralConstraintData(_ConstraintData):
     def body(self):
         """Access the body of a constraint expression."""
         if self._body is not None:
-            body = self._body
+            return self._body
         else:
             # The incoming RangedInequality had a potentially variable
             # bound.  The "body" is fine, but the bounds may not be
             # (although the responsibility for those checks lies with the
             # lower/upper properties)
             body = self._expr.arg(1)
-        return as_numeric(body)
+            if body.__class__ in native_types and body is not None:
+                return as_numeric(body)
+            return body
 
     def _lb(self):
         if self._body is not None:
@@ -383,8 +390,11 @@ class _GeneralConstraintData(_ConstraintData):
     @property
     def lb(self):
         """Access the value of the lower bound of a constraint expression."""
-        bound = value(self._lb())
-        if bound is not None and not math.isfinite(bound):
+        bound = self._lb()
+        if bound.__class__ not in native_types:
+            bound = value(bound)
+        if bound in _nonfinite_values or bound != bound:
+            # Note that "bound != bound" catches float('nan')
             if bound == -_inf:
                 bound = None
             else:
@@ -396,8 +406,11 @@ class _GeneralConstraintData(_ConstraintData):
     @property
     def ub(self):
         """Access the value of the upper bound of a constraint expression."""
-        bound = value(self._ub())
-        if bound is not None and not math.isfinite(bound):
+        bound = self._ub()
+        if bound.__class__ not in native_types:
+            bound = value(bound)
+        if bound in _nonfinite_values or bound != bound:
+            # Note that "bound != bound" catches float('nan')
             if bound == _inf:
                 bound = None
             else:
@@ -611,21 +624,32 @@ class _GeneralConstraintData(_ConstraintData):
             raise DeveloperError("Unrecognized relational expression type: %s"
                                  % (self._expr.__class__.__name__,))
 
+        # We have historically forced the body to be a numeric expression.
+        # TODO: remove this requirement
+        if self._body.__class__ in native_types and self._body is not None:
+            self._body = as_numeric(self._body)
+
         # We have historically mapped incoming inf to None
         if self._lower.__class__ in native_numeric_types:
-            if self._lower == -_inf:
-                self._lower = None
-            elif not math.isfinite(self._lower):
-                raise ValueError(
-                    "Constraint '%s' created with an invalid non-finite "
-                    "lower bound (%s)." % (self.name, self._lower))
+            bound = self._lower
+            if bound in _nonfinite_values or bound != bound:
+                # Note that "bound != bound" catches float('nan')
+                if bound == -_inf:
+                    self._lower = None
+                else:
+                    raise ValueError(
+                        "Constraint '%s' created with an invalid non-finite "
+                        "lower bound (%s)." % (self.name, self._lower))
         if self._upper.__class__ in native_numeric_types:
-            if self._upper == _inf:
-                self._upper = None
-            elif not math.isfinite(self._upper):
-                raise ValueError(
-                    "Constraint '%s' created with an invalid non-finite "
-                    "upper bound (%s)." % (self.name, self._upper))
+            bound = self._upper
+            if bound in _nonfinite_values or bound != bound:
+                # Note that "bound != bound" catches float('nan')
+                if bound == _inf:
+                    self._upper = None
+                else:
+                    raise ValueError(
+                        "Constraint '%s' created with an invalid non-finite "
+                        "upper bound (%s)." % (self.name, self._upper))
 
 
 @ModelComponentFactory.register("General constraint expressions.")
@@ -774,7 +798,7 @@ class Constraint(ActiveIndexedComponent):
         """
         return (
             [("Size", len(self)),
-             ("Index", self._index if self.is_indexed() else None),
+             ("Index", self._index_set if self.is_indexed() else None),
              ("Active", self.active),
              ],
             self.items(),
@@ -820,6 +844,7 @@ class ScalarConstraint(_GeneralConstraintData, Constraint):
     def __init__(self, *args, **kwds):
         _GeneralConstraintData.__init__(self, component=self, expr=None)
         Constraint.__init__(self, *args, **kwds)
+        self._index = UnindexedComponent_index
 
     #
     # Since this class derives from Component and
@@ -1020,7 +1045,7 @@ class ConstraintList(IndexedConstraint):
 
     def add(self, expr):
         """Add a constraint with an implicit index."""
-        next_idx = len(self._index) + self._starting_index
-        self._index.add(next_idx)
+        next_idx = len(self._index_set) + self._starting_index
+        self._index_set.add(next_idx)
         return self.__setitem__(next_idx, expr)
 

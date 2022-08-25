@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -13,20 +14,22 @@ __all__ = ['Var', '_VarData', '_GeneralVarData', 'VarList', 'SimpleVar',
 
 import logging
 import sys
-from typing import overload
+from pyomo.common.pyomo_typing import overload
 from weakref import ref as weakref_ref
 
 from pyomo.common.collections import Sequence
 from pyomo.common.deprecation import RenamedClass
 from pyomo.common.log import is_debug_set
-from pyomo.common.modeling import NoArgumentGiven, NOTSET
+from pyomo.common.modeling import NOTSET
 from pyomo.common.timing import ConstructionTimer
 from pyomo.core.staleflag import StaleFlagManager
 from pyomo.core.expr.numeric_expr import NPV_MaxExpression, NPV_MinExpression
 from pyomo.core.expr.numvalue import (
     NumericValue, value, is_potentially_variable, native_numeric_types,
+    native_types,
 )
 from pyomo.core.base.component import ComponentData, ModelComponentFactory
+from pyomo.core.base.global_set import UnindexedComponent_index
 from pyomo.core.base.disable_methods import disable_methods
 from pyomo.core.base.indexed_component import (
     IndexedComponent, UnindexedComponent_set, IndexedComponent_NDArrayMixin
@@ -295,6 +298,7 @@ class _GeneralVarData(_VarData):
         #   - NumericValue
         self._component = weakref_ref(component) if (component is not None) \
                           else None
+        self._index = NOTSET
         self._value = None
         #
         # The type of the lower and upper bound attributes can either be
@@ -318,6 +322,7 @@ class _GeneralVarData(_VarData):
         self._domain = src._domain
         self._fixed = src._fixed
         self._stale = src._stale
+        self._index = src._index
         return self
 
     def __getstate__(self):
@@ -417,16 +422,20 @@ class _GeneralVarData(_VarData):
         domain_bounds = self.domain.bounds()
         if self._lb is None:
             lb = domain_bounds[0]
-        elif domain_bounds[0] is None:
-            lb = value(self._lb)
         else:
-            lb = max(value(self._lb), domain_bounds[0])
+            lb = self._lb
+            if lb.__class__ not in native_types:
+                lb = lb()
+            if domain_bounds[0] is not None:
+                lb = max(lb, domain_bounds[0])
         if self._ub is None:
             ub = domain_bounds[1]
-        elif domain_bounds[1] is None:
-            ub = value(self._ub)
         else:
-            ub = min(value(self._ub), domain_bounds[1])
+            ub = self._ub
+            if ub.__class__ not in native_types:
+                ub = ub()
+            if domain_bounds[1] is not None:
+                ub = min(ub, domain_bounds[1])
         return None if lb == _ninf else lb, None if ub == _inf else ub
 
     @_VarData.lb.getter
@@ -436,10 +445,12 @@ class _GeneralVarData(_VarData):
         dlb, _ = self.domain.bounds()
         if self._lb is None:
             lb = dlb
-        elif dlb is None:
-            lb = value(self._lb)
         else:
-            lb = max(value(self._lb), dlb)
+            lb = self._lb
+            if lb.__class__ not in native_types:
+                lb = lb()
+            if dlb is not None:
+                lb = max(lb, dlb)
         return None if lb == _ninf else lb
 
     @_VarData.ub.getter
@@ -449,10 +460,12 @@ class _GeneralVarData(_VarData):
         _, dub = self.domain.bounds()
         if self._ub is None:
             ub = dub
-        elif dub is None:
-            ub = value(self._ub)
         else:
-            ub = min(value(self._ub), dub)
+            ub = self._ub
+            if ub.__class__ not in native_types:
+                ub = ub()
+            if dub is not None:
+                ub = min(ub, dub)
         return None if ub == _inf else ub
 
     @property
@@ -525,6 +538,11 @@ class _GeneralVarData(_VarData):
             self._stale = 0 # True
         else:
             self._stale = StaleFlagManager.get_flag(0)
+
+    # Note: override the base class definition to avoid a call through a
+    # property
+    def is_fixed(self):
+        return self._fixed
 
     def _process_bound(self, val, bound_type):
         if type(val) in native_numeric_types or val is None:
@@ -745,6 +763,11 @@ class Var(IndexedComponent, IndexedComponent_NDArrayMixin):
                 # Initialize all the component datas with the common data
                 for index in self.index_set():
                     self._data[index] = self._ComponentDataClass.copy(ref)
+                    # NOTE: This is a special case where a key, value pair is
+                    # added to the _data dictionary without calling
+                    # _getitem_when_not_present, which is why we need to set the
+                    # index here.
+                    self._data[index]._index = index
                 # Now go back and initialize any index-specific data
                 block = self.parent_block()
                 if call_domain_rule:
@@ -788,6 +811,7 @@ class Var(IndexedComponent, IndexedComponent_NDArrayMixin):
         else:
             obj = self._data[index] = self._ComponentDataClass(component=self)
         parent = self.parent_block()
+        obj._index = index
         # We can directly set the attribute (not the property) because
         # the SetInitializer ensures that the value is a proper Set.
         obj._domain = self._rule_domain(parent, index)
@@ -817,7 +841,7 @@ class Var(IndexedComponent, IndexedComponent_NDArrayMixin):
         """Print component information."""
         headers = [
             ("Size", len(self)),
-            ("Index", self._index if self.is_indexed() else None),
+            ("Index", self._index_set if self.is_indexed() else None),
         ]
         if self._units is not None:
             headers.append(('Units', str(self._units)))
@@ -840,6 +864,7 @@ class ScalarVar(_GeneralVarData, Var):
     def __init__(self, *args, **kwd):
         _GeneralVarData.__init__(self, component=self)
         Var.__init__(self, *args, **kwd)
+        self._index = UnindexedComponent_index
 
     # Since this class derives from Component and Component.__getstate__
     # just packs up the entire __dict__ into the state dict, we do not
@@ -950,11 +975,11 @@ class VarList(IndexedVar):
         # then let _validate_index complain when we set the value.
         if self._rule_init is not None and self._rule_init.contains_indices():
             for i, idx in enumerate(self._rule_init.indices()):
-                self._index.add(i + self._starting_index)
+                self._index_set.add(i + self._starting_index)
         super(VarList,self).construct(data)
 
     def add(self):
         """Add a variable to this list."""
-        next_idx = len(self._index) + self._starting_index
-        self._index.add(next_idx)
+        next_idx = len(self._index_set) + self._starting_index
+        self._index_set.add(next_idx)
         return self[next_idx]

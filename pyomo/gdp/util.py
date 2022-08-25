@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -164,6 +165,8 @@ def _gather_disjunctions(block, gdp_tree):
             # might be a Block, in case it wouldn't get added below.)
             gdp_tree.add_node(disjunction)
             for disjunct in disjunction.disjuncts:
+                if not disjunct.active:
+                    continue
                 gdp_tree.add_edge(disjunction, disjunct)
                 to_explore.append(disjunct)
             if block.ctype is Disjunct:
@@ -180,25 +183,22 @@ def get_gdp_tree(targets, instance, knownBlocks):
             raise GDP_Error("Target '%s' is not a component on instance "
                             "'%s'!" % (t.name, instance.name))
         if t.ctype is Block or isinstance(t, _BlockData):
-            if t.is_indexed():
-                for block in t.values():
-                    gdp_tree = _gather_disjunctions(block, gdp_tree)
-            else:
-                gdp_tree = _gather_disjunctions(t, gdp_tree)
+            _blocks = t.values() if t.is_indexed() else (t,)
+            for block in _blocks:
+                if not block.active:
+                    continue
+                gdp_tree = _gather_disjunctions(block, gdp_tree)
         elif t.ctype is Disjunction:
             parent = _parent_disjunct(t)
             if parent is not None and parent in targets:
                 gdp_tree.add_edge(parent, t)
-            if t.is_indexed():
-                for disjunction in t.values():
-                    gdp_tree.add_node(disjunction)
-                    for disjunct in disjunction.disjuncts:
-                        gdp_tree.add_edge(disjunction, disjunct)
-                        gdp_tree = _gather_disjunctions(disjunct, gdp_tree)
-            else:
-                gdp_tree.add_node(t)
-                for disjunct in t.disjuncts:
-                    gdp_tree.add_edge(t, disjunct)
+            _disjunctions = t.values() if t.is_indexed() else (t,)
+            for disjunction in _disjunctions:
+                gdp_tree.add_node(disjunction)
+                for disjunct in disjunction.disjuncts:
+                    if not disjunct.active:
+                        continue
+                    gdp_tree.add_edge(disjunction, disjunct)
                     gdp_tree = _gather_disjunctions(disjunct, gdp_tree)
         else:
             # There's nothing else we care about, so we don't know how to
@@ -367,7 +367,7 @@ def get_transformed_constraints(srcConstraint):
                      % srcConstraint.name)
         raise
 
-def _warn_for_active_disjunction(disjunction, disjunct, NAME_BUFFER):
+def _warn_for_active_disjunction(disjunction, disjunct):
     # this should only have gotten called if the disjunction is active
     assert disjunction.active
     problemdisj = disjunction
@@ -382,16 +382,15 @@ def _warn_for_active_disjunction(disjunction, disjunct, NAME_BUFFER):
     parentblock = problemdisj.parent_block()
     # the disjunction should only have been active if it wasn't transformed
     assert problemdisj.algebraic_constraint is None
-    _probDisjName = problemdisj.getname(
-        fully_qualified=True, name_buffer=NAME_BUFFER)
-    _disjName = disjunct.getname(fully_qualified=True, name_buffer=NAME_BUFFER)
+    _probDisjName = problemdisj.getname(fully_qualified=True)
+    _disjName = disjunct.getname(fully_qualified=True)
     raise GDP_Error("Found untransformed disjunction '%s' in disjunct '%s'! "
                     "The disjunction must be transformed before the "
                     "disjunct. If you are using targets, put the "
                     "disjunction before the disjunct in the list."
                     % (_probDisjName, _disjName))
 
-def _warn_for_active_disjunct(innerdisjunct, outerdisjunct, NAME_BUFFER):
+def _warn_for_active_disjunct(innerdisjunct, outerdisjunct):
     assert innerdisjunct.active
     problemdisj = innerdisjunct
     if innerdisjunct.is_indexed():
@@ -406,11 +405,8 @@ def _warn_for_active_disjunct(innerdisjunct, outerdisjunct, NAME_BUFFER):
                     "has not been transformed. {0} needs to be deactivated "
                     "or its disjunction transformed before {1} can be "
                     "transformed.".format(
-                        problemdisj.getname(
-                            fully_qualified=True, name_buffer = NAME_BUFFER),
-                        outerdisjunct.getname(
-                            fully_qualified=True,
-                            name_buffer=NAME_BUFFER)))
+                        problemdisj.getname(fully_qualified=True),
+                        outerdisjunct.getname(fully_qualified=True)))
 
 def check_model_algebraic(instance):
     """Checks if there are any active Disjuncts or Disjunctions reachable via

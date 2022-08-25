@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -208,6 +209,7 @@ setup_kwargs = dict(
     ],
     extras_require = {
         'tests': [
+            #'codecov', # useful for testing infrastructures, but not required
             'coverage',
             'pytest',
             'pytest-parallel',
@@ -221,6 +223,7 @@ setup_kwargs = dict(
             'sphinxcontrib-jsmath',
             'sphinxcontrib-napoleon',
             'numpy', # Needed by autodoc for pynumero
+            'scipy', # Needed by autodoc for pynumero
         ],
         'optional': [
             'dill',      # No direct use, but improves lambda pickle
@@ -233,6 +236,7 @@ setup_kwargs = dict(
             'pint',      # units
             'python-louvain', # community_detection
             'pyyaml',    # core
+            'scipy',
             'sympy',     # differentiation
             'xlrd',      # dataportals
             'z3-solver', # community_detection
@@ -247,7 +251,6 @@ setup_kwargs = dict(
             'casadi; implementation_name!="pypy"',  # dae
             'numdifftools; implementation_name!="pypy"', # pynumero
             'pandas; implementation_name!="pypy"',
-            'scipy; implementation_name!="pypy"',
             'seaborn; implementation_name!="pypy"',   # parmest.graphics
         ],
     },

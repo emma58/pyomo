@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -14,7 +15,7 @@ import logging
 import math
 import sys
 import weakref
-from typing import overload
+from pyomo.common.pyomo_typing import overload
 
 from pyomo.common.deprecation import (
     deprecated, deprecation_warning, RenamedClass,
@@ -44,7 +45,7 @@ from pyomo.core.base.indexed_component import (
     rule_wrapper,
 )
 from pyomo.core.base.global_set import (
-    GlobalSets, GlobalSetBase,
+    GlobalSets, GlobalSetBase, UnindexedComponent_index
 )
 
 from collections.abc import Sequence
@@ -2078,6 +2079,7 @@ class Set(IndexedComponent):
             obj = self._data[index] = self
         else:
             obj = self._data[index] = self._ComponentDataClass(component=self)
+        obj._index = index
         if _d is not UnknownSetDimen:
             obj._dimen = _d
         if domain is not None:
@@ -2213,7 +2215,7 @@ class Set(IndexedComponent):
                 _ordered = "Insertion"
         return (
             [("Size", len(self._data)),
-             ("Index", self._index if self.is_indexed() else None),
+             ("Index", self._index_set if self.is_indexed() else None),
              ("Ordered", _ordered),],
             self._data.items(),
             ("Dimen","Domain","Size","Members",),
@@ -2235,6 +2237,8 @@ class FiniteScalarSet(_FiniteSetData, Set):
     def __init__(self, **kwds):
         _FiniteSetData.__init__(self, component=self)
         Set.__init__(self, **kwds)
+        self._index = UnindexedComponent_index
+
 
 
 class FiniteSimpleSet(metaclass=RenamedClass):
@@ -2265,6 +2269,7 @@ class SortedScalarSet(_ScalarOrderedSetMixin, _SortedSetData, Set):
 
         _SortedSetData.__init__(self, component=self)
         Set.__init__(self, **kwds)
+        self._index = UnindexedComponent_index
 
 
 class SortedSimpleSet(metaclass=RenamedClass):
@@ -3012,6 +3017,7 @@ class InfiniteScalarRangeSet(_InfiniteRangeSetData, RangeSet):
     def __init__(self, *args, **kwds):
         _InfiniteRangeSetData.__init__(self, component=self)
         RangeSet.__init__(self, *args, **kwds)
+        self._index = UnindexedComponent_index
 
     # We want the RangeSet.__str__ to override the one in _FiniteSetMixin
     __str__ = RangeSet.__str__
@@ -3027,6 +3033,7 @@ class FiniteScalarRangeSet(_ScalarOrderedSetMixin,
     def __init__(self, *args, **kwds):
         _FiniteRangeSetData.__init__(self, component=self)
         RangeSet.__init__(self, *args, **kwds)
+        self._index = UnindexedComponent_index
 
     # We want the RangeSet.__str__ to override the one in _FiniteSetMixin
     __str__ = RangeSet.__str__
@@ -4124,7 +4131,7 @@ def DeclareGlobalSet(obj, caller_globals=None):
         # least in Python 2.7), so we will explicitly set the __doc__
         # attribute.
 
-        __slots__ = ()
+        __slots__ = ('_bounds', '_interval')
 
         global_name = None
 
@@ -4174,6 +4181,15 @@ def DeclareGlobalSet(obj, caller_globals=None):
             if kwds:
                 raise RuntimeError("Unexpected keyword arguments: %s" % (kwds,))
             return ans
+        #
+        # Global sets are assumed to be constant sets.  For performance,
+        # we will precompute and cache the Set bounds() and interval
+        #
+        def bounds(self):
+            return self._bounds
+
+        def get_interval(self):
+            return self._interval
 
     _set = GlobalSet()
     # TODO: Can GlobalSets be a proper Block?
@@ -4183,6 +4199,9 @@ def DeclareGlobalSet(obj, caller_globals=None):
     _set.__class__.__setstate__(_set, obj.__getstate__())
     _set._component = weakref.ref(_set)
     _set.construct()
+    # Cache the set bounds / interval
+    _set._bounds = obj.bounds()
+    _set._interval = obj.get_interval()
     return _set
 
 

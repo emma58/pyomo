@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -19,14 +20,14 @@ from pyomo.core.expr.numvalue import ZeroConstant
 import pyomo.core.expr.current as EXPR
 from pyomo.core.base import Transformation, TransformationFactory, Reference
 from pyomo.core import (
-    Block, BooleanVar, Connector, Constraint, Param, Set, SetOf, Suffix, Var, 
+    Block, BooleanVar, Connector, Constraint, Param, Set, SetOf, Suffix, Var,
     Expression, SortComponents, TraversalStrategy, Any, RangeSet, Reals, value,
     NonNegativeIntegers, LogicalConstraint, Binary )
 from pyomo.core.base.boolean_var import (
     _DeprecatedImplicitAssociatedBinaryVariable)
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.gdp.util import (
-    clone_without_expression_components, is_child_of, get_src_disjunction, 
+    clone_without_expression_components, is_child_of, get_src_disjunction,
     get_src_constraint, get_transformed_constraints, get_src_disjunct,
     _warn_for_active_disjunction, _warn_for_active_disjunct, preprocess_targets)
 from pyomo.core.util import target_list
@@ -35,8 +36,6 @@ from functools import wraps
 from weakref import ref as weakref_ref
 
 logger = logging.getLogger('pyomo.gdp.hull')
-
-NAME_BUFFER = {}
 
 @TransformationFactory.register(
     'gdp.hull',
@@ -224,12 +223,7 @@ class Hull_Reformulation(Transformation):
         return local_var_dict
 
     def _apply_to(self, instance, **kwds):
-        assert not NAME_BUFFER
-        try:
-            self._apply_to_impl(instance, **kwds)
-        finally:
-            # Clear the global name buffer now that we are done
-            NAME_BUFFER.clear()
+        self._apply_to_impl(instance, **kwds)
 
     def _apply_to_impl(self, instance, **kwds):
         if not instance.ctype in (Block, Disjunct):
@@ -246,6 +240,25 @@ class Hull_Reformulation(Transformation):
         knownBlocks = {}
         if targets is None:
             targets = ( instance, )
+
+        # FIXME: For historical reasons, Hull would silently skip
+        # any targets that were explicitly deactivated.  This
+        # preserves that behavior (although adds a warning).  We
+        # should revisit that design decision and probably remove
+        # this filter, as it is slightly ambiguous as to what it
+        # means for the target to be deactivated: is it just the
+        # target itself [historical implementation] or any block in
+        # the hierarchy?
+        def _filter_inactive(targets):
+            for t in targets:
+                if not t.active:
+                    logger.warning(
+                        'GDP.Hull transformation passed a deactivated '
+                        f'target ({t.name}). Skipping.')
+                else:
+                    yield t
+        targets = list(_filter_inactive(targets))
+
         # we need to preprocess targets to make sure that if there are any
         # disjunctions in targets that their disjuncts appear before them in
         # the list.
@@ -337,8 +350,7 @@ class Hull_Reformulation(Transformation):
         transBlock.add_component(
             unique_component_name(transBlock,
                                   disjunction.getname(
-                                      fully_qualified=True,
-                                      name_buffer=NAME_BUFFER) + '_xor'), orC)
+                                      fully_qualified=True) + '_xor'), orC)
         disjunction._algebraic_constraint = weakref_ref(orC)
 
         return orC
@@ -402,8 +414,7 @@ class Hull_Reformulation(Transformation):
         if len(obj.disjuncts) == 0:
             raise GDP_Error("Disjunction '%s' is empty. This is "
                             "likely indicative of a modeling error."  %
-                            obj.getname(fully_qualified=True,
-                                        name_buffer=NAME_BUFFER))
+                            obj.getname(fully_qualified=True))
 
         # We first go through and collect all the variables that we
         # are going to disaggregate.
@@ -413,6 +424,8 @@ class Hull_Reformulation(Transformation):
         localVarsByDisjunct = ComponentMap()
         include_fixed_vars = not self._config.assume_fixed_vars_permanent
         for disjunct in obj.disjuncts:
+            if not disjunct.active:
+                continue
             disjunctVars = varsByDisjunct[disjunct] = ComponentSet()
             # create the key for each disjunct now
             transBlock._disaggregatedVarMap['disaggregatedVar'][
@@ -468,8 +481,7 @@ class Hull_Reformulation(Transformation):
                 if self._generate_debug_messages:
                     logger.debug("Assuming '%s' is not a local var since it is"
                                  "used in multiple disjuncts." %
-                                 var.getname(fully_qualified=True,
-                                             name_buffer=NAME_BUFFER))
+                                 var.getname(fully_qualified=True))
                 for disj in disjuncts:
                     varSet[disj].append(var)
                 varsToDisaggregate.append(var)
@@ -637,7 +649,7 @@ class Hull_Reformulation(Transformation):
             # get a unique name
             disaggregatedVarName = unique_component_name(
                 relaxationBlock.disaggregatedVars,
-                var.getname(fully_qualified=False, name_buffer=NAME_BUFFER))
+                var.getname(fully_qualified=True))
             relaxationBlock.disaggregatedVars.add_component(
                 disaggregatedVarName, disaggregatedVar)
             # mark this as local because we won't re-disaggregate if this is a
@@ -664,8 +676,7 @@ class Hull_Reformulation(Transformation):
             # get a unique name
             conName = unique_component_name(
                 relaxationBlock,
-                var.getname(fully_qualified=False, name_buffer=NAME_BUFFER) + \
-                "_bounds")
+                var.getname(fully_qualified=False) + "_bounds")
             bigmConstraint = Constraint(transBlock.lbub)
             relaxationBlock.add_component(conName, bigmConstraint)
 
@@ -744,8 +755,7 @@ class Hull_Reformulation(Transformation):
         for v in block.component_objects(Var, descend_into=Block, active=None):
             if len(v) > 0:
                 varRefBlock.add_component(unique_component_name(
-                    varRefBlock, v.getname(fully_qualified=True,
-                                           name_buffer=NAME_BUFFER)),
+                    varRefBlock, v.getname(fully_qualified=True)),
                                           Reference(v))
 
         # Look through the component map of block and transform everything we
@@ -834,17 +844,16 @@ class Hull_Reformulation(Transformation):
 
     def _warn_for_active_disjunction( self, disjunction, disjunct,
                                       var_substitute_map, zero_substitute_map):
-        _warn_for_active_disjunction(disjunction, disjunct, NAME_BUFFER)
+        _warn_for_active_disjunction(disjunction, disjunct)
 
     def _warn_for_active_disjunct( self, innerdisjunct, outerdisjunct,
                                    var_substitute_map, zero_substitute_map):
-        _warn_for_active_disjunct(innerdisjunct, outerdisjunct, NAME_BUFFER)
+        _warn_for_active_disjunct(innerdisjunct, outerdisjunct)
 
     def _warn_for_active_logical_statement(
             self, logical_statment, disjunct, var_substitute_map,
             zero_substitute_map):
-        _warn_for_active_logical_constraint(logical_statment, disjunct,
-                                            NAME_BUFFER)
+        _warn_for_active_logical_constraint(logical_statment, disjunct)
 
     def _transform_block_on_disjunct( self, block, disjunct, var_substitute_map,
                                       zero_substitute_map):
@@ -869,7 +878,7 @@ class Hull_Reformulation(Transformation):
         # since constraints from all blocks are getting moved onto the
         # same block. So we get a unique name
         name = unique_component_name(relaxationBlock, obj.getname(
-            fully_qualified=True, name_buffer=NAME_BUFFER))
+            fully_qualified=True))
 
         if obj.is_indexed():
             newConstraint = Constraint(obj.index_set(), transBlock.lbub)
@@ -980,8 +989,7 @@ class Hull_Reformulation(Transformation):
 
             if c.lower is not None:
                 if self._generate_debug_messages:
-                    _name = c.getname(
-                        fully_qualified=True, name_buffer=NAME_BUFFER)
+                    _name = c.getname(fully_qualified=True)
                     logger.debug("GDP(Hull): Transforming constraint " +
                                  "'%s'", _name)
                 if NL:
@@ -1002,8 +1010,7 @@ class Hull_Reformulation(Transformation):
 
             if c.upper is not None:
                 if self._generate_debug_messages:
-                    _name = c.getname(
-                        fully_qualified=True, name_buffer=NAME_BUFFER)
+                    _name = c.getname(fully_qualified=True)
                     logger.debug("GDP(Hull): Transforming constraint " +
                                  "'%s'", _name)
                 if NL:
@@ -1046,8 +1053,7 @@ class Hull_Reformulation(Transformation):
                 return
             raise GDP_Error("A component called 'LocalVars' is declared on "
                             "Disjunct %s, but it is of type %s, not Suffix."
-                            % (disjunct.getname(fully_qualified=True,
-                                                name_buffer=NAME_BUFFER),
+                            % (disjunct.getname(fully_qualified=True),
                                localSuffix.ctype))
 
     # These are all functions to retrieve transformed components from

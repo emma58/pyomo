@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -102,8 +103,12 @@ def solve_fp_subproblem(solve_data, config):
     set_solver_options(nlpopt, solve_data, config, solver_type='nlp')
     with SuppressInfeasibleWarning():
         with time_code(solve_data.timing, 'fp subproblem'):
-            results = nlpopt.solve(
-                fp_nlp, tee=config.nlp_solver_tee, **nlp_args)
+            results = nlpopt.solve(fp_nlp,
+                                   tee=config.nlp_solver_tee,
+                                   load_solutions=False,
+                                   **nlp_args)
+            if len(results.solution) > 0:
+                fp_nlp.solutions.load_from(results)
     return fp_nlp, results
 
 

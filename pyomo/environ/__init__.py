@@ -1,7 +1,8 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright 2017 National Technology and Engineering Solutions of Sandia, LLC
+#  Copyright (c) 2008-2022
+#  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
@@ -39,7 +40,6 @@ _packages = [
     'pyomo.contrib.example',
     'pyomo.contrib.fme',
     'pyomo.contrib.gdp_bounds',
-    'pyomo.contrib.gdpbb',
     'pyomo.contrib.gdpopt',
     'pyomo.contrib.gjh',
     'pyomo.contrib.gdp_bounds',
