@@ -241,12 +241,8 @@ def _cnf_to_linear_constraint_list(cnf_expr, indicator_var=None,
                 "Cannot build linear constraint for logical expression with "
                 "constant value False: %s"
                 % cnf_expr)
-    if cnf_expr.is_expression_type():
-        return CnfToLinearVisitor(indicator_var, binary_varlist).\
-            walk_expression(cnf_expr)
-    else:
-        return [cnf_expr.get_associated_binary() == 1]  # Assume that cnf_expr
-                                                        # is a BooleanVar
+    return CnfToLinearVisitor(indicator_var, binary_varlist).\
+        walk_expression(cnf_expr)
 
 def _and_expression_dispatcher(visitor, node, *args):
     # TODO: Do we have to check type here? Can we pass the right things up
@@ -348,6 +344,12 @@ class CnfToLinearVisitor(StreamBasedExpressionVisitor):
         super(CnfToLinearVisitor, self).__init__()
         self._indicator = indicator_var
         self._binary_varlist = binary_varlist
+
+    def initializeWalker(self, expr):
+        walk, results = self.beforeChild(None, expr, 0)
+        if not walk:
+            return False, self.finalizeResult(results)
+        return True, expr
 
     def exitNode(self, node, values):
         return self._expr_dispatchers[node.__class__](self, node, *values)
