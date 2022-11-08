@@ -16,9 +16,6 @@ from pyomo.core.expr.current import (
     NotExpression, AtLeastExpression,
     AtMostExpression, ExactlyExpression,
     special_boolean_atom_types,
-    EqualityExpression,
-    InequalityExpression,
-    RangedExpression,
 )
 from pyomo.core.expr.numvalue import value
 from pyomo.core.expr.relational_expr import RelationalExpression
