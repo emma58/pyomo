@@ -125,6 +125,12 @@ class _Sympy2PyomoVisitor(StreamBasedExpressionVisitor):
         super(_Sympy2PyomoVisitor, self).__init__()
         self.object_map = object_map
 
+    def initializeWalker(self, expr):
+        is_expr, ans = self.beforeChild(None, expr, None)
+        if not is_expr:
+            return ans
+        return True, expr
+
     def enterNode(self, node):
         return (node.args, [])
 
@@ -195,7 +201,8 @@ def to_cnf(expr, bool_varlist=None, bool_var_to_special_atoms=None):
         new_statements.extend(atom_cnf[1:])
 
     cnf_form = sympy.to_cnf(sympy_expr)
-    return [_sympy2pyomo_expression(cnf_form, pyomo_sympy_map)] + new_statements  # additional statements
+    return [_Sympy2PyomoVisitor(pyomo_sympy_map).walk_expression(cnf_form)] + new_statements  # additional
+                                                                                              # statements
 
 
 def _convert_children_to_literals(special_atom, bool_varlist, bool_var_to_special_atoms):
@@ -228,11 +235,3 @@ def _convert_children_to_literals(special_atom, bool_varlist, bool_var_to_specia
         return [new_atom_with_literals] + new_statements
     else:
         return [special_atom]
-
-
-def _sympy2pyomo_expression(expr, object_map):
-    visitor = _Sympy2PyomoVisitor(object_map)
-    is_expr, ans = visitor.beforeChild(None, expr, None)
-    if not is_expr:
-        return ans
-    return visitor.walk_expression(expr)

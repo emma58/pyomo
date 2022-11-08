@@ -196,17 +196,19 @@ class LogicalToLinear(IsomorphicTransformation):
         list_o_vars = list(new_varlist.values())
         if num_new:
             for binary_vardata in list_o_vars[-num_new:]:
+                # ESJ TODO: Why do we do this? We're going to a MIP, so what if
+                # there are Booleans?
                 new_bool_vardata = new_boolvarlist.add()
                 new_bool_vardata.associate_binary_var(binary_vardata)
 
     def _create_transformation_block(self, context):
         new_xfrm_block_name = unique_component_name(context, 'logic_to_linear')
         new_xfrm_block = Block(doc="Transformation objects for logic_to_linear")
-        setattr(context, new_xfrm_block_name, new_xfrm_block)
+        context.add_component(new_xfrm_block_name, new_xfrm_block)
 
         new_xfrm_block.transformed_constraints = ConstraintList()
         new_xfrm_block.augmented_vars = BooleanVarList()
-        new_xfrm_block.augmented_vars_asbinary = VarList( domain=Binary)
+        new_xfrm_block.augmented_vars_asbinary = VarList(domain=Binary)
 
         return new_xfrm_block
 
