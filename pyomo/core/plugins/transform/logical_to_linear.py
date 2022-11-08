@@ -26,7 +26,7 @@ from pyomo.core.expr.current import identify_variables
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
 from pyomo.core.util import target_list
 
-@TransformationFactory.register("core.logical_to_linear", 
+@TransformationFactory.register("core.logical_to_linear",
                                 doc="Convert logic to linear constraints")
 class LogicalToLinear(IsomorphicTransformation):
     """
@@ -39,8 +39,8 @@ class LogicalToLinear(IsomorphicTransformation):
         domain=target_list,
         description="target or list of targets that will be relaxed",
         doc="""
-        This specifies the list of LogicalConstraints to transform, or the 
-        list of Blocks or Disjuncts on which to transform all of the 
+        This specifies the list of LogicalConstraints to transform, or the
+        list of Blocks or Disjuncts on which to transform all of the
         LogicalConstraints. Note that if the transformation is done out
         of place, the list of targets should be attached to the model before it
         is cloned, and the list will specify the targets on the cloned
@@ -250,6 +250,78 @@ def _cnf_to_linear_constraint_list(cnf_expr, indicator_var=None,
 _numeric_relational_types = {InequalityExpression, EqualityExpression,
                              RangedExpression}
 
+def _and_expression_dispatcher(visitor, node, *args):
+    # TODO: Do we have to check type here? Can we pass the right things up
+    # instead?
+    return list((v if type(v) in _numeric_relational_types else v == 1) for v in
+                args)
+
+def _or_expression_dispatcher(visitor, node, *args):
+    return sum(args) >= 1
+
+def _not_expression_dispatcher(visitor, node, arg):
+    return 1 - arg
+
+def _calc_bigm_ingredients(visitor, node, expr):
+    rhs_lb, rhs_ub = compute_bounds_on_expr(expr)
+    if rhs_lb == float('-inf') or rhs_ub == float('inf'):
+        raise ValueError( "Cannnot generate linear constraints for %s"
+                          "([N, *logical_args]) with unbounded N. "
+                          "Detected %s <= N <= %s." %
+                          (type(node).__name__, rhs_lb, rhs_ub) )
+    return rhs_lb, rhs_ub, visitor._indicator.get_associated_binary()
+
+def _at_least_expression_dispatcher(visitor, node, *args):
+    sum_values = sum(args[1:])
+    if visitor._indicator is None:
+        return sum_values >= args[0]
+    else:
+        (rhs_lb, rhs_ub, indicator_binary) = _calc_bigm_ingredients(visitor,
+                                                                    node,
+                                                                    args[0])
+        return [
+            sum_values >= args[0] - rhs_ub * (1 - indicator_binary),
+            sum_values <= args[0] - 1 + (-(rhs_lb - 1) + node.nargs() - 1) * \
+            indicator_binary
+        ]
+
+def _at_most_expression_dispatcher(visitor, node, *args):
+    sum_values = sum(args[1:])
+    if visitor._indicator is None:
+        return sum_values <= args[0]
+    else:
+        (rhs_lb, rhs_ub, indicator_binary) = _calc_bigm_ingredients(visitor,
+                                                                    node,
+                                                                    args[0])
+        return [
+            sum_values <= args[0] + (-rhs_lb + node.nargs() - 1) * \
+            (1 - indicator_binary),
+            sum_values >= (args[0] + 1) - (rhs_ub + 1) * \
+            indicator_binary
+        ]
+
+def _exactly_expression_dispatcher(visitor, node, *args):
+    sum_values = sum(args[1:])
+    if visitor._indicator is None:
+        return sum_values == args[0]
+    else:
+        (rhs_lb, rhs_ub, indicator_binary) = _calc_bigm_ingredients(visitor,
+                                                                    node,
+                                                                    args[0])
+        less_than_binary = visitor._binary_varlist.add()
+        more_than_binary = visitor._binary_varlist.add()
+        num_args = node.nargs() - 1
+        return [
+            sum_values <= args[0] + (-rhs_lb + num_args) * \
+            (1 - indicator_binary),
+            sum_values >= args[0] - rhs_ub * (1 - indicator_binary),
+            indicator_binary + less_than_binary + more_than_binary >= 1,
+            sum_values <= args[0] - 1 + (-(rhs_lb - 1) + num_args) * \
+            (1 - less_than_binary),
+            sum_values >= args[0] + 1 - (rhs_ub + 1) * \
+            (1 - more_than_binary),
+        ]
+
 class CnfToLinearVisitor(StreamBasedExpressionVisitor):
     """Convert CNF logical constraint to linear constraints.
 
@@ -257,65 +329,25 @@ class CnfToLinearVisitor(StreamBasedExpressionVisitor):
     AtLeastExpression, AtMostExpression, ExactlyExpression, _BooleanVarData
 
     """
+    _expr_dispatchers = {
+        AndExpression: _and_expression_dispatcher,
+        OrExpression: _or_expression_dispatcher,
+        NotExpression: _not_expression_dispatcher,
+        AtLeastExpression: _at_least_expression_dispatcher,
+        AtMostExpression: _at_most_expression_dispatcher,
+        ExactlyExpression: _exactly_expression_dispatcher,
+    }
+    _var_dispatchers = {
+
+    }
+
     def __init__(self, indicator_var, binary_varlist):
         super(CnfToLinearVisitor, self).__init__()
         self._indicator = indicator_var
         self._binary_varlist = binary_varlist
 
     def exitNode(self, node, values):
-        if type(node) == AndExpression:
-            return list((v if type(v) in _numeric_relational_types else v == 1)
-                        for v in values)
-        elif type(node) == OrExpression:
-            return sum(values) >= 1
-        elif type(node) == NotExpression:
-            return 1 - values[0]
-        # Note: the following special atoms should only be encountered as root
-        # nodes.  If they are encountered otherwise, something went wrong.
-        sum_values = sum(values[1:])
-        num_args = node.nargs() - 1  # number of logical arguments
-        if self._indicator is None:
-            if type(node) == AtLeastExpression:
-                return sum_values >= values[0]
-            elif type(node) == AtMostExpression:
-                return sum_values <= values[0]
-            elif type(node) == ExactlyExpression:
-                return sum_values == values[0]
-        else:
-            rhs_lb, rhs_ub = compute_bounds_on_expr(values[0])
-            if rhs_lb == float('-inf') or rhs_ub == float('inf'):
-                raise ValueError( "Cannnot generate linear constraints for %s"
-                                  "([N, *logical_args]) with unbounded N. "
-                                  "Detected %s <= N <= %s." %
-                                  (type(node).__name__, rhs_lb, rhs_ub) )
-            indicator_binary = self._indicator.get_associated_binary()
-            if type(node) == AtLeastExpression:
-                return [
-                    sum_values >= values[0] - rhs_ub * (1 - indicator_binary),
-                    sum_values <= values[0] - 1 + (-(rhs_lb - 1) + num_args) * \
-                    indicator_binary
-                ]
-            elif type(node) == AtMostExpression:
-                return [
-                    sum_values <= values[0] + (-rhs_lb + num_args) * \
-                    (1 - indicator_binary),
-                    sum_values >= (values[0] + 1) - (rhs_ub + 1) * \
-                    indicator_binary
-                ]
-            elif type(node) == ExactlyExpression:
-                less_than_binary = self._binary_varlist.add()
-                more_than_binary = self._binary_varlist.add()
-                return [
-                    sum_values <= values[0] + (-rhs_lb + num_args) * \
-                    (1 - indicator_binary),
-                    sum_values >= values[0] - rhs_ub * (1 - indicator_binary),
-                    indicator_binary + less_than_binary + more_than_binary >= 1,
-                    sum_values <= values[0] - 1 + (-(rhs_lb - 1) + num_args) * \
-                    (1 - less_than_binary),
-                    sum_values >= values[0] + 1 - (rhs_ub + 1) * \
-                    (1 - more_than_binary),
-                ]
-            pass
+        return self._expr_dispatchers[node.__class__](self, node, *values)
 
     def beforeChild(self, node, child, child_idx):
         if type(node) in special_boolean_atom_types and child is node.args[0]:
