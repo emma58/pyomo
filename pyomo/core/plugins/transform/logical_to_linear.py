@@ -21,6 +21,7 @@ from pyomo.core.expr.current import (
     RangedExpression,
 )
 from pyomo.core.expr.numvalue import native_logical_types, value
+from pyomo.core.expr.relational_expr import RelationalExpression
 from pyomo.core.expr.visitor import StreamBasedExpressionVisitor
 from pyomo.core.expr.current import identify_variables
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
@@ -247,13 +248,10 @@ def _cnf_to_linear_constraint_list(cnf_expr, indicator_var=None,
         return [cnf_expr.get_associated_binary() == 1]  # Assume that cnf_expr
                                                         # is a BooleanVar
 
-_numeric_relational_types = {InequalityExpression, EqualityExpression,
-                             RangedExpression}
-
 def _and_expression_dispatcher(visitor, node, *args):
     # TODO: Do we have to check type here? Can we pass the right things up
     # instead?
-    return list((v if type(v) in _numeric_relational_types else v == 1) for v in
+    return list((v if isinstance(v, RelationalExpression) else v == 1) for v in
                 args)
 
 def _or_expression_dispatcher(visitor, node, *args):
@@ -338,8 +336,13 @@ class CnfToLinearVisitor(StreamBasedExpressionVisitor):
         ExactlyExpression: _exactly_expression_dispatcher,
     }
     _var_dispatchers = {
-
+        # bool: _,
+        # _BooleanVarData: _before_boolean_var,
     }
+    # _final_dispatcher = {
+    #     list: _finalize_list,
+    #     RelationalExpression: _finalize_relational_expression,
+    # }
 
     def __init__(self, indicator_var, binary_varlist):
         super(CnfToLinearVisitor, self).__init__()
@@ -350,11 +353,14 @@ class CnfToLinearVisitor(StreamBasedExpressionVisitor):
         return self._expr_dispatchers[node.__class__](self, node, *values)
 
     def beforeChild(self, node, child, child_idx):
-        if type(node) in special_boolean_atom_types and child is node.args[0]:
+        # TODO: I don't understand this case.
+        if (node.__class__ in special_boolean_atom_types and child is
+            node.args[0]):
             return False, child
-        if type(child) in native_logical_types:
-            return False, int(child)
-        if type(child) in native_types:
+        # TODO: do we have to treat bools differently?
+        # if child.__class__ in native_logical_types:
+        #     return False, int(child)
+        if child.__class__ in native_types:
             return False, child
 
         if child.is_expression_type():
@@ -364,9 +370,11 @@ class CnfToLinearVisitor(StreamBasedExpressionVisitor):
         return False, child.get_associated_binary()
 
     def finalizeResult(self, result):
-        if type(result) is list:
+        # ESJ: I don't think we'd have to do this if we keep track of what we
+        # were passing up.
+        if result.__class__ is list:
             return result
-        elif type(result) in _numeric_relational_types:
+        elif isinstance(result, RelationalExpression):
             return [result]
         else:
             return [result == 1]
