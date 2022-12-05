@@ -11,28 +11,35 @@
 
 import logging
 
-from pyomo.core import TransformationFactory, Transformation, Block, VarList, Set, SortComponents, Objective, Constraint
+from pyomo.core import (
+    TransformationFactory, Transformation, Block, VarList, Set,
+    SortComponents, Objective, Constraint)
 from pyomo.gdp import Disjunct, Disjunction
 from pyomo.repn import generate_standard_repn
 
 logger = logging.getLogger('pyomo.gdp')
 
 
-@TransformationFactory.register('gdp.bilinear', doc="Creates a disjunctive model where bilinear terms are replaced with disjunctive expressions.")
+@TransformationFactory.register(
+    'gdp.bilinear',
+    doc="Creates a disjunctive model where bilinear terms are replaced with "
+    "disjunctive expressions.")
 class Bilinear_Transformation(Transformation):
 
     def __init__(self):
         super(Bilinear_Transformation, self).__init__()
 
     def _apply_to(self, instance, **kwds):
-        # TODO: This data should be stored differently.  We cannot nest this transformation with itself
+        # TODO: This data should be stored differently.  We cannot nest this
+        # transformation with itself
         if getattr(instance, 'bilinear_data_', None) is None:
             instance.bilinear_data_ = Block()
             instance.bilinear_data_.cache = {}
             instance.bilinear_data_.vlist = VarList()
             instance.bilinear_data_.vlist_boolean = []
             instance.bilinear_data_.IDX = Set()
-            instance.bilinear_data_.disjuncts_   = Disjunct(instance.bilinear_data_.IDX*[0,1])
+            instance.bilinear_data_.disjuncts_ = Disjunct(
+                instance.bilinear_data_.IDX*[0,1])
             instance.bilinear_data_.disjunction_data = {}
             instance.bilinear_data_.o_expr = {}
             instance.bilinear_data_.c_body = {}
@@ -47,21 +54,25 @@ class Bilinear_Transformation(Transformation):
         #
         def rule(block, i):
             return instance.bilinear_data_.disjunction_data[i]
-        instance.bilinear_data_.disjunction_ = Disjunction(instance.bilinear_data_.IDX, rule=rule)
+        instance.bilinear_data_.disjunction_ = Disjunction(
+            instance.bilinear_data_.IDX, rule=rule)
 
     def _transformBlock(self, block, instance):
-        for component in block.component_objects(Objective, active=True, descend_into=False):
+        for component in block.component_objects(Objective, active=True,
+                                                 descend_into=False):
             expr = self._transformExpression(component.expr, instance)
             instance.bilinear_data_.o_expr[ id(component) ] = component.expr
             component.expr = expr
-        for component in block.component_data_objects(Constraint, active=True, descend_into=False):
+        for component in block.component_data_objects(Constraint, active=True,
+                                                      descend_into=False):
             expr = self._transformExpression(component.body, instance)
             instance.bilinear_data_.c_body[ id(component) ] = component.body
             component._body = expr
 
     def _transformExpression(self, expr, instance):
         if expr.polynomial_degree() > 2:
-            raise ValueError("Cannot transform polynomial terms with degree > 2")
+            raise ValueError(
+                "Cannot transform polynomial terms with degree > 2")
         if expr.polynomial_degree() < 2:
             return expr
         #
@@ -78,14 +89,17 @@ class Bilinear_Transformation(Transformation):
             e += coef * var
         # Quadratic terms
         if len(terms.quadratic_coefs) > 0:
-            for vars_, coef_ in zip(terms.quadratic_vars, terms.quadratic_coefs):
+            for vars_, coef_ in zip(terms.quadratic_vars,
+                                    terms.quadratic_coefs):
                 #
                 if vars_[0].is_binary():
-                    v = instance.bilinear_data_.cache.get( (id(vars_[0]),id(vars_[1])), None )
+                    v = instance.bilinear_data_.cache.get(
+                        (id(vars_[0]),id(vars_[1])), None)
                     if v is None:
                         instance.bilinear_data_.vlist_boolean.append(vars_[0])
                         v = instance.bilinear_data_.vlist.add()
-                        instance.bilinear_data_.cache[id(vars_[0]), id(vars_[1])] = v
+                        instance.bilinear_data_.cache[id(vars_[0]),
+                                                      id(vars_[1])] = v
                         bounds = vars_[1].bounds
                         v.setlb(bounds[0])
                         v.setub(bounds[1])
@@ -100,17 +114,23 @@ class Bilinear_Transformation(Transformation):
                         d1.c1 = Constraint(expr=vars_[0] == 0)
                         d1.c2 = Constraint(expr=v == 0)
                         # Disjunction
-                        instance.bilinear_data_.disjunction_data[id_] = [instance.bilinear_data_.disjuncts_[id_,0], instance.bilinear_data_.disjuncts_[id_,1]]
-                        instance.bilinear_data_.disjunction_data[id_] = [instance.bilinear_data_.disjuncts_[id_,0], instance.bilinear_data_.disjuncts_[id_,1]]
+                        instance.bilinear_data_.disjunction_data[
+                            id_] = [instance.bilinear_data_.disjuncts_[id_,0],
+                                    instance.bilinear_data_.disjuncts_[id_,1]]
+                        instance.bilinear_data_.disjunction_data[
+                            id_] = [instance.bilinear_data_.disjuncts_[id_,0],
+                                    instance.bilinear_data_.disjuncts_[id_,1]]
                     # The disjunctive variable is the expression
                     e += coef_*v
                 #
                 elif vars_[1].is_binary():
-                    v = instance.bilinear_data_.cache.get( (id(vars_[1]),id(vars_[0])), None )
+                    v = instance.bilinear_data_.cache.get((id(vars_[1]),
+                                                           id(vars_[0])), None)
                     if v is None:
                         instance.bilinear_data_.vlist_boolean.append(vars_[1])
                         v = instance.bilinear_data_.vlist.add()
-                        instance.bilinear_data_.cache[id(vars_[1]), id(vars_[0])] = v
+                        instance.bilinear_data_.cache[id(vars_[1]),
+                                                      id(vars_[0])] = v
                         bounds = vars_[0].bounds
                         v.setlb(bounds[0])
                         v.setub(bounds[1])
@@ -125,12 +145,13 @@ class Bilinear_Transformation(Transformation):
                         d1.c1 = Constraint(expr=vars_[1] == 0)
                         d1.c2 = Constraint(expr=v == 0)
                         # Disjunction
-                        instance.bilinear_data_.disjunction_data[id_] = [instance.bilinear_data_.disjuncts_[id_,0], instance.bilinear_data_.disjuncts_[id_,1]]
+                        instance.bilinear_data_.disjunction_data[
+                            id_] = [instance.bilinear_data_.disjuncts_[id_,0],
+                                    instance.bilinear_data_.disjuncts_[id_,1]]
                     # The disjunctive variable is the expression
                     e += coef_*v
                 else:
-                    # If neither variable is boolean, just reinsert the original bilinear term
+                    # If neither variable is boolean, just reinsert the original
+                    # bilinear term
                     e += coef_*vars_[0]*vars_[1]
-        #
         return e
-            
