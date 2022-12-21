@@ -328,10 +328,12 @@ class MultipleBigMTransformation(Transformation):
         # First handle the bound constraints if we are dealing with them
         # separately
         active_disjuncts = [disj for disj in obj.disjuncts if disj.active]
-        transformed_constraints = set()
-        if self._config.reduce_bound_constraints:
+        if (self._config.reduce_bound_constraints or
+            self._config.reduce_cost_like_equations):
             transformed_constraints = self._transform_bound_constraints(
                 active_disjuncts, transBlock, arg_Ms)
+        else:
+            transformed_constraints = set()
 
         Ms = arg_Ms
         if not self._config.only_mbigm_bound_constraints:
@@ -506,16 +508,29 @@ class MultipleBigMTransformation(Transformation):
         # deactivate now that we have transformed
         c.deactivate()
 
-    def _transform_bound_constraints(self, active_disjuncts, transBlock, Ms,
-                                     reduce_bound_constraints,
-                                     reduce_cost_like_equations):
-        # first we're just going to find all of them
+    def _transform_bound_constraints(self, active_disjuncts, transBlock, Ms):
+        reduce_bound_constraints = self._config.reduce_bound_constraints
+        reduce_cost_like_equations = self._config.reduce_cost_like_equations
+
+        # first we're just going to find all constraints that involve a single
+        # variable either bounded by constants or equal to a constant.
+
+        # Maps Vars to a tuple of dictionaries, the first mapping each disjunct
+        # in the disjunction to the (tightest) lower bound it specifies for the
+        # Var in its constraints, the second doing the same for the upper bound.
         bounds_cons = ComponentMap()
+        # Maps Vars to a dictionary mapping Vars to a dictionary that maps the
+        # disjuncts to the constants the Vars are "fixed" to by the disjunctive
+        # constraints.
         cost_cons = ComponentMap()
+        # These maps are used in order to create proper mapping between original
+        # and transformed constraints later. The first two map vars to tuples of
+        # the lower and upper (respectively) bound constraints and the
+        # constraints' parent disjuncts. The last one maps vars to the cost-like
+        # equality constraints and their parent disjuncts.
         lower_bound_constraints_by_var = ComponentMap()
         upper_bound_constraints_by_var = ComponentMap()
         cost_cons_by_var = ComponentMap()
-        transformed_constraints = set()
         for disj in active_disjuncts:
             for c in disj.component_data_objects(
                     Constraint, active=True,
@@ -524,7 +539,8 @@ class MultipleBigMTransformation(Transformation):
                 repn = generate_standard_repn(c.body)
                 if repn.is_linear() and len(repn.linear_vars) == 1:
                     v = repn.linear_vars[0]
-                    if reduce_cost_like_equations and c.lower == c.upper:
+                    if (reduce_cost_like_equations and value(c.lower) ==
+                        value(c.upper)):
                         # c is an equality--a "cost constraint"
                         const = c.lower
                         if v not in cost_cons:
@@ -545,7 +561,6 @@ class MultipleBigMTransformation(Transformation):
                         else:
                             cost_cons_by_var[v] = {(c, disj)}
                         transBlock._mbm_values[c, disj] = const
-                        transformed_constraints.add(c)
                         continue
 
                     if not reduce_bound_constraints:
@@ -580,26 +595,35 @@ class MultipleBigMTransformation(Transformation):
                     # Add the M values to the dictionary
                     transBlock._mbm_values[c, disj] = M
 
-                    # We can't deactivate yet because we will still be solving
-                    # this Disjunct when we calculate M values for non-bounds
-                    # constraints. We track that it is transformed instead by
-                    # adding it to this set.
-                    transformed_constraints.add(c)
+        # We can't deactivate any constraints yet, even if they are fully
+        # transformed, because we will still be solving this Disjunct when we
+        # calculate M values for non-bounds constraints (in multiple bigm). We
+        # will track that it is transformed instead by adding it to this set.
+        transformed_constraints = set()
 
         if reduce_cost_like_equations:
             self._construct_cost_equations(active_disjuncts, transBlock,
-                                                   cost_cons)
+                                           cost_cons, cost_cons_by_var,
+                                           transformed_constraints)
         if reduce_bound_constraints:
-            self._construct_reduced_bound_constraints(active_disjuncts,
-                                                      transBlock, bound_cons)
+            self._construct_reduced_bound_constraints(
+                active_disjuncts,
+                transBlock, bounds_cons,
+                lower_bound_constraints_by_var,
+                upper_bound_constraints_by_var,
+                transformed_constraints)
 
     def _construct_reduced_bound_constraints(self, active_disjuncts, transBlock,
-                                             bound_cons):
+                                             bounds_cons,
+                                             lower_bound_constraints_by_var,
+                                             upper_bound_constraints_by_var,
+                                             transformed_constraints):
         # Now we actually construct the constraints. We do this separately so
         # that we can make sure that we have a term for every active disjunct in
         # the disjunction (falling back on the variable bounds if they are there
         transformed = transBlock.transformed_bound_constraints = Constraint(
             NonNegativeIntegers, transBlock.lbub)
+        num_disjuncts = len(active_disjuncts)
         for idx, (v, (lower_dict, upper_dict)) in enumerate(
                 bounds_cons.items()):
             lower_rhs = 0
@@ -633,7 +657,7 @@ class MultipleBigMTransformation(Transformation):
                             "the special bound constraint relaxation without "
                             "one of these." % (v.name, disj.name))
                     upper_rhs += M*disj.indicator_var.get_associated_binary()
-            if len(lower_dict) > 0:
+            if len(lower_dict) == num_disjuncts:
                 transformed.add((idx, 'lb'), v >= lower_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
                     transformed[idx, 'lb']] = []
@@ -642,7 +666,8 @@ class MultipleBigMTransformation(Transformation):
                         transformed[idx, 'lb']].append(c)
                     disj.transformation_block._constraintMap[
                         'transformedConstraints'][c] = [transformed[idx, 'lb']]
-            if len(upper_dict) > 0:
+                    transformed_constraints.add((c, 'lb'))
+            if len(upper_dict) == num_disjuncts:
                 transformed.add((idx, 'ub'), v <= upper_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
                     transformed[idx, 'ub']] = []
@@ -659,16 +684,18 @@ class MultipleBigMTransformation(Transformation):
                         disj.transformation_block._constraintMap[
                             'transformedConstraints'][c] = [transformed[idx,
                                                                         'ub']]
+                    transformed_constraints.add((c, 'ub'))
 
         return transformed_constraints
 
-    def _construct_cost_equations(self, active_disjuncts, transBlock,
-                                  cost_cons):
+    def _construct_cost_equations(self, active_disjuncts, transBlock, cost_cons,
+                                  cost_cons_by_var, transformed_constraints):
         # Now we actually construct the constraints. We do this separately so
         # that we can make sure that we have a term for every active disjunct in
         # the disjunction (falling back on the variable bounds if they are there
         transformed = transBlock.transformed_cost_constraints = Constraint(
             NonNegativeIntegers)
+        num_disjuncts = len(active_disjuncts)
         for idx, (v, const_dict) in enumerate(cost_cons.items()):
             rhs_expr = 0
             for disj in active_disjuncts:
@@ -679,32 +706,17 @@ class MultipleBigMTransformation(Transformation):
                     if M is not None:
                         rhs_expr += M*disj.indicator_var.get_associated_binary()
 
-            if len(lower_dict) > 0:
-                transformed.add((idx, 'lb'), v >= lower_rhs)
+            if len(const_dict) == num_disjuncts:
+                transformed.add(idx, v == rhs_expr)
                 relaxationBlock._constraintMap['srcConstraints'][
-                    transformed[idx, 'lb']] = []
-                for (c, disj) in lower_bound_constraints_by_var[v]:
+                    transformed[idx]] = []
+                for (c, disj) in cost_constraints_by_var[v]:
                     relaxationBlock._constraintMap['srcConstraints'][
-                        transformed[idx, 'lb']].append(c)
+                        transformed[idx]].append(c)
                     disj.transformation_block._constraintMap[
-                        'transformedConstraints'][c] = [transformed[idx, 'lb']]
-            if len(upper_dict) > 0:
-                transformed.add((idx, 'ub'), v <= upper_rhs)
-                relaxationBlock._constraintMap['srcConstraints'][
-                    transformed[idx, 'ub']] = []
-                for (c, disj) in upper_bound_constraints_by_var[v]:
-                    relaxationBlock._constraintMap['srcConstraints'][
-                        transformed[idx, 'ub']].append(c)
-                    # might alredy be here if it had an upper bound
-                    if c in disj.transformation_block._constraintMap[
-                            'transformedConstraints']:
-                        disj.transformation_block._constraintMap[
-                            'transformedConstraints'][c].append(
-                                transformed[idx, 'ub'])
-                    else:
-                        disj.transformation_block._constraintMap[
-                            'transformedConstraints'][c] = [transformed[idx,
-                                                                        'ub']]
+                        'transformedConstraints'][c] = [transformed[idx]]
+                    transformed_constraints.add((c, 'lb'))
+                    transformed_constraints.add((c, 'ub'))
 
         return transformed_constraints
 
@@ -794,8 +806,15 @@ class MultipleBigMTransformation(Transformation):
                     active=True,
                     descend_into=Block,
                     sort=SortComponents.deterministic):
-                if constraint in transformed_constraints:
-                    continue
+                if constraint.lower is not None:
+                    need_lower = True
+                    if (constraint, 'lb') in transformed_constraints:
+                        need_lower = False
+                if constraint.upper is not None:
+                    need_upper = True
+                    if (constraint, 'ub') in transformed_constraints:
+                        need_upper = False
+
                 # First check args
                 if (constraint, other_disjunct) in arg_Ms:
                     (lower_M, upper_M) = _convert_M_to_tuple(
@@ -805,7 +824,7 @@ class MultipleBigMTransformation(Transformation):
                                                                   upper_M)
                 else:
                     (lower_M, upper_M) = (None, None)
-                if constraint.lower is not None and lower_M is None:
+                if need_lower and lower_M is None:
                     # last resort: calculate
                     if lower_M is None:
                         scratch.obj.expr = constraint.body - constraint.lower
@@ -821,7 +840,7 @@ class MultipleBigMTransformation(Transformation):
                                     disjunct.name,
                                     other_disjunct.name))
                         lower_M = value(scratch.obj.expr)
-                if constraint.upper is not None and upper_M is None:
+                if need_upper and upper_M is None:
                     # last resort: calculate
                     if upper_M is None:
                         scratch.obj.expr = constraint.body - constraint.upper
@@ -837,6 +856,10 @@ class MultipleBigMTransformation(Transformation):
                                     disjunct.name,
                                     other_disjunct.name))
                         upper_M = value(scratch.obj.expr)
+                # TODO: I need to think about the case where the lower part of
+                # this constraint was transformed with special handling for
+                # bounds but the upper part was not, or vice versa. I might be
+                # overwriting good information here?
                 arg_Ms[constraint, other_disjunct] = (lower_M, upper_M)
                 transBlock._mbm_values[constraint, other_disjunct] = (lower_M,
                                                                       upper_M)
