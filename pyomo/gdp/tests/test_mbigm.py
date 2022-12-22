@@ -803,3 +803,143 @@ class LinearModelDecisionTreeExample(unittest.TestCase):
             {m.d1: (-1050, 1050),
              m.d2: (-2000, 1200),
              m.d3: (-4000, 4000)})
+
+class SpecialParameterHandling(unittest.TestCase):
+    def make_model(self):
+        m = ConcreteModel()
+        m.x = Var(bounds=(0, 10))
+        m.d1 = Disjunct()
+        m.d1.cost = Constraint(expr=m.x == 4)
+        m.d2 = Disjunct()
+        m.d2.cost = Constraint(expr=m.x == 8)
+        m.d3 = Disjunct()
+        m.d3.cost = Constraint(expr=m.x == 9.5)
+        m.disjunction = Disjunction(expr=[m.d1, m.d2, m.d3])
+
+        return m
+
+    def check_cost_equality_constraints(self, m, cons, same1, same2):
+        self.assertEqual(len(cons), 1)
+        self.assertEqual(len(same1), 1)
+        self.assertEqual(len(same2), 1)
+        self.assertIs(cons[0], same1[0])
+        self.assertIs(cons[0], same2[0])
+
+        # cons[0] should be:
+        # x == 4*d1 + 8*d2 + 9.5*d3
+        self.assertEqual(value(cons[0].lower), 0)
+        self.assertEqual(value(cons[0].upper), 0)
+        assertExpressionsEqual(self, cons[0].body,
+                               m.x - (4.0*m.d1.binary_indicator_var +
+                                      8.0*m.d2.binary_indicator_var +
+                                      9.5*m.d3.binary_indicator_var))
+
+    def test_cost_equality_constraints_correct(self):
+        m = self.make_model()
+        mbm = TransformationFactory('gdp.mbigm')
+        mbm.apply_to(m)
+
+        cons = mbm.get_transformed_constraints(m.d1.cost)
+        same1 = mbm.get_transformed_constraints(m.d2.cost)
+        same2 = mbm.get_transformed_constraints(m.d3.cost)
+        self.check_cost_equality_constraints(m, cons, same1, same2)
+
+    def test_incomplete_cost_equalities_deferred(self):
+        m = self.make_model()
+        m.y = Var(bounds=(-2, 2))
+        m.d1.not_cost = Constraint(expr=m.y == 1)
+
+        mbm = TransformationFactory('gdp.mbigm')
+        # We're not handling bounds constraints, just cost equalities
+        mbm.apply_to(m, reduce_bound_constraints=False)
+
+        # The cost equalities should be the same:
+        cons = mbm.get_transformed_constraints(m.d1.cost)
+        same1 = mbm.get_transformed_constraints(m.d2.cost)
+        same2 = mbm.get_transformed_constraints(m.d3.cost)
+        self.check_cost_equality_constraints(m, cons, same1, same2)
+
+        cons = mbm.get_transformed_constraints(m.d1.not_cost)
+        self.assertEqual(len(cons), 2)
+
+        # cons[0] should be:
+        # y >= 1 - 3*d2 - 3*d3
+        self.assertIsNone(cons[0].lower)
+        self.assertEqual(value(cons[0].upper), 0)
+        assertExpressionsEqual(self, cons[0].body,
+                               -3.0*m.d2.binary_indicator_var -
+                               3.0*m.d3.binary_indicator_var - (m.y - 1.0))
+
+        # cons[1] should be:
+        # y <= 1 + d2 + d3
+        self.assertIsNone(cons[1].lower)
+        self.assertEqual(value(cons[1].upper), 0)
+        assertExpressionsEqual(self, cons[1].body,
+                               m.y - 1.0 - (m.d2.binary_indicator_var +
+                                            m.d3.binary_indicator_var))
+
+    def test_incomplete_cost_equalities_treated_as_bound_constraints(self):
+        m = self.make_model()
+        m.y = Var(bounds=(-2, 2))
+        m.d1.not_cost = Constraint(expr=m.y == 1)
+
+        mbm = TransformationFactory('gdp.mbigm')
+        mbm.apply_to(m)
+
+        cons = mbm.get_transformed_constraints(m.d1.not_cost)
+        self.assertEqual(len(cons), 2)
+
+        # cons[0] should be:
+        # y >= d1 - 2*d2 - 2*d3
+        self.assertIsNone(cons[0].lower)
+        self.assertEqual(value(cons[0].upper), 0)
+        assertExpressionsEqual(self, cons[0].body,
+                               m.d1.binary_indicator_var -
+                               2*m.d2.binary_indicator_var -
+                               2*m.d3.binary_indicator_var - m.y)
+
+        # cons[1] should be:
+        # y <= d1 + 2*d2 + 2*d3
+        self.assertIsNone(cons[1].lower)
+        self.assertEqual(value(cons[1].upper), 0)
+        assertExpressionsEqual(self, cons[1].body,
+                               m.y - (m.d1.binary_indicator_var +
+                                      2*m.d2.binary_indicator_var +
+                                      2*m.d3.binary_indicator_var))
+
+    def test_equalities_treated_as_bound_constraints_when_specified(self):
+        m = self.make_model()
+
+        mbm = TransformationFactory('gdp.mbigm')
+        mbm.apply_to(m, reduce_cost_like_equations=False)
+
+        # The cost equalities should be the same:
+        cons = mbm.get_transformed_constraints(m.d1.cost)
+        same1 = mbm.get_transformed_constraints(m.d2.cost)
+        same2 = mbm.get_transformed_constraints(m.d3.cost)
+
+        self.assertEqual(len(cons), 2)
+        self.assertEqual(len(same1), 2)
+        self.assertEqual(len(same2), 2)
+        self.assertIs(cons[0], same1[0])
+        self.assertIs(cons[1], same1[1])
+        self.assertIs(cons[0], same2[0])
+        self.assertIs(cons[1], same2[1])
+
+        # cons[0] should be:
+        # m.x <= 4*d1 + 8*d2 + 9.5*d3
+        self.assertIsNone(cons[0].lower)
+        self.assertEqual(value(cons[0].upper), 0)
+        assertExpressionsEqual(self, cons[0].body,
+                               4.0*m.d1.binary_indicator_var +
+                               8.0*m.d2.binary_indicator_var +
+                               9.5*m.d3.binary_indicator_var - m.x)
+
+        # cons[1] should be:
+        # m.x >= 4*d1 + 8*d2 + 9.5*d3
+        self.assertIsNone(cons[1].lower)
+        self.assertEqual(value(cons[1].upper), 0)
+        assertExpressionsEqual(self, cons[1].body,
+                               m.x - (4.0*m.d1.binary_indicator_var +
+                                      8.0*m.d2.binary_indicator_var +
+                                      9.5*m.d3.binary_indicator_var))

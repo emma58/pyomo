@@ -578,12 +578,16 @@ class MultipleBigMTransformation(Transformation):
                         else:
                             cost_cons_by_var[v] = {(c, disj)}
                         transBlock._mbm_values[c, disj] = const
-                        continue
 
+                    # Note that we keep going here as long as we are also
+                    # reducing bounds constraints--we add equalities to the
+                    # bounds constraints also because if they turn out to be
+                    # incomplete, we will try treating them as bounds
+                    # constraints before defaulting to normal handling.
                     if not reduce_bound_constraints:
                         continue
 
-                    # Else, we can treat this as a bounds constraint
+                    # We can treat this as a bounds constraint
                     if v not in bounds_cons:
                         bounds_cons[v] = [{}, {}]
                     M = [None, None]
@@ -592,8 +596,8 @@ class MultipleBigMTransformation(Transformation):
                         if disj in bounds_cons[v][0]:
                             # this is a redundant bound, we need to keep the
                             # better one
-                            M[0] = max(M[0], bounds_cons[v][0][disj])
-                        bounds_cons[v][0][disj] = M[0]
+                            M[0] = max(M[0], bounds_cons[v][0][disj][1])
+                        bounds_cons[v][0][disj] = (c, M[0])
                         if v in lower_bound_constraints_by_var:
                             lower_bound_constraints_by_var[v].add((c, disj))
                         else:
@@ -603,8 +607,8 @@ class MultipleBigMTransformation(Transformation):
                         if disj in bounds_cons[v][1]:
                             # this is a redundant bound, we need to keep the
                             # better one
-                            M[1] = min(M[1], bounds_cons[v][1][disj])
-                        bounds_cons[v][1][disj] = M[1]
+                            M[1] = min(M[1], bounds_cons[v][1][disj][1])
+                        bounds_cons[v][1][disj] = (c, M[1])
                         if v in upper_bound_constraints_by_var:
                             upper_bound_constraints_by_var[v].add((c, disj))
                         else:
@@ -648,11 +652,20 @@ class MultipleBigMTransformation(Transformation):
                 bounds_cons.items()):
             lower_rhs = 0
             upper_rhs = 0
+            # We will check as we go that constraints have not already been
+            # transformed by the equality handling. To initialize, we will look
+            # for lower and upper bounds if we at least have some.
+            need_lower = len(lower_dict) > 0
+            need_upper = len(upper_dict) > 0
             for disj in active_disjuncts:
                 relaxationBlock = self._get_disjunct_relaxation_block(
                     disj, transBlock)
-                if len(lower_dict) > 0:
-                    M = lower_dict.get(disj, None)
+                if need_lower:
+                    (c, M) = lower_dict.get(disj, (None, None))
+                    if (c, 'lb') in transformed_constraints:
+                        # It was an equality, we got it, and there's nothing to
+                        # do here.
+                        need_lower = False
                     if M is None:
                         # substitute the lower bound if it has one
                         M = lower_dict[disj] = v.lb
@@ -663,15 +676,19 @@ class MultipleBigMTransformation(Transformation):
                     if M is not None:
                         lower_rhs += M*\
                                      disj.indicator_var.get_associated_binary()
-                if len(upper_dict) > 0:
-                    M = upper_dict.get(disj, None)
+                if need_upper:
+                    (c, M) = upper_dict.get(disj, (None, None))
+                    if (c, 'ub') in transformed_constraints:
+                        # It was an equality, we got it, and there's nothing to
+                        # do here.
+                        need_upper = False
                     if M is None:
                         # substitute the upper bound if it has one
                         M = upper_dict[disj] = v.ub
                     if M is not None:
                         upper_rhs += M*\
                                      disj.indicator_var.get_associated_binary()
-            if len(lower_dict) == num_disjuncts:
+            if need_lower and len(lower_dict) == num_disjuncts:
                 transformed.add((idx, 'lb'), v >= lower_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
                     transformed[idx, 'lb']] = []
@@ -681,7 +698,7 @@ class MultipleBigMTransformation(Transformation):
                     disj.transformation_block._constraintMap[
                         'transformedConstraints'][c] = [transformed[idx, 'lb']]
                     transformed_constraints.add((c, 'lb'))
-            if len(upper_dict) == num_disjuncts:
+            if need_upper and len(upper_dict) == num_disjuncts:
                 transformed.add((idx, 'ub'), v <= upper_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
                     transformed[idx, 'ub']] = []
@@ -703,7 +720,8 @@ class MultipleBigMTransformation(Transformation):
         return transformed_constraints
 
     def _construct_cost_equations(self, active_disjuncts, transBlock, cost_cons,
-                                  cost_cons_by_var, transformed_constraints):
+                                  cost_constraints_by_var,
+                                  transformed_constraints):
         # Now we actually construct the constraints. We do this separately so
         # that we can make sure that we have a term for every active disjunct in
         # the disjunction (falling back on the variable bounds if they are there
