@@ -342,15 +342,11 @@ class MultipleBigMTransformation(Transformation):
                                              transBlock,
                                              transformed_constraints)
 
-        # Now we can deactivate the constraints we deferred, so that we don't
-        # re-transform them
-        for cons in transformed_constraints:
-            cons.deactivate()
-
         or_expr = 0
         for disjunct in active_disjuncts:
             or_expr += disjunct.indicator_var.get_associated_binary()
-            self._transform_disjunct(disjunct, transBlock, active_disjuncts, Ms)
+            self._transform_disjunct(disjunct, transBlock, active_disjuncts, Ms,
+                                     transformed_constraints)
         rhs = 1 if parent_disjunct is None else \
               parent_disjunct.binary_indicator_var
         algebraic_constraint.add(index, (or_expr, rhs))
@@ -383,7 +379,8 @@ class MultipleBigMTransformation(Transformation):
 
         return relaxationBlock
 
-    def _transform_disjunct(self, obj, transBlock, active_disjuncts, Ms):
+    def _transform_disjunct(self, obj, transBlock, active_disjuncts, Ms,
+                            transformed_constraints):
         # We've already filtered out deactivated disjuncts, so we know obj is
         # active.
 
@@ -391,12 +388,14 @@ class MultipleBigMTransformation(Transformation):
         relaxationBlock = self._get_disjunct_relaxation_block(obj, transBlock)
 
         # Transform everything on the disjunct
-        self._transform_block_components(obj, active_disjuncts, Ms)
+        self._transform_block_components(obj, active_disjuncts, Ms,
+                                         transformed_constraints)
 
         # deactivate disjunct so writers can be happy
         obj._deactivate_without_fixing_indicator()
 
-    def _transform_block_components(self, disjunct, active_disjuncts, Ms):
+    def _transform_block_components(self, disjunct, active_disjuncts, Ms,
+                                    transformed_constraints):
         # add references to all local variables on block (including the
         # indicator_var). We won't have to do this when the writers can find
         # Vars not in the active subtree.
@@ -424,18 +423,22 @@ class MultipleBigMTransformation(Transformation):
             # obj is what we are transforming, we pass disjunct
             # through so that we will have access to the indicator
             # variables down the line.
-            handler(obj, disjunct, active_disjuncts, Ms)
+            handler(obj, disjunct, active_disjuncts, Ms,
+                    transformed_constraints)
 
     def _warn_for_active_disjunct(self, innerdisjunct, outerdisjunct,
-                                  active_disjuncts, Ms):
+                                  active_disjuncts, Ms,
+                                  transformed_constraints):
         _warn_for_active_disjunct(innerdisjunct, outerdisjunct)
 
-    def _warn_for_active_suffix(self, obj, disjunct, active_disjuncts, Ms):
+    def _warn_for_active_suffix(self, obj, disjunct, active_disjuncts, Ms,
+                                transformed_constraints):
         raise GDP_Error("Found active Suffix '{0}' on Disjunct '{1}'. "
                         "The multiple bigM transformation does not currently "
                         "support Suffixes.".format(obj.name, disjunct.name))
 
-    def _transform_constraint(self, obj, disjunct, active_disjuncts, Ms):
+    def _transform_constraint(self, obj, disjunct, active_disjuncts, Ms,
+                              transformed_constraints):
         # we will put a new transformed constraint on the relaxation block.
         relaxationBlock = disjunct._transformation_block()
         constraintMap = relaxationBlock._constraintMap
@@ -459,17 +462,25 @@ class MultipleBigMTransformation(Transformation):
             if not c.active:
                 continue
 
-            if not self._config.only_mbigm_bound_constraints:
+            transform_lower = (c.lower is not None and (c, 'lb') not in
+                               transformed_constraints)
+            transform_upper = (c.upper is not None and (c, 'ub') not in
+                               transformed_constraints)
+            if not transform_lower and not transform_upper:
+                # Everything has been handled by special bounds or equality
+                # handling already, so we can just go on to the next constraint.
+                c.deactivate()
+                continue
+            elif not self._config.only_mbigm_bound_constraints:
                 transformed = []
-                if c.lower is not None:
+                if transform_lower:
                     rhs = sum(
                         Ms[c,
                            disj][0]*disj.indicator_var.get_associated_binary()
                         for disj in active_disjuncts if disj is not disjunct)
                     newConstraint.add((i, 'lb'), c.body - c.lower >= rhs)
                     transformed.append(newConstraint[i, 'lb'])
-
-                if c.upper is not None:
+                if transform_upper:
                     rhs = sum(
                         Ms[c,
                            disj][1]*disj.indicator_var.get_associated_binary()
@@ -478,7 +489,13 @@ class MultipleBigMTransformation(Transformation):
                     transformed.append(newConstraint[i, 'ub'])
                 for c_new in transformed:
                     constraintMap['srcConstraints'][c_new] = [c]
-                constraintMap['transformedConstraints'][c] = transformed
+                # Parts of c could already be transformed if it has bound-like
+                # properties. So we make no assumptions here.
+                if c in constraintMap['transformedConstraints']:
+                    constraintMap['transformedConstraints'][c].extend(
+                        transformed)
+                else:
+                    constraintMap['transformedConstraints'][c] = transformed
             else:
                 lower = (None, None, None)
                 upper = (None, None, None)
@@ -495,18 +512,18 @@ class MultipleBigMTransformation(Transformation):
                 M = (lower[0], upper[0])
 
                 # estimate if we don't have what we need
-                if c.lower is not None and M[0] is None:
+                if transform_lower and M[0] is None:
                     M = (bigm._estimate_M(c.body, c)[0] - c.lower, M[1])
                     lower = (M[0], None, None)
-                if c.upper is not None and M[1] is None:
+                if transform_upper and M[1] is None:
                     M = (M[0], bigm._estimate_M(c.body, c)[1] - c.upper)
                     upper = (M[1], None, None)
                 bigm._add_constraint_expressions(
                     c, i, M, disjunct.indicator_var.get_associated_binary(),
                     newConstraint, constraintMap)
 
-        # deactivate now that we have transformed
-        c.deactivate()
+            # deactivate now that we have transformed
+            c.deactivate()
 
     def _transform_bound_constraints(self, active_disjuncts, transBlock, Ms):
         reduce_bound_constraints = self._config.reduce_bound_constraints
@@ -598,7 +615,8 @@ class MultipleBigMTransformation(Transformation):
         # We can't deactivate any constraints yet, even if they are fully
         # transformed, because we will still be solving this Disjunct when we
         # calculate M values for non-bounds constraints (in multiple bigm). We
-        # will track that it is transformed instead by adding it to this set.
+        # will track that it is transformed (both the lb and ub sides
+        # separately) by adding it to this set.
         transformed_constraints = set()
 
         if reduce_cost_like_equations:
@@ -612,6 +630,8 @@ class MultipleBigMTransformation(Transformation):
                 lower_bound_constraints_by_var,
                 upper_bound_constraints_by_var,
                 transformed_constraints)
+
+        return transformed_constraints
 
     def _construct_reduced_bound_constraints(self, active_disjuncts, transBlock,
                                              bounds_cons,
@@ -635,28 +655,22 @@ class MultipleBigMTransformation(Transformation):
                     M = lower_dict.get(disj, None)
                     if M is None:
                         # substitute the lower bound if it has one
-                        M = v.lb
-                    if M is None:
-                        raise GDP_Error(
-                            "There is no lower bound for variable '%s', and "
-                            "Disjunct '%s' does not specify one in its "
-                            "constraints. The transformation cannot construct "
-                            "the special bound constraint relaxation without "
-                            "one of these." % (v.name, disj.name))
-                    lower_rhs += M*disj.indicator_var.get_associated_binary()
+                        M = lower_dict[disj] = v.lb
+                    # Note that if M is still None now, lower_dict is missing at
+                    # least one entry, and we don't construct the constraint
+                    # below. Because we're checking lower and upper in the same
+                    # loop, we just keep going though.
+                    if M is not None:
+                        lower_rhs += M*\
+                                     disj.indicator_var.get_associated_binary()
                 if len(upper_dict) > 0:
                     M = upper_dict.get(disj, None)
                     if M is None:
                         # substitute the upper bound if it has one
-                        M = v.ub
-                    if M is None:
-                        raise GDP_Error(
-                            "There is no upper bound for variable '%s', and "
-                            "Disjunct '%s' does not specify one in its "
-                            "constraints. The transformation cannot construct "
-                            "the special bound constraint relaxation without "
-                            "one of these." % (v.name, disj.name))
-                    upper_rhs += M*disj.indicator_var.get_associated_binary()
+                        M = upper_dict[disj] = v.ub
+                    if M is not None:
+                        upper_rhs += M*\
+                                     disj.indicator_var.get_associated_binary()
             if len(lower_dict) == num_disjuncts:
                 transformed.add((idx, 'lb'), v >= lower_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
@@ -806,14 +820,14 @@ class MultipleBigMTransformation(Transformation):
                     active=True,
                     descend_into=Block,
                     sort=SortComponents.deterministic):
-                if constraint.lower is not None:
+                need_lower = False
+                need_upper = False
+                if (constraint.lower is not None and (constraint, 'lb') not in
+                    transformed_constraints):
                     need_lower = True
-                    if (constraint, 'lb') in transformed_constraints:
-                        need_lower = False
-                if constraint.upper is not None:
+                if (constraint.upper is not None and (constraint, 'ub') not in
+                    transformed_constraints):
                     need_upper = True
-                    if (constraint, 'ub') in transformed_constraints:
-                        need_upper = False
 
                 # First check args
                 if (constraint, other_disjunct) in arg_Ms:
