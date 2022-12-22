@@ -844,6 +844,7 @@ class SpecialParameterHandling(unittest.TestCase):
         same2 = mbm.get_transformed_constraints(m.d3.cost)
         self.check_cost_equality_constraints(m, cons, same1, same2)
 
+    @unittest.skipUnless(gurobi_available, "Gurobi is not available")
     def test_incomplete_cost_equalities_deferred(self):
         m = self.make_model()
         m.y = Var(bounds=(-2, 2))
