@@ -577,7 +577,7 @@ class MultipleBigMTransformation(Transformation):
                             cost_cons_by_var[v].add((c, disj))
                         else:
                             cost_cons_by_var[v] = {(c, disj)}
-                        transBlock._mbm_values[c, disj] = const
+                        transBlock._mbm_values[c, disj] = [const, const]
 
                     # Note that we keep going here as long as we are also
                     # reducing bounds constraints--we add equalities to the
@@ -669,6 +669,10 @@ class MultipleBigMTransformation(Transformation):
                     if M is None:
                         # substitute the lower bound if it has one
                         M = lower_dict[disj] = v.lb
+                        if (c, disj) in transBlock._mbm_values:
+                            transBlock._mbm_values[c, disj][0] = M
+                        else:
+                            transBlock._mbm_values[c, disj] = [M, None]
                     # Note that if M is still None now, lower_dict is missing at
                     # least one entry, and we don't construct the constraint
                     # below. Because we're checking lower and upper in the same
@@ -685,10 +689,14 @@ class MultipleBigMTransformation(Transformation):
                     if M is None:
                         # substitute the upper bound if it has one
                         M = upper_dict[disj] = v.ub
+                        if (c, disj) in transBlock._mbm_values:
+                            transBlock._mbm_values[c, disj][1] = M
+                        else:
+                            transBlock._mbm_values[c, disj] = [None, M]
                     if M is not None:
                         upper_rhs += M*\
                                      disj.indicator_var.get_associated_binary()
-            if need_lower and len(lower_dict) == num_disjuncts:
+            if need_lower:
                 transformed.add((idx, 'lb'), v >= lower_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
                     transformed[idx, 'lb']] = []
@@ -698,7 +706,7 @@ class MultipleBigMTransformation(Transformation):
                     disj.transformation_block._constraintMap[
                         'transformedConstraints'][c] = [transformed[idx, 'lb']]
                     transformed_constraints.add((c, 'lb'))
-            if need_upper and len(upper_dict) == num_disjuncts:
+            if need_upper:
                 transformed.add((idx, 'ub'), v <= upper_rhs)
                 relaxationBlock._constraintMap['srcConstraints'][
                     transformed[idx, 'ub']] = []

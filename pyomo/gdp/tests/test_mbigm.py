@@ -22,8 +22,8 @@ from pyomo.core.expr.compare import (
 
 from pyomo.environ import (
     BooleanVar, ConcreteModel, Constraint, LogicalConstraint,
-    NonNegativeIntegers, SolverFactory, Suffix, TransformationFactory,
-    value, Var
+    NonNegativeIntegers, NonNegativeReals, Param, SolverFactory, Suffix,
+    TransformationFactory, value, Var
 )
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.gdp.tests.common_tests import (
@@ -944,3 +944,84 @@ class SpecialParameterHandling(unittest.TestCase):
                                m.x - (4.0*m.d1.binary_indicator_var +
                                       8.0*m.d2.binary_indicator_var +
                                       9.5*m.d3.binary_indicator_var))
+
+    def test_incomplete_bounds_constraints_transformed_correctly(self):
+        m = ConcreteModel()
+        m.x = Var(domain=NonNegativeReals)
+        m.d1 = Disjunct()
+        m.d1.c = Constraint(expr=(5, m.x, 6))
+        m.d2 = Disjunct()
+        # We're missing an upper bound here, but that's actually fine. The
+        # indicator_var for d2 just won't be in the bounds constraint. Note, by
+        # the way that this is pretty cool: It's now less restrictive than bigm
+        # and hull in this special case because we have a correct transformation
+        # involving unbounded variables in the disjuncts.
+        m.d2.c = Constraint(expr=m.x >= 7)
+        m.d3 = Disjunct()
+        m.d3.c = Constraint(expr=(4, m.x, 4.5))
+        m.disjunction = Disjunction(expr=[m.d1, m.d2, m.d3])
+
+        mbm = TransformationFactory('gdp.mbigm')
+        mbm.apply_to(m)
+
+        cons = mbm.get_transformed_constraints(m.d1.c)
+        self.assertEqual(len(cons), 2)
+        cons2 = mbm.get_transformed_constraints(m.d2.c)
+        self.assertEqual(len(cons2), 1)
+        self.assertIs(cons2[0], cons[0])
+        cons3 = mbm.get_transformed_constraints(m.d3.c)
+        self.assertEqual(len(cons3), 2)
+        self.assertIs(cons[0], cons3[0])
+        self.assertIs(cons[1], cons3[1])
+
+        # lb constraint
+        self.assertIsNone(cons[0].lower)
+        self.assertEqual(value(cons[0].upper), 0)
+        assertExpressionsEqual(self, cons[0].body,
+                               5.0*m.d1.binary_indicator_var +
+                               7.0*m.d2.binary_indicator_var +
+                               4.0*m.d3.binary_indicator_var - m.x)
+
+        # ub constraint
+        self.assertIsNone(cons[1].lower)
+        self.assertEqual(value(cons[1].upper), 0)
+        assertExpressionsEqual(self, cons[1].body,
+                               m.x - (6.0*m.d1.binary_indicator_var +
+                                      4.5*m.d3.binary_indicator_var))
+
+    def test_M_values_stored_correctly(self):
+        m = ConcreteModel()
+        m.x = Var(bounds=(0, 10))
+        m.disjunction = Disjunction(expr=[[m.x >= 5], [m.x == 4], [m.x <= 2]])
+
+        mbm = TransformationFactory('gdp.mbigm')
+        mbm.apply_to(m)
+
+        Ms = mbm.get_all_M_values(m)
+
+        ds = m.disjunction.disjuncts
+        # TODO: I don't really know what these should be...
+        self.assertIn((ds[0].constraint[1], ds[0]), Ms)
+        self.assertEqual(Ms[ds[0].constraint[1], ds[0]], [5, None])
+        self.assertIn((ds[1].constraint[1], ds[0]), Ms)
+        self.assertEqual(Ms[ds[1].constraint[1], ds[0]], [5, None])
+        self.assertIn((ds[2].constraint[1], ds[0]), Ms)
+        self.assertEqual(Ms[ds[2].constraint[1], ds[0]], [5, None])
+        self.assertIn((ds[0].constraint[1], ds[1]), Ms)
+        self.assertEqual(Ms[ds[0].constraint[1], ds[1]], [4, 4])
+        self.assertIn((ds[1].constraint[1], ds[1]), Ms)
+        self.assertEqual(Ms[ds[1].constraint[1], ds[2]], [4, 4])
+        self.assertIn((ds[2].constraint[1], ds[1]), Ms)
+        self.assertEqual(Ms[ds[2].constraint[1], ds[2]], [4, 4])
+        self.assertIn((ds[0].constraint[1], ds[2]), Ms)
+        self.assertEqual(Ms[ds[0].constraint[1], ds[2]], [0, 2])
+        self.assertIn((ds[1].constraint[1], ds[2]), Ms)
+        self.assertEqual(Ms[ds[1].constraint[1], ds[2]], [0, 2])
+        self.assertIn((ds[2].constraint[1], ds[2]), Ms)
+        self.assertEqual(Ms[ds[2].constraint[1], ds[2]], [0, 2])
+        self.assertEqual(len(Ms), 9)
+
+# TODO:
+
+# 2) I'm still nervous about whether or not I record M values and their sources
+# correctly for cost equalities. Should test that.

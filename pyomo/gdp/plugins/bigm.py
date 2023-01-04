@@ -529,10 +529,8 @@ class BigM_Transformation(Transformation):
             M_expr = M[0] * (1 - indicator_var)
             newConstraint.add((name, i, 'lb'), c.lower <= c. body - M_expr)
             constraintMap[
-                'transformedConstraints'][c] = [
-                    newConstraint[name, i, 'lb']]
-            constraintMap['srcConstraints'][
-                newConstraint[name, i, 'lb']] = c
+                'transformedConstraints'][c] = [newConstraint[name, i, 'lb']]
+            constraintMap['srcConstraints'][newConstraint[name, i, 'lb']] = c
         if c.upper is not None:
             if M[1] is None:
                 raise GDP_Error("Cannot relax disjunctive constraint '%s' "
@@ -547,8 +545,7 @@ class BigM_Transformation(Transformation):
                 constraintMap[
                     'transformedConstraints'][c] = [
                         newConstraint[name, i, 'ub']]
-            constraintMap['srcConstraints'][
-                newConstraint[name, i, 'ub']] = c
+            constraintMap['srcConstraints'][newConstraint[name, i, 'ub']] = c
 
     def _process_M_value(self, m, lower, upper, need_lower, need_upper, src,
                          key, constraint, from_args=False):
