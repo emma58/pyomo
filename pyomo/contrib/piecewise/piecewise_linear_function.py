@@ -293,7 +293,8 @@ class PiecewiseLinearFunction(Block):
 
         # Get the points for the triangulation because they might not all be
         # there if any were coplanar.
-        obj._points = [pt for pt in map(tuple, triangulation.points)]
+
+        obj._points = list(map(tuple, triangulation.points))
         obj._simplices = []
         for simplex in triangulation.simplices:
             # For each simplex, check whether or not the simplex is
@@ -301,7 +302,7 @@ class PiecewiseLinearFunction(Block):
 
             # We have n + 1 points in n dimensions.
             # We put them in a n x (n + 1) matrix: [p_0 p_1 ... p_n]
-            points = triangulation.points[simplex].transpose()
+            points = triangulation.points[simplex]
             # The question is if they span R^n: We construct the square matrix
             # [p_1 - p_0  p_2 - p_1  ...  p_n - p_{n-1}] and check if it is full
             # rank. Note that we use numpy's matrix_rank function rather than
@@ -309,10 +310,7 @@ class PiecewiseLinearFunction(Block):
             # tolerance based on the input to account for numerical errors in the
             # SVD computation.
             if (
-                np.linalg.matrix_rank(
-                    points[:, 1:]
-                    - np.append(points[:, : dimension - 1], points[:, [0]], axis=1)
-                )
+                np.linalg.matrix_rank(points[1:, :] - points[:dimension, :])
                 == dimension
             ):
                 obj._simplices.append(tuple(sorted(simplex)))
