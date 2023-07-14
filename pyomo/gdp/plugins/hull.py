@@ -253,6 +253,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         # Preprocess in order to find what disjunctive components need
         # transformation
         gdp_tree = self._get_gdp_tree_from_targets(instance, targets)
+        # Hull transforms from root to leaf
         preprocessed_targets = gdp_tree.topological_sort()
         self._targets_set = set(preprocessed_targets)
 
@@ -446,7 +447,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 # mark this as local because we won't re-disaggregate if this is
                 # a nested disjunction
                 if local_var_set is not None:
-                    local_var_set.append(disaggregatedVar)
+                    local_var_set.append(disaggregated_var)
                 var_free = 1 - sum(
                     disj.indicator_var.get_associated_binary()
                     for disj in disjunctsVarAppearsIn[var]
@@ -499,14 +500,19 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
             # We equate the sum of the disaggregated vars to var (the original)
             # if parent_disjunct is None, else it needs to be the disaggregated
-            # var corresponding to var on the parent disjunct. This is the
-            # reason we transform from root to leaf: This constraint is now
-            # correct regardless of how nested something may have been.
-            parent_var = (
-                var
-                if parent_disjunct is None
-                else self.get_disaggregated_var(var, parent_disjunct)
-            )
+            # var corresponding to var on the parent disjunct, assuming the Var
+            # appears on the parent disjunct. If it does not, then we can again
+            # use the original. This is the reason we transform from root to
+            # leaf: This constraint is now correct regardless of how nested
+            # something may have been and accounting for the Disjunctions above
+            # it.
+            parent_var = var
+            if parent_disjunct is not None:
+                parent_var = self.get_disaggregated_var(
+                    var, parent_disjunct, raise_exception=False
+                )
+                if parent_var is None:
+                    parent_var = var
             cons_idx = len(disaggregationConstraint)
             disaggregationConstraint.add(cons_idx, parent_var == disaggregatedExpr)
             # and update the map so that we can find this later. We index by
@@ -885,7 +891,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 % (disjunct.getname(fully_qualified=True), localSuffix.ctype)
             )
 
-    def get_disaggregated_var(self, v, disjunct):
+    def get_disaggregated_var(self, v, disjunct, raise_exception=True):
         """
         Returns the disaggregated variable corresponding to the Var v and the
         Disjunct disjunct.
@@ -903,11 +909,13 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         try:
             return transBlock._disaggregatedVarMap['disaggregatedVar'][disjunct][v]
         except:
-            logger.error(
-                "It does not appear '%s' is a "
-                "variable that appears in disjunct '%s'" % (v.name, disjunct.name)
-            )
-            raise
+            if raise_exception:
+                logger.error(
+                    "It does not appear '%s' is a "
+                    "variable that appears in disjunct '%s'" % (v.name, disjunct.name)
+                )
+                raise
+            return None
 
     def get_src_var(self, disaggregated_var):
         """
