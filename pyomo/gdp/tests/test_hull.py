@@ -1789,6 +1789,38 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         x_cons_child = hull.get_disaggregation_constraint(m.x, m.parent1.disjunction)
         assertExpressionsEqual(self, x_cons_child.expr, x_p1 == x_c1 + x_c2 + x_c3)
 
+    def test_nested_with_local_vars(self):
+        m = ConcreteModel()
+
+        m.x = Var(bounds=(0, 10))
+        m.S = RangeSet(2)
+
+        @m.Disjunct()
+        def d_l(d):
+            d.lambdas = Var(m.S, bounds=(0, 1))
+            d.c1 = Constraint(expr=d.lambdas[1] + d.lambdas[2] == 1)
+            d.c2 = Constraint(expr=m.x == 2 * d.lambdas[1] + 3 * d.lambdas[2])
+        @m.Disjunct()
+        def d_r(d):
+            d.y = Var(bounds=(0, 10))
+            @d.Disjunct()
+            def d_l(e):
+                e.lambdas = Var(m.S, bounds=(0, 1))
+                e.c1 = Constraint(expr=e.lambdas[1] + e.lambdas[2] == 1)
+                e.c2 = Constraint(expr=m.x == 2 * e.lambdas[1] + 3 * e.lambdas[2])
+            @d.Disjunct()
+            def d_r(e):
+                e.lambdas = Var(m.S, bounds=(0, 1))
+                e.c1 = Constraint(expr=e.lambdas[1] + e.lambdas[2] == 1)
+                e.c2 = Constraint(expr=m.x == 2 * e.lambdas[1] + 3 * e.lambdas[2])
+            d.inner_disj = Disjunction(expr=[d.d_l, d.d_r])
+        m.disj = Disjunction(expr=[m.d_l, m.d_r])
+        m.obj = Objective(expr=m.x)
+
+        hull = TransformationFactory('gdp.hull')
+        hull.apply_to(m)
+
+        
 
 class TestSpecialCases(unittest.TestCase):
     def test_local_vars(self):
