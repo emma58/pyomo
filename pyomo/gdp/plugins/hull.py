@@ -259,11 +259,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
         for t in preprocessed_targets:
             if t.ctype is Disjunction:
-                self._transform_disjunctionData(
-                    t,
-                    t.index(),
-                    gdp_tree,
-                )
+                self._transform_disjunctionData(t, t.index(), gdp_tree)
             # We skip disjuncts now, because we need information from the
             # disjunctions to transform them (which variables to disaggregate),
             # so for hull's purposes, they need not be in the tree.
@@ -502,9 +498,10 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
             # leaf: This constraint is now correct regardless of how nested
             # something may have been and accounting for the Disjunctions above
             # it.
-            parent_var = self._get_parent_disaggregated_var(var,
-                                                            parent_disjunct, gdp_tree)
-            
+            parent_var = self._get_parent_disaggregated_var(
+                var, parent_disjunct, gdp_tree
+            )
+
             cons_idx = len(disaggregationConstraint)
             disaggregationConstraint.add(cons_idx, parent_var == disaggregatedExpr)
             # and update the map so that we can find this later. We index by
