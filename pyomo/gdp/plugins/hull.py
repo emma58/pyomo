@@ -324,13 +324,14 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         # are going to disaggregate.
         varOrder_set = ComponentSet()
         varOrder = []
-        varsByDisjunct = ComponentMap()
         localVarsByDisjunct = ComponentMap()
+        disjunctsVarAppearsIn = ComponentMap()
+        setOfDisjunctsVarAppearsIn = ComponentMap()
         include_fixed_vars = not self._config.assume_fixed_vars_permanent
         for disjunct in obj.disjuncts:
             if not disjunct.active:
                 continue
-            disjunctVars = varsByDisjunct[disjunct] = ComponentSet()
+            print("Disjunct %s" % disjunct)
             # create the key for each disjunct now
             transBlock._disaggregatedVarMap['disaggregatedVar'][
                 disjunct
@@ -339,7 +340,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 Constraint,
                 active=True,
                 sort=SortComponents.deterministic,
-                descend_into=(Block, Disjunct),
+                descend_into=Block,
             ):
                 # [ESJ 02/14/2020] By default, we disaggregate fixed variables
                 # on the philosophy that fixing is not a promise for the future
@@ -355,10 +356,17 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     # eventually disaggregate the vars in a
                     # deterministic order (the order that we found
                     # them)
-                    disjunctVars.add(var)
                     if not var in varOrder_set:
+                        print("first time we've seen %s" % var)
                         varOrder.append(var)
                         varOrder_set.add(var)
+                        disjunctsVarAppearsIn[var] = [disjunct]
+                        setOfDisjunctsVarAppearsIn[var] = ComponentSet([disjunct])
+                    else:
+                        if disjunct not in setOfDisjunctsVarAppearsIn[var]:
+                            print("Adding %s to list" % var)
+                            disjunctsVarAppearsIn[var].append(disjunct)
+                            setOfDisjunctsVarAppearsIn[var].add(disjunct)
 
             # check for LocalVars Suffix
             localVarsByDisjunct = self._get_local_var_suffixes(
@@ -379,11 +387,8 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         # (we iterate through the localVars of a Disjunct later)
         localVars = ComponentMap()
         varsToDisaggregate = []
-        disjunctsVarAppearsIn = ComponentMap()
         for var in varOrder:
-            disjuncts = disjunctsVarAppearsIn[var] = [
-                d for d in varsByDisjunct if var in varsByDisjunct[d]
-            ]
+            disjuncts = disjunctsVarAppearsIn[var]
             # clearly not local if used in more than one disjunct
             if len(disjuncts) > 1:
                 if self._generate_debug_messages:
