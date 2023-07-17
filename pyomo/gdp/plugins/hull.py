@@ -331,7 +331,6 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         for disjunct in obj.disjuncts:
             if not disjunct.active:
                 continue
-            print("Disjunct %s" % disjunct)
             # create the key for each disjunct now
             transBlock._disaggregatedVarMap['disaggregatedVar'][
                 disjunct
@@ -357,14 +356,12 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     # deterministic order (the order that we found
                     # them)
                     if not var in varOrder_set:
-                        print("first time we've seen %s" % var)
                         varOrder.append(var)
                         varOrder_set.add(var)
                         disjunctsVarAppearsIn[var] = [disjunct]
                         setOfDisjunctsVarAppearsIn[var] = ComponentSet([disjunct])
                     else:
                         if disjunct not in setOfDisjunctsVarAppearsIn[var]:
-                            print("Adding %s to list" % var)
                             disjunctsVarAppearsIn[var].append(disjunct)
                             setOfDisjunctsVarAppearsIn[var].add(disjunct)
 
@@ -440,10 +437,10 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         for i, var in enumerate(varsToDisaggregate):
             # There are two cases here: Either the var appeared in every
             # disjunct in the disjunction, or it didn't. If it did, there's
-            # nothing special to do: All of the disaggregated variables have
-            # been created, and we can just proceed and make this constraint. If
-            # it didn't, we need one more disaggregated variable, correctly
-            # defined. And then we can make the constraint.
+            # nothing special to do: All of the disaggregated variables were
+            # created in _transform_disjunct, and we can just proceed and make
+            # this constraint. If it didn't, we need one more disaggregated
+            # variable, correctly defined. And then we can make the constraint.
             if len(disjunctsVarAppearsIn[var]) < len(obj.disjuncts):
                 # create one more disaggregated var
                 idx = len(disaggregatedVars)
@@ -465,14 +462,15 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     (idx, 'ub'),
                     var_free,
                 )
-                # maintain the mappings
+                # For every Disjunct the Var does not appear in, we want to map
+                # that this new variable is its disaggregated variable.
                 for disj in obj.disjuncts:
                     # Because we called _transform_disjunct above, we know that
                     # if this isn't transformed it is because it was cleanly
                     # deactivated, and we can just skip it.
                     if (
                         disj._transformation_block is not None
-                        and disj not in disjunctsVarAppearsIn[var]
+                        and disj not in setOfDisjunctsVarAppearsIn[var]
                     ):
                         relaxationBlock = disj._transformation_block().parent_block()
                         relaxationBlock._bigMConstraintMap[
@@ -489,12 +487,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
             else:
                 disaggregatedExpr = 0
             for disjunct in disjunctsVarAppearsIn[var]:
-                if disjunct._transformation_block is None:
-                    # Because we called _transform_disjunct above, we know that
-                    # if this isn't transformed it is because it was cleanly
-                    # deactivated, and we can just skip it.
-                    continue
-
+                # We know the Disjunct was active, so it has been transformed by now
                 disaggregatedVar = (
                     disjunct._transformation_block()
                     .parent_block()
