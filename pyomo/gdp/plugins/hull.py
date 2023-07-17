@@ -958,7 +958,8 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
     # retrieves the disaggregation constraint for original_var resulting from
     # transforming disjunction
-    def get_disaggregation_constraint(self, original_var, disjunction):
+    def get_disaggregation_constraint(self, original_var, disjunction,
+                                      raise_exception=True):
         """
         Returns the disaggregation (re-aggregation?) constraint
         (which links the disaggregated variables to their original)
@@ -988,12 +989,14 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 ._disaggregationConstraintMap[original_var][disjunction]
             )
         except:
-            logger.error(
-                "It doesn't appear that '%s' is a variable that was "
-                "disaggregated by Disjunction '%s'"
-                % (original_var.name, disjunction.name)
-            )
-            raise
+            if raise_exception:
+                logger.error(
+                    "It doesn't appear that '%s' is a variable that was "
+                    "disaggregated by Disjunction '%s'"
+                    % (original_var.name, disjunction.name)
+                )
+                raise
+            return None
 
     def get_var_bounds_constraint(self, v):
         """

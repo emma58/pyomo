@@ -1831,6 +1831,50 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         hull = TransformationFactory('gdp.hull')
         hull.apply_to(m)
 
+    def test_nested_with_var_that_skips_a_level(self):
+        m = ConcreteModel()
+
+        m.x = Var(bounds=(-2, 9))
+        m.y = Var(bounds=(-3, 8))
+
+        m.y1 = Disjunct()
+        m.y1.c1 = Constraint(expr=m.x >= 4)
+        m.y1.z1 = Disjunct()
+        m.y1.z1.c1 = Constraint(expr=m.y == 0)
+        m.y1.z1.w1 = Disjunct()
+        m.y1.z1.w1.c1 = Constraint(expr=m.x == 0)
+        m.y1.z1.w2 = Disjunct()
+        m.y1.z1.w2.c1 = Constraint(expr=m.x >= 1)
+        m.y1.z1.disjunction = Disjunction(expr=[m.y1.z1.w1, m.y1.z1.w2])
+        m.y1.z2 = Disjunct()
+        m.y1.z2.c1 = Constraint(expr=m.y == 1)
+        m.y1.disjunction = Disjunction(expr=[m.y1.z1, m.y1.z2])
+        m.y2 = Disjunct()
+        m.y2.c1 = Constraint(expr=m.x == 0)
+        m.disjunction = Disjunction(expr=[m.y1, m.y2])
+
+        hull = TransformationFactory('gdp.hull')
+        hull.apply_to(m)
+
+        x_y1 = hull.get_disaggregated_var(m.x, m.y1)
+        x_y2 = hull.get_disaggregated_var(m.x, m.y2)
+        nobody_home = hull.get_disaggregated_var(m.x, m.y1.z1, raise_exception=False)
+        self.assertIsNone(nobody_home)
+        nobody_home = hull.get_disaggregated_var(m.x, m.y1.z2, raise_exception=False)
+        self.assertIsNone(nobody_home)
+        x_w1 = hull.get_disaggregated_var(m.x, m.y1.z1.w1)
+        x_w2 = hull.get_disaggregated_var(m.x, m.y1.z1.w2)
+
+        cons = hull.get_disaggregation_constraint(m.x, m.y1.z1.disjunction)
+        assertExpressionsEqual(self, cons.expr,
+                               x_y1 == x_w1 + x_w2)
+        nothing = hull.get_disaggregation_constraint(m.x, m.y1.disjunction,
+                                                     raise_exception=False)
+        self.assertIsNone(nothing)
+        cons = hull.get_disaggregation_constraint(m.x, m.disjunction)
+        assertExpressionsEqual(self, cons.expr,
+                               m.x == x_y1 + x_y2)
+
 
 class TestSpecialCases(unittest.TestCase):
     def test_local_vars(self):
