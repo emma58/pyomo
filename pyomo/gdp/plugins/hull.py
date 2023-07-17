@@ -958,8 +958,9 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
     # retrieves the disaggregation constraint for original_var resulting from
     # transforming disjunction
-    def get_disaggregation_constraint(self, original_var, disjunction,
-                                      raise_exception=True):
+    def get_disaggregation_constraint(
+        self, original_var, disjunction, raise_exception=True
+    ):
         """
         Returns the disaggregation (re-aggregation?) constraint
         (which links the disaggregated variables to their original)

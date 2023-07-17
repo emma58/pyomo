@@ -1789,8 +1789,6 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         x_cons_child = hull.get_disaggregation_constraint(m.x, m.parent1.disjunction)
         assertExpressionsEqual(self, x_cons_child.expr, x_p1 == x_c1 + x_c2 + x_c3)
 
-    #def check_convex_combo_disjunction(self, 
-
     def test_nested_with_local_vars(self):
         m = ConcreteModel()
 
@@ -1841,29 +1839,32 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
             self.assertIs(lambda1, d.lambdas[1])
             lambda2 = hull.get_disaggregated_var(d.lambdas[2], d)
             self.assertIs(lambda2, d.lambdas[2])
-        
+
             cons = hull.get_transformed_constraints(d.c1)
             self.assertEqual(len(cons), 1)
             convex_combo = cons[0]
-            assertExpressionsEqual(self, convex_combo.expr, lambda1 + lambda2 -
-                                   (1 -
-                                    d.indicator_var.get_associated_binary())*0.0
-                                   == d.indicator_var.get_associated_binary())
+            assertExpressionsEqual(
+                self,
+                convex_combo.expr,
+                lambda1 + lambda2 - (1 - d.indicator_var.get_associated_binary()) * 0.0
+                == d.indicator_var.get_associated_binary(),
+            )
             cons = hull.get_transformed_constraints(d.c2)
             self.assertEqual(len(cons), 1)
             get_x = cons[0]
-            assertExpressionsEqual(self, get_x.expr, x - (2*lambda1 + 3*lambda2)
-                                   - (1 -
-                                      d.indicator_var.get_associated_binary())* 0.0
-                                   ==
-                                   0.0*d.indicator_var.get_associated_binary())
+            assertExpressionsEqual(
+                self,
+                get_x.expr,
+                x
+                - (2 * lambda1 + 3 * lambda2)
+                - (1 - d.indicator_var.get_associated_binary()) * 0.0
+                == 0.0 * d.indicator_var.get_associated_binary(),
+            )
 
         cons = hull.get_disaggregation_constraint(m.x, m.disj)
-        assertExpressionsEqual(self, cons.expr,
-                               m.x == x2 + x1)
+        assertExpressionsEqual(self, cons.expr, m.x == x2 + x1)
         cons = hull.get_disaggregation_constraint(m.x, m.d_r.inner_disj)
-        assertExpressionsEqual(self, cons.expr,
-                               x2 == x3 + x4)
+        assertExpressionsEqual(self, cons.expr, x2 == x3 + x4)
 
     def test_nested_with_var_that_skips_a_level(self):
         m = ConcreteModel()
@@ -1900,14 +1901,13 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         x_w2 = hull.get_disaggregated_var(m.x, m.y1.z1.w2)
 
         cons = hull.get_disaggregation_constraint(m.x, m.y1.z1.disjunction)
-        assertExpressionsEqual(self, cons.expr,
-                               x_y1 == x_w1 + x_w2)
-        nothing = hull.get_disaggregation_constraint(m.x, m.y1.disjunction,
-                                                     raise_exception=False)
+        assertExpressionsEqual(self, cons.expr, x_y1 == x_w1 + x_w2)
+        nothing = hull.get_disaggregation_constraint(
+            m.x, m.y1.disjunction, raise_exception=False
+        )
         self.assertIsNone(nothing)
         cons = hull.get_disaggregation_constraint(m.x, m.disjunction)
-        assertExpressionsEqual(self, cons.expr,
-                               m.x == x_y1 + x_y2)
+        assertExpressionsEqual(self, cons.expr, m.x == x_y1 + x_y2)
 
 
 class TestSpecialCases(unittest.TestCase):
