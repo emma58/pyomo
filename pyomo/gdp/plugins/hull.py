@@ -369,15 +369,14 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         # being local. Since we transform from leaf to root, we are implicitly
         # treating our own disaggregated variables as local, so they will not be
         # re-disaggregated.
-        varSet = []
         varSet = {disj: [] for disj in obj.disjuncts}
-        # Note that variables are local with respect to a Disjunct. We deal with
-        # them here to do some error checking (if something is obviously not
-        # local since it is used in multiple Disjuncts in this Disjunction) and
-        # also to get a deterministic order in which to process them when we
-        # transform the Disjuncts: Values of localVarsByDisjunct are
-        # ComponentSets, so we need this for determinism (we iterate through the
-        # localVars of a Disjunct later)
+        # Note that variables declared as local are local with respect to a
+        # certain Disjunct. We deal with them here to do some error checking (if
+        # something is obviously not local since it is used in multiple
+        # Disjuncts in this Disjunction) and also to get a deterministic order
+        # in which to process them when we transform the Disjuncts: Values of
+        # localVarsByDisjunct are ComponentSets, so we need this for determinism
+        # (we iterate through the localVars of a Disjunct later)
         localVars = ComponentMap()
         varsToDisaggregate = []
         disjunctsVarAppearsIn = ComponentMap()
@@ -399,8 +398,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
             # disjuncts is a list of length 1
             elif localVarsByDisjunct.get(disjuncts[0]) is not None:
                 if var in localVarsByDisjunct[disjuncts[0]]:
-                    localVars_thisDisjunct = localVars.get(disjuncts[0])
-                    if localVars_thisDisjunct is not None:
+                    if localVars.get(disjuncts[0]) is not None:
                         localVars[disjuncts[0]].append(var)
                     else:
                         localVars[disjuncts[0]] = [var]
@@ -409,7 +407,8 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     varSet[disjuncts[0]].append(var)
                     varsToDisaggregate.append(var)
             else:
-                # We don't even have have any local vars for this Disjunct.
+                # The user didn't even declare any local vars for this Disjunct,
+                # so we know we're disaggregating it.
                 varSet[disjuncts[0]].append(var)
                 varsToDisaggregate.append(var)
 
