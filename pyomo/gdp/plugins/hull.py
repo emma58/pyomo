@@ -419,7 +419,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
         # Now that we know who we need to disaggregate, we will do it
         # while we also transform the disjuncts.
-        local_var_set = self._get_local_var_set(obj)
+        local_var_set = self._get_parent_local_var_set(obj, parent_disjunct)
         or_expr = 0
         for disjunct in obj.disjuncts:
             or_expr += disjunct.indicator_var.get_associated_binary()
@@ -667,15 +667,25 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
             transBlock._disaggregatedVarMap['srcVar'][disaggregatedVar] = original_var
             transBlock._bigMConstraintMap[disaggregatedVar] = bigmConstraint
 
-    def _get_local_var_set(self, disjunction):
+    def _add_local_var_suffix(self, disjunct):
+        # If the Suffix is there, we will borrow it. If not, we make it. If it's
+        # something else, we complain.
+        localSuffix = disjunct.component("LocalVars")
+        if localSuffix is None:
+            disjunct.LocalVars = Suffix(direction=Suffix.LOCAL)
+        else:
+            if localSuffix.ctype is Suffix:
+                return
+            raise GDP_Error(
+                "A component called 'LocalVars' is declared on "
+                "Disjunct %s, but it is of type %s, not Suffix."
+                % (disjunct.getname(fully_qualified=True), localSuffix.ctype)
+            )
+
+    def _get_parent_local_var_set(self, disjunction, parent_disjunct):
         # add Suffix to the relaxation block that disaggregated variables are
         # local (in case this is nested in another Disjunct)
         local_var_set = None
-        parent_disjunct = disjunction.parent_block()
-        while parent_disjunct is not None:
-            if parent_disjunct.ctype is Disjunct:
-                break
-            parent_disjunct = parent_disjunct.parent_block()
         if parent_disjunct is not None:
             # This limits the cases that a user is allowed to name something
             # (other than a Suffix) 'LocalVars' on a Disjunct. But I am assuming
@@ -879,21 +889,6 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
         # deactivate now that we have transformed
         obj.deactivate()
-
-    def _add_local_var_suffix(self, disjunct):
-        # If the Suffix is there, we will borrow it. If not, we make it. If it's
-        # something else, we complain.
-        localSuffix = disjunct.component("LocalVars")
-        if localSuffix is None:
-            disjunct.LocalVars = Suffix(direction=Suffix.LOCAL)
-        else:
-            if localSuffix.ctype is Suffix:
-                return
-            raise GDP_Error(
-                "A component called 'LocalVars' is declared on "
-                "Disjunct %s, but it is of type %s, not Suffix."
-                % (disjunct.getname(fully_qualified=True), localSuffix.ctype)
-            )
 
     def get_disaggregated_var(self, v, disjunct, raise_exception=True):
         """
