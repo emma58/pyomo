@@ -262,8 +262,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 self._transform_disjunctionData(
                     t,
                     t.index(),
-                    parent_disjunct=gdp_tree.parent(t),
-                    root_disjunct=gdp_tree.root_disjunct(t),
+                    gdp_tree,
                 )
             # We skip disjuncts now, because we need information from the
             # disjunctions to transform them (which variables to disaggregate),
@@ -299,9 +298,9 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
         return transBlock, True
 
-    def _transform_disjunctionData(
-        self, obj, index, parent_disjunct=None, root_disjunct=None
-    ):
+    def _transform_disjunctionData(self, obj, index, gdp_tree):
+        parent_disjunct = gdp_tree.parent(obj)
+
         # Hull reformulation doesn't work if this is an OR constraint. So if
         # xor is false, give up
         if not obj.xor:
@@ -312,7 +311,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
             )
 
         transBlock, xorConstraint = self._setup_transform_disjunctionData(
-            obj, root_disjunct
+            obj, gdp_tree.root_disjunct(obj)
         )
 
         disaggregationConstraint = transBlock.disaggregationConstraints
@@ -503,13 +502,9 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
             # leaf: This constraint is now correct regardless of how nested
             # something may have been and accounting for the Disjunctions above
             # it.
-            parent_var = var
-            if parent_disjunct is not None:
-                parent_var = self.get_disaggregated_var(
-                    var, parent_disjunct, raise_exception=False
-                )
-                if parent_var is None:
-                    parent_var = var
+            parent_var = self._get_parent_disaggregated_var(var,
+                                                            parent_disjunct, gdp_tree)
+            
             cons_idx = len(disaggregationConstraint)
             disaggregationConstraint.add(cons_idx, parent_var == disaggregatedExpr)
             # and update the map so that we can find this later. We index by
@@ -525,6 +520,28 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
 
         # deactivate for the writers
         obj.deactivate()
+
+    def _get_parent_disaggregated_var(self, var, parent_disjunct, gdp_tree):
+        # We know that if a Var is used anywhere in the parent Disjunct's
+        # Disjunction, we will have a disaggregated Var for it because we are
+        # transforming from root to leaf, and even if it doesn't appear in any
+        # constraints on the parent Disjunct, we will have a disaggregated var
+        # that corresponds to the parent Disjunct. It is possible, though, for
+        # it to appear nowhere in that Disjunction, in which case we continue to
+        # walk up the tree looking for it. It is correct to use the first one we
+        # come to as the right-hand side of the disaggregation Constraint. If we
+        # get to the root and still haven't found anything, it is correct to use
+        # the original var.
+        disjunct = parent_disjunct
+        while disjunct is not None:
+            parent_var = self.get_disaggregated_var(
+                var, disjunct, raise_exception=False
+            )
+            if parent_var is not None:
+                return parent_var
+            disjunct = gdp_tree.parent_disjunct(disjunct)
+        # we reached the root and never found it, so return the original
+        return var
 
     def _transform_disjunct(self, obj, transBlock, varSet, localVars, local_var_set):
         # We're not using the preprocessed list here, so this could be
