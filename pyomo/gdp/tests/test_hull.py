@@ -505,10 +505,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         for i in [0, 1]:
             mappings = ComponentMap()
             mappings[m.x] = disjBlock[i].disaggregatedVars.x
-            if i == 1:  # this disjunct as x, w, and no y
+            if i == 1:  # this disjunct has x, w, and no y
                 mappings[m.w] = disjBlock[i].disaggregatedVars.w
                 mappings[m.y] = transBlock._disaggregatedVars[0]
-            elif i == 0:  # this disjunct as x, y, and no w
+            elif i == 0:  # this disjunct has x, y, and no w
                 mappings[m.y] = disjBlock[i].disaggregatedVars.y
                 mappings[m.w] = transBlock._disaggregatedVars[1]
 
@@ -1463,16 +1463,16 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         solver = SolverFactory(linear_solvers[0])
 
         cases = [
-            (1, 1, 1, 1, None),
-            (0, 0, 0, 0, None),
-            (1, 0, 0, 0, None),
-            (0, 1, 0, 0, 1.1),
-            (0, 0, 1, 0, None),
-            (0, 0, 0, 1, None),
-            (1, 1, 0, 0, None),
-            (1, 0, 1, 0, 1.2),
-            (1, 0, 0, 1, 1.3),
-            (1, 0, 1, 1, None),
+            (True, True, True, True, None),
+            (False, False, False, False, None),
+            (True, False, False, False, None),
+            (False, True, False, False, 1.1),
+            (False, False, True, False, None),
+            (False, False, False, True, None),
+            (True, True, False, False, None),
+            (True, False, True, False, 1.2),
+            (True, False, False, True, 1.3),
+            (True, False, True, True, None),
         ]
         for case in cases:
             m.d1.indicator_var.fix(case[0])
@@ -1798,6 +1798,8 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         @m.Disjunct()
         def d_l(d):
             d.lambdas = Var(m.S, bounds=(0, 1))
+            d.LocalVars = Suffix(direction=Suffix.LOCAL)
+            d.LocalVars[d] = list(d.lambdas.values())
             d.c1 = Constraint(expr=d.lambdas[1] + d.lambdas[2] == 1)
             d.c2 = Constraint(expr=m.x == 2 * d.lambdas[1] + 3 * d.lambdas[2])
         @m.Disjunct()
@@ -1806,13 +1808,17 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
             @d.Disjunct()
             def d_l(e):
                 e.lambdas = Var(m.S, bounds=(0, 1))
+                e.LocalVars = Suffix(direction=Suffix.LOCAL)
+                e.LocalVars[e] = list(e.lambdas.values())
                 e.c1 = Constraint(expr=e.lambdas[1] + e.lambdas[2] == 1)
-                e.c2 = Constraint(expr=m.x == 2 * e.lambdas[1] + 3 * e.lambdas[2])
+                e.c2 = Constraint(expr=m.x == 4 * e.lambdas[1] + 2 * e.lambdas[2])
             @d.Disjunct()
             def d_r(e):
                 e.lambdas = Var(m.S, bounds=(0, 1))
+                e.LocalVars = Suffix(direction=Suffix.LOCAL)
+                e.LocalVars[e] = list(e.lambdas.values())
                 e.c1 = Constraint(expr=e.lambdas[1] + e.lambdas[2] == 1)
-                e.c2 = Constraint(expr=m.x == 2 * e.lambdas[1] + 3 * e.lambdas[2])
+                e.c2 = Constraint(expr=m.x == 7 * e.lambdas[1] + 6 * e.lambdas[2])
             d.inner_disj = Disjunction(expr=[d.d_l, d.d_r])
         m.disj = Disjunction(expr=[m.d_l, m.d_r])
         m.obj = Objective(expr=m.x)
@@ -1820,7 +1826,6 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         hull = TransformationFactory('gdp.hull')
         hull.apply_to(m)
 
-        
 
 class TestSpecialCases(unittest.TestCase):
     def test_local_vars(self):
