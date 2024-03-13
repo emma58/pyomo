@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -12,19 +12,26 @@
 import math
 from collections.abc import Sequence
 
+from pyomo.common.numeric_types import check_if_numeric_type
+
 try:
     from math import remainder
 except ImportError:
-    def remainder(a,b):
+
+    def remainder(a, b):
         ans = a % b
-        if ans > abs(b/2.):
+        if ans > abs(b / 2.0):
             ans -= b
         return ans
+
 
 _inf = float('inf')
 _infinite = {_inf, -_inf}
 
-class RangeDifferenceError(ValueError): pass
+
+class RangeDifferenceError(ValueError):
+    pass
+
 
 class NumericRange(object):
     """A representation of a numeric range.
@@ -55,16 +62,22 @@ class NumericRange(object):
             of the range is closed.  Open ranges are only allowed for
             continuous NumericRange objects.
     """
-    __slots__ = ('start','end','step','closed')
-    _EPS = 1e-15
-    _types_comparable_to_int = {int,}
-    _closedMap = {True:True, False:False,
-                  '[':True, ']':True, '(':False, ')':False}
 
-    def __init__(self, start, end, step, closed=(True,True)):
+    __slots__ = ('start', 'end', 'step', 'closed')
+    _EPS = 1e-15
+    _types_comparable_to_int = {int}
+    _closedMap = {
+        True: True,
+        False: False,
+        '[': True,
+        ']': True,
+        '(': False,
+        ')': False,
+    }
+
+    def __init__(self, start, end, step, closed=(True, True)):
         if int(step) != step:
-            raise ValueError(
-                "NumericRange step must be int (got %s)" % (step,))
+            raise ValueError("NumericRange step must be int (got %s)" % (step,))
         step = int(step)
         if start is None:
             start = -_inf
@@ -73,16 +86,18 @@ class NumericRange(object):
 
         if step:
             if start == -_inf:
-                raise ValueError("NumericRange: start must not be None/-inf "
-                                 "for non-continuous steps")
-            if (end-start)*step < 0:
+                raise ValueError(
+                    "NumericRange: start must not be None/-inf "
+                    "for non-continuous steps"
+                )
+            if (end - start) * step < 0:
                 raise ValueError(
                     "NumericRange: start, end ordering incompatible "
-                    "with step direction (got [%s:%s:%s])" % (start,end,step)
+                    "with step direction (got [%s:%s:%s])" % (start, end, step)
                 )
             if end not in _infinite:
-                n = int( (end - start) // step )
-                new_end = start + n*step
+                n = int((end - start) // step)
+                new_end = start + n * step
                 assert abs(end - new_end) < abs(step)
                 end = new_end
                 # It is important (for iterating) that all finite
@@ -93,7 +108,7 @@ class NumericRange(object):
         elif end < start:  # and step == 0
             raise ValueError(
                 "NumericRange: start must be <= end for "
-                "continuous ranges (got %s..%s)" % (start,end)
+                "continuous ranges (got %s..%s)" % (start, end)
             )
         if start == end:
             # If this is a scalar, we will force the step to be 0 (so that
@@ -105,10 +120,11 @@ class NumericRange(object):
         self.step = step
 
         self.closed = (self._closedMap[closed[0]], self._closedMap[closed[1]])
-        if self.isdiscrete() and self.closed != (True,True):
+        if self.isdiscrete() and self.closed != (True, True):
             raise ValueError(
                 "NumericRange %s is discrete, but passed closed=%s."
-                "  Discrete ranges must be closed." % (self, self.closed,))
+                "  Discrete ranges must be closed." % (self, self.closed)
+            )
 
     def __getstate__(self):
         """
@@ -116,7 +132,7 @@ class NumericRange(object):
 
         This method must be defined because this class uses slots.
         """
-        state = {} #super(NumericRange, self).__getstate__()
+        state = {}  # super(NumericRange, self).__getstate__()
         for i in NumericRange.__slots__:
             state[i] = getattr(self, i)
         return state
@@ -137,11 +153,12 @@ class NumericRange(object):
         if not self.isdiscrete():
             return "%s%s..%s%s" % (
                 "[" if self.closed[0] else "(",
-                self.start, self.end,
+                self.start,
+                self.end,
                 "]" if self.closed[1] else ")",
             )
         if self.start == self.end:
-            return "[%s]" % (self.start, )
+            return "[%s]" % (self.start,)
         elif self.step == 1:
             return "[%s:%s]" % (self.start, self.end)
         else:
@@ -152,10 +169,12 @@ class NumericRange(object):
     def __eq__(self, other):
         if type(other) is not NumericRange:
             return False
-        return self.start == other.start \
-            and self.end == other.end \
-            and self.step == other.step \
+        return (
+            self.start == other.start
+            and self.end == other.end
+            and self.step == other.step
             and self.closed == other.closed
+        )
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -163,40 +182,47 @@ class NumericRange(object):
     def __contains__(self, value):
         # NumericRanges must hold items that are comparable to ints
         if value.__class__ not in self._types_comparable_to_int:
-            # Special case: because numpy is fond of returning scalars
-            # as length-1 ndarrays, we will include a special case that
-            # will unpack things that look like single element arrays.
-            try:
-                # Note: trap "value[0] is not value" to catch things like
-                # single-character strings
-                if hasattr(value, '__len__') and hasattr(value, '__getitem__') \
-                   and len(value) == 1 and value[0] is not value:
-                    return value[0] in self
-            except:
-                pass
-            # See if this class behaves like a "normal" number: both
-            # comparable and creatable
-            try:
-                if not ( bool(value - 0 > 0) ^ bool(value - 0 <= 0) ):
+            # Build on numeric_type.check_if_numeric_type to cleanly
+            # handle numpy registrations
+            if check_if_numeric_type(value):
+                self._types_comparable_to_int.add(value.__class__)
+            else:
+                # Special case: because numpy is fond of returning scalars
+                # as length-1 ndarrays, we will include a special case that
+                # will unpack things that look like single element arrays.
+                try:
+                    # Note: trap "value[0] is not value" to catch things like
+                    # single-character strings
+                    if (
+                        hasattr(value, '__len__')
+                        and hasattr(value, '__getitem__')
+                        and len(value) == 1
+                        and value[0] is not value
+                    ):
+                        return value[0] in self
+                except:
+                    pass
+                # See if this class behaves like a "normal" number: both
+                # comparable and creatable
+                try:
+                    if not (bool(value - 0 > 0) ^ bool(value - 0 <= 0)):
+                        return False
+                    elif value.__class__(0) != 0 or not value.__class__(0) == 0:
+                        return False
+                    else:
+                        self._types_comparable_to_int.add(value.__class__)
+                except:
                     return False
-                elif value.__class__(0) != 0 or not value.__class__(0) == 0:
-                    return False
-                else:
-                    self._types_comparable_to_int.add(value.__class__)
-            except:
-                return False
 
         if self.step:
-            _dir = math.copysign(1, self.step)
+            _dir = int(math.copysign(1, self.step))
             _from_start = value - self.start
             return (
-                0 <= _dir*_from_start <= _dir*(self.end - self.start)
+                0 <= _dir * _from_start <= _dir * (self.end - self.start)
                 and abs(remainder(_from_start, self.step)) <= self._EPS
             )
         else:
-            return (
-                value >= self.start if self.closed[0] else value > self.start
-            ) and (
+            return (value >= self.start if self.closed[0] else value > self.start) and (
                 value <= self.end if self.closed[1] else value < self.end
             )
 
@@ -233,8 +259,7 @@ class NumericRange(object):
         return self.step or self.start == self.end
 
     def isfinite(self):
-        return (self.step and self.end not in _infinite
-            ) or self.end == self.start
+        return (self.step and self.end not in _infinite) or self.end == self.start
 
     def isdisjoint(self, other):
         if not isinstance(other, NumericRange):
@@ -256,18 +281,15 @@ class NumericRange(object):
             # We now need to check a continuous set is a subset of a discrete
             # set and the continuous set sits between discrete points
             if self.step:
-                return NumericRange._continuous_discrete_disjoint(
-                    other, self)
+                return NumericRange._continuous_discrete_disjoint(other, self)
             elif other.step:
-                return NumericRange._continuous_discrete_disjoint(
-                    self, other)
+                return NumericRange._continuous_discrete_disjoint(self, other)
             else:
                 # 2 continuous sets, with overlapping end points: not disjoint
                 return False
         # both sets are discrete
         if self.step == other.step:
-            return abs(remainder(other.start-self.start, self.step)) \
-                   > self._EPS
+            return abs(remainder(other.start - self.start, self.step)) > self._EPS
         # Two infinite discrete sets will *eventually* have a common
         # point.  This is trivial for coprime integer steps.  For steps
         # with gcd > 1, we need to ensure that the two ranges are
@@ -280,11 +302,13 @@ class NumericRange(object):
         # Personally, anyone making a discrete set with a non-integer
         # step is asking for trouble.  Maybe the better solution is to
         # require that the step be integer (which is what we do).
-        elif self.end in _infinite and other.end in _infinite \
-                and self.step*other.step > 0:
+        elif (
+            self.end in _infinite
+            and other.end in _infinite
+            and self.step * other.step > 0
+        ):
             gcd = NumericRange._gcd(self.step, other.step)
-            return abs(remainder(other.start-self.start, gcd)) \
-                   > self._EPS
+            return abs(remainder(other.start - self.start, gcd)) > self._EPS
         # OK - at this point, there are a finite number of set members
         # that can overlap.  Just check all the members of one set
         # against the other
@@ -294,11 +318,11 @@ class NumericRange(object):
             end = max(self.end, min(other.start, other.end))
         i = 0
         item = self.start
-        while (self.step>0 and item <= end) or (self.step<0 and item >= end):
+        while (self.step > 0 and item <= end) or (self.step < 0 and item >= end):
             if item in other:
                 return False
             i += 1
-            item = self.start + self.step*i
+            item = self.start + self.step * i
         return True
 
     def issubset(self, other):
@@ -307,7 +331,7 @@ class NumericRange(object):
                 return True
             elif type(other) is NonNumericRange:
                 return False
-            # Other non NumericRange objects wil generate
+            # Other non NumericRange objects will generate
             # AttributeError exceptions below
 
         # First, do a simple sanity check on the endpoints
@@ -360,15 +384,15 @@ class NumericRange(object):
             return self.end, self.start, (self.closed[1], self.closed[0])
 
     def _nooverlap(self, other):
-        """Return True if the ranges for self and other are strictly separate
-
-        """
+        """Return True if the ranges for self and other are strictly separate"""
         s1, e1, c1 = self.normalize_bounds()
         s2, e2, c2 = other.normalize_bounds()
-        if ( e1 < s2
-             or e2 < s1
-             or ( e1 == s2 and not ( c1[1] and c2[0] ))
-             or ( e2 == s1 and not ( c2[1] and c1[0] )) ):
+        if (
+            e1 < s2
+            or e2 < s1
+            or (e1 == s2 and not (c1[1] and c2[0]))
+            or (e2 == s1 and not (c2[1] and c1[0]))
+        ):
             return True
         return False
 
@@ -394,33 +418,32 @@ class NumericRange(object):
 
         assert new_step >= abs(cnr.step)
         assert new_step % cnr.step == 0
-        _dir = math.copysign(1, cnr.step)
+        _dir = int(math.copysign(1, cnr.step))
         _subranges = []
         for i in range(int(abs(new_step // cnr.step))):
-            if _dir*(cnr.start + i*cnr.step) > _dir*cnr.end:
+            if _dir * (cnr.start + i * cnr.step) > _dir * cnr.end:
                 # Once we walk past the end of the range, we are done
                 # (all remaining offsets will be farther past the end)
                 break
-
-            _subranges.append(NumericRange(
-                cnr.start + i*cnr.step, cnr.end, _dir*new_step
-            ))
+            _subranges.append(
+                NumericRange(cnr.start + i * cnr.step, cnr.end, _dir * new_step)
+            )
         return _subranges
 
     @staticmethod
-    def _gcd(a,b):
+    def _gcd(a, b):
         while b != 0:
-            a,b = b, a % b
+            a, b = b, a % b
         return a
 
     @staticmethod
-    def _lcm(a,b):
-        gcd = NumericRange._gcd(a,b)
+    def _lcm(a, b):
+        gcd = NumericRange._gcd(a, b)
         if not gcd:
             return 0
         return a * b / gcd
 
-    def _step_lcm(self,other_ranges):
+    def _step_lcm(self, other_ranges):
         """This computes an approximate Least Common Multiple step"""
         # Note: scalars are discrete, but have a step of 0.  Pretend the
         # step is 1 so that we can compute a realistic "step lcm"
@@ -433,7 +456,7 @@ class NumericRange(object):
                 b = o.step or 1
             else:
                 b = 0
-            lcm = NumericRange._lcm(a,b)
+            lcm = NumericRange._lcm(a, b)
             # This is a modified LCM.  LCM(n,0) == 0, but for step
             # calculations, we want it to be n
             if lcm:
@@ -441,7 +464,7 @@ class NumericRange(object):
             else:
                 # one of the steps was 0: add to preserve the non-zero step
                 a += b
-        return abs(a)
+        return int(abs(a))
 
     def _push_to_discrete_element(self, val, push_to_next_larger_value):
         if not self.step or val in _infinite:
@@ -456,8 +479,9 @@ class NumericRange(object):
                 _rndFcn = math.ceil if self.step > 0 else math.floor
             else:
                 _rndFcn = math.floor if self.step > 0 else math.ceil
-            return self.start + self.step*_rndFcn(
-                (val - self.start) / float(self.step) )
+            return self.start + self.step * _rndFcn(
+                (val - self.start) / float(self.step)
+            )
 
     def range_difference(self, other_ranges):
         """Return the difference between this range and a list of other ranges.
@@ -508,7 +532,7 @@ class NumericRange(object):
                 if t.isdiscrete():
                     # s and t are discrete ranges.  Note if there is a
                     # discrete range in the list of ranges, then lcm > 0
-                    if s.isdiscrete() and (s.start-t.start) % lcm != 0:
+                    if s.isdiscrete() and (s.start - t.start) % lcm != 0:
                         # s is offset from t and cannot remove any
                         # elements
                         _new_subranges.append(t)
@@ -520,32 +544,38 @@ class NumericRange(object):
                 if s.isdiscrete() and not t.isdiscrete():
                     #
                     # This handles the special case of continuous-discrete
-                    if ((s_min == -_inf and t.start == -_inf) or
-                        (s_max == _inf and t.end == _inf)):
+                    if (s_min == -_inf and t.start == -_inf) or (
+                        s_max == _inf and t.end == _inf
+                    ):
                         raise RangeDifferenceError(
                             "We do not support subtracting an infinite "
                             "discrete range %s from an infinite continuous "
-                            "range %s" % (s,t))
+                            "range %s" % (s, t)
+                        )
 
                     # At least one of s_min amd t.start must be non-inf
-                    start = max(
-                        s_min, s._push_to_discrete_element(t.start, True))
+                    start = max(s_min, s._push_to_discrete_element(t.start, True))
                     # At least one of s_max amd t.end must be non-inf
                     end = min(s_max, s._push_to_discrete_element(t.end, False))
 
                     if t.start < start:
-                        _new_subranges.append(NumericRange(
-                            t.start, start, 0, (t.closed[0], False)
-                        ))
-                    if s.step: # i.e., not a single point
-                        for i in range(int(start//s.step), int(end//s.step)):
-                            _new_subranges.append(NumericRange(
-                                i*s.step, (i+1)*s.step, 0, '()'
-                            ))
+                        _new_subranges.append(
+                            NumericRange(t.start, start, 0, (t.closed[0], False))
+                        )
+                    if s.step:  # i.e., not a single point
+                        for i in range(int((end - start) // s.step)):
+                            _new_subranges.append(
+                                NumericRange(
+                                    start + i * s.step,
+                                    start + (i + 1) * s.step,
+                                    0,
+                                    '()',
+                                )
+                            )
                     if t.end > end:
-                        _new_subranges.append(NumericRange(
-                            end, t.end, 0, (False,t.closed[1])
-                        ))
+                        _new_subranges.append(
+                            NumericRange(end, t.end, 0, (False, t.closed[1]))
+                        )
                 else:
                     #
                     # This handles discrete-discrete,
@@ -559,7 +589,7 @@ class NumericRange(object):
                         _min = min(t_max, s_min)
                         if not t.step:
                             closed1 = not s_c[0] if _min is s_min else t_c[1]
-                        _closed = ( t_c[0], closed1 )
+                        _closed = (t_c[0], closed1)
                         _step = abs(t.step)
                         _rng = t_min, _min
                         if t_min == -_inf and t.step:
@@ -567,8 +597,9 @@ class NumericRange(object):
                             _rng = _rng[1], _rng[0]
                             _closed = _closed[1], _closed[0]
 
-                        _new_subranges.append(NumericRange(
-                            _rng[0], _rng[1], _step, _closed))
+                        _new_subranges.append(
+                            NumericRange(_rng[0], _rng[1], _step, _closed)
+                        )
                     elif t_min == s_min and t_c[0] and not s_c[0]:
                         _new_subranges.append(NumericRange(t_min, t_min, 0))
 
@@ -580,19 +611,19 @@ class NumericRange(object):
                         _max = max(t_min, s_max)
                         if not t.step:
                             closed0 = not s_c[1] if _max is s_max else t_c[0]
-                        _new_subranges.append(NumericRange(
-                            _max, t_max, abs(t.step), (closed0, t_c[1])
-                        ))
+                        _new_subranges.append(
+                            NumericRange(_max, t_max, abs(t.step), (closed0, t_c[1]))
+                        )
                     elif t_max == s_max and t_c[1] and not s_c[1]:
                         _new_subranges.append(NumericRange(t_max, t_max, 0))
-                _this = _new_subranges
+            _this = _new_subranges
         return _this
 
     def range_intersection(self, other_ranges):
         """Return the intersection between this range and a set of other ranges.
 
-        Paramters
-        ---------
+        Parameters
+        ----------
             other_ranges: `iterable`
                 An iterable of other range objects to intersect with this range
 
@@ -632,7 +663,7 @@ class NumericRange(object):
                 if s.isdiscrete() and t.isdiscrete():
                     # s and t are discrete ranges.  Note if there is a
                     # finite range in the list of ranges, then lcm > 0
-                    if (s.start-t.start) % lcm != 0:
+                    if (s.start - t.start) % lcm != 0:
                         # s is offset from t and cannot have any
                         # elements in common
                         continue
@@ -652,7 +683,7 @@ class NumericRange(object):
                     t._push_to_discrete_element(s_max, False),
                     s._push_to_discrete_element(t_max, False),
                 )
-                c = [True,True]
+                c = [True, True]
                 if intersect_start == t_min:
                     c[0] &= t_c[0]
                 if intersect_start == s_min:
@@ -662,13 +693,13 @@ class NumericRange(object):
                 if intersect_end == s_max:
                     c[1] &= s_c[1]
                 if step and intersect_start == -_inf:
-                    ans.append(NumericRange(
-                        intersect_end, intersect_start, -step, (c[1], c[0])
-                    ))
+                    ans.append(
+                        NumericRange(
+                            intersect_end, intersect_start, -step, (c[1], c[0])
+                        )
+                    )
                 else:
-                    ans.append(NumericRange(
-                        intersect_start, intersect_end, step, c
-                    ))
+                    ans.append(NumericRange(intersect_start, intersect_end, step, c))
         return ans
 
 
@@ -707,7 +738,7 @@ class NonNumericRange(object):
 
         This method must be defined because this class uses slots.
         """
-        state = {} #super(NonNumericRange, self).__getstate__()
+        state = {}  # super(NonNumericRange, self).__getstate__()
         for i in NonNumericRange.__slots__:
             state[i] = getattr(self, i)
         return state
@@ -795,8 +826,7 @@ class AnyRange(object):
 
 
 class RangeProduct(object):
-    """A range-like object for representing the cross product of ranges
-    """
+    """A range-like object for representing the cross product of ranges"""
 
     __slots__ = ('range_lists',)
 
@@ -809,17 +839,22 @@ class RangeProduct(object):
             assert subrange.__class__ is list
 
     def __str__(self):
-        return "<" + ', '.join(
-            str(tuple(_)) if len(_) > 1 else str(_[0])
-            for _ in self.range_lists
-        )+">"
+        return (
+            "<"
+            + ', '.join(
+                str(tuple(_)) if len(_) > 1 else str(_[0]) for _ in self.range_lists
+            )
+            + ">"
+        )
 
     __repr__ = __str__
 
     def __eq__(self, other):
-        return isinstance(other, RangeProduct) \
-            and self.range_difference([other]) == [] \
+        return (
+            isinstance(other, RangeProduct)
+            and self.range_difference([other]) == []
             and other.range_difference([self]) == []
+        )
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -829,8 +864,10 @@ class RangeProduct(object):
             return False
         if len(value) != len(self.range_lists):
             return False
-        return all(any(val in rng for rng in rng_list)
-                   for val, rng_list in zip(value, self.range_lists))
+        return all(
+            any(val in rng for rng in rng_list)
+            for val, rng_list in zip(value, self.range_lists)
+        )
 
     def __getstate__(self):
         """
@@ -838,7 +875,7 @@ class RangeProduct(object):
 
         This method must be defined because this class uses slots.
         """
-        state = {} #super(RangeProduct, self).__getstate__()
+        state = {}  # super(RangeProduct, self).__getstate__()
         for i in RangeProduct.__slots__:
             state[i] = getattr(self, i)
         return state
@@ -856,12 +893,14 @@ class RangeProduct(object):
             object.__setattr__(self, key, val)
 
     def isdiscrete(self):
-        return all(all(rng.isdiscrete() for rng in rng_list)
-                   for rng_list in self.range_lists)
+        return all(
+            all(rng.isdiscrete() for rng in rng_list) for rng_list in self.range_lists
+        )
 
     def isfinite(self):
-        return all(all(rng.isfinite() for rng in rng_list)
-                   for rng_list in self.range_lists)
+        return all(
+            all(rng.isfinite() for rng in rng_list) for rng_list in self.range_lists
+        )
 
     def isdisjoint(self, other):
         if type(other) is AnyRange:
@@ -873,7 +912,7 @@ class RangeProduct(object):
         # Remember, range_lists is a list of lists of range objects.  As
         # isdisjoint only accepts range objects, we need to unpack
         # everything.  Non-disjoint range products require overlaps in
-        # all dimentions.
+        # all dimensions.
         for s, o in zip(self.range_lists, other.range_lists):
             if all(s_rng.isdisjoint(o_rng) for s_rng in s for o_rng in o):
                 return True
@@ -887,7 +926,7 @@ class RangeProduct(object):
     def range_difference(self, other_ranges):
         # The goal is to start with a single range product and create a
         # set of range products that, when combined, model the
-        # range_difference.  This will potentally create (redundant)
+        # range_difference.  This will potentially create (redundant)
         # overlapping regions, but that is OK.
         ans = [self]
         N = len(self.range_lists)
@@ -906,8 +945,7 @@ class RangeProduct(object):
                 for dim in range(N):
                     remainder = []
                     for r in rp.range_lists[dim]:
-                        remainder.extend(
-                            r.range_difference(other.range_lists[dim]))
+                        remainder.extend(r.range_difference(other.range_lists[dim]))
                     if remainder:
                         tmp.append(RangeProduct(list(rp.range_lists)))
                         tmp[-1].range_lists[dim] = remainder
@@ -917,7 +955,7 @@ class RangeProduct(object):
     def range_intersection(self, other_ranges):
         # The goal is to start with a single range product and create a
         # set of range products that, when combined, model the
-        # range_difference.  This will potentally create (redundant)
+        # range_difference.  This will potentially create (redundant)
         # overlapping regions, but that is OK.
         ans = list(self.range_lists)
         N = len(self.range_lists)

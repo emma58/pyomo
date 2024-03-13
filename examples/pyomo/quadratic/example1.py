@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,8 +18,11 @@ from pyomo.core import *
 
 model = AbstractModel()
 
-model.x = Var(bounds=(-10,10), within=Reals)
+model.x = Var(bounds=(-10, 10), within=Reals)
+
 
 def objective_rule(model):
     return model.x * model.x
+
+
 model.objective = Objective(rule=objective_rule, sense=minimize)

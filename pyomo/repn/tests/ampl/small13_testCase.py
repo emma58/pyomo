@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -25,6 +25,6 @@ model.x = Var(initialize=0.5)
 
 model.obj = Objective(expr=model.x, sense=maximize)
 
-model.c1 = Constraint(expr= (model.x**3 - model.x) == 0)
-model.c2 = Constraint(expr= 10*(model.x**3 - model.x) == 0)
-model.c3 = Constraint(expr= (model.x**3 - model.x)/10.0 == 0)
+model.c1 = Constraint(expr=(model.x**3 - model.x) == 0)
+model.c2 = Constraint(expr=10 * (model.x**3 - model.x) == 0)
+model.c3 = Constraint(expr=(model.x**3 - model.x) / 10.0 == 0)

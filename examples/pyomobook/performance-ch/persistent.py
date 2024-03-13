@@ -1,10 +1,22 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 # @model:
 import pyomo.environ as pyo
+
 m = pyo.ConcreteModel()
 m.x = pyo.Var()
 m.y = pyo.Var()
 m.obj = pyo.Objective(expr=m.x**2 + m.y**2)
-m.c = pyo.Constraint(expr=m.y >= -2*m.x + 5)
+m.c = pyo.Constraint(expr=m.y >= -2 * m.x + 5)
 # @:model
 
 # @creation:
@@ -44,7 +56,7 @@ print('Objective after solve 3: ', pyo.value(m.obj))
 m = pyo.ConcreteModel()
 m.x = pyo.Var()
 m.y = pyo.Var()
-m.c = pyo.Constraint(expr=m.y >= -2*m.x + 5)
+m.c = pyo.Constraint(expr=m.y >= -2 * m.x + 5)
 opt = pyo.SolverFactory('gurobi_persistent')
 opt.set_instance(m)
 # WRONG:
@@ -57,7 +69,7 @@ opt.add_constraint(m.c)
 m = pyo.ConcreteModel()
 m.x = pyo.Var()
 m.y = pyo.Var()
-m.c = pyo.Constraint(expr=m.y >= -2*m.x + 5)
+m.c = pyo.Constraint(expr=m.y >= -2 * m.x + 5)
 opt = pyo.SolverFactory('gurobi_persistent')
 opt.set_instance(m)
 # Correct:
@@ -72,7 +84,7 @@ m = pyo.ConcreteModel()
 m.x = pyo.Var()
 m.y = pyo.Var()
 m.obj = pyo.Objective(expr=m.x**2 + m.y**2)
-m.c = pyo.Constraint(expr=m.y >= -2*m.x + 5)
+m.c = pyo.Constraint(expr=m.y >= -2 * m.x + 5)
 opt = pyo.SolverFactory('gurobi_persistent')
 opt.set_instance(m)
 m.x.setlb(1.0)
@@ -95,7 +107,7 @@ m = pyo.ConcreteModel()
 m.x = pyo.Var()
 m.y = pyo.Var()
 m.obj = pyo.Objective(expr=m.x**2 + m.y**2)
-m.c = pyo.Constraint(expr=m.y >= -2*m.x + 5)
+m.c = pyo.Constraint(expr=m.y >= -2 * m.x + 5)
 opt = pyo.SolverFactory('gurobi_persistent')
 opt.set_instance(m)
 results = opt.solve(save_results=False)

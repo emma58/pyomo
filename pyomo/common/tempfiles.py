@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -22,19 +22,15 @@ import tempfile
 import logging
 import shutil
 import weakref
+
+from pyomo.common.dependencies import attempt_import, pyutilib_available
 from pyomo.common.deprecation import deprecated, deprecation_warning
 from pyomo.common.errors import TempfileContextError
 from pyomo.common.multithread import MultiThreadWrapperWithMain
-try:
-    from pyutilib.component.config.tempfiles import (
-        TempfileManager as pyutilib_mngr
-    )
-except ImportError:
-    pyutilib_mngr = None
 
 deletion_errors_are_fatal = True
-
 logger = logging.getLogger(__name__)
+pyutilib_tempfiles, _ = attempt_import('pyutilib.component.config.tempfiles')
 
 
 class TempfileManagerClass(object):
@@ -109,15 +105,19 @@ class TempfileManagerClass(object):
                 "Temporary files created through TempfileManager "
                 "contexts have not been deleted (observed during "
                 "TempfileManager instance shutdown).\n"
-                "Undeleted entries:\n\t"+ "\n\t".join(
+                "Undeleted entries:\n\t"
+                + "\n\t".join(
                     fname if isinstance(fname, str) else fname.decode()
                     for ctx in self._context_stack
-                    for fd, fname in ctx.tempfiles))
+                    for fd, fname in ctx.tempfiles
+                )
+            )
         if self._context_stack:
             logger.warning(
                 "TempfileManagerClass instance: un-popped tempfile "
                 "contexts still exist during TempfileManager instance "
-                "shutdown")
+                "shutdown"
+            )
         self.clear_tempfiles(remove)
         # Delete the stack so that subsequent operations generate an
         # exception
@@ -133,35 +133,37 @@ class TempfileManagerClass(object):
             raise TempfileContextError(
                 "TempfileManager has no currently active context.  "
                 "Create a context (with push() or __enter__()) before "
-                "attempting to create temporary objects.")
+                "attempting to create temporary objects."
+            )
         return self._context_stack[-1]
 
     def create_tempfile(self, suffix=None, prefix=None, text=False, dir=None):
         "Call :meth:`TempfileContext.create_tempfile` on the active context"
         return self.context().create_tempfile(
-            suffix=suffix, prefix=prefix, text=text, dir=dir)
+            suffix=suffix, prefix=prefix, text=text, dir=dir
+        )
 
     def create_tempdir(self, suffix=None, prefix=None, dir=None):
         "Call :meth:`TempfileContext.create_tempdir` on the active context"
-        return self.context().create_tempdir(
-            suffix=suffix, prefix=prefix, dir=dir)
+        return self.context().create_tempdir(suffix=suffix, prefix=prefix, dir=dir)
 
     def add_tempfile(self, filename, exists=True):
         "Call :meth:`TempfileContext.add_tempfile` on the active context"
-        return self.context().add_tempfile(
-            filename=filename, exists=exists)
+        return self.context().add_tempfile(filename=filename, exists=exists)
 
     def clear_tempfiles(self, remove=True):
         """Delete all temporary files and remove all contexts."""
         while self._context_stack:
             self.pop(remove)
 
-    @deprecated("The TempfileManager.sequential_files() method has been "
-                "removed.  All temporary files are created with guaranteed "
-                "unique names.  Users wishing sequentially numbered files "
-                "should create a temporary (empty) directory using mkdtemp "
-                "/ create_tempdir and place the sequential files within it.",
-                version='6.2')
+    @deprecated(
+        "The TempfileManager.sequential_files() method has been "
+        "removed.  All temporary files are created with guaranteed "
+        "unique names.  Users wishing sequentially numbered files "
+        "should create a temporary (empty) directory using mkdtemp "
+        "/ create_tempdir and place the sequential files within it.",
+        version='6.2',
+    )
     def sequential_files(self, ctr=0):
         pass
 
@@ -220,7 +222,8 @@ class TempfileManagerClass(object):
                 "the TempfileManager stack within a context manager "
                 "(i.e., `with TempfileManager:`) but was not popped "
                 "before the context manager exited.  Popping the "
-                "context to preserve the stack integrity.")
+                "context to preserve the stack integrity."
+            )
 
 
 class TempfileContext:
@@ -322,9 +325,7 @@ class TempfileContext:
         return dir
 
     def gettempdirb(self):
-        """Same as :meth:`gettempdir()`, but the return value is ``bytes``
-
-        """
+        """Same as :meth:`gettempdir()`, but the return value is ``bytes``"""
         dir = self._resolve_tempdir()
         if dir is None:
             return tempfile.gettempdirb()
@@ -341,9 +342,7 @@ class TempfileContext:
         return tempfile.gettempprefix()
 
     def gettempprefixb(self):
-        """Same as :meth:`gettempprefix()`, but the return value is ``bytes``
-
-        """
+        """Same as :meth:`gettempprefix()`, but the return value is ``bytes``"""
         return tempfile.gettempprefixb()
 
     def create_tempfile(self, suffix=None, prefix=None, text=False, dir=None):
@@ -360,8 +359,7 @@ class TempfileContext:
             The absolute path of the new file.
 
         """
-        fd, fname = self.mkstemp(suffix=suffix, prefix=prefix,
-                                 dir=dir, text=text)
+        fd, fname = self.mkstemp(suffix=suffix, prefix=prefix, dir=dir, text=text)
         os.close(fd)
         self.tempfiles[-1] = (None, fname)
         return fname
@@ -431,14 +429,17 @@ class TempfileContext:
             return self.manager().tempdir
         elif TempfileManager.main_thread.tempdir is not None:
             return TempfileManager.main_thread.tempdir
-        elif pyutilib_mngr is not None and pyutilib_mngr.tempdir is not None:
-            deprecation_warning(
-                "The use of the PyUtilib TempfileManager.tempdir "
-                "to specify the default location for Pyomo "
-                "temporary files has been deprecated.  "
-                "Please set TempfileManager.tempdir in "
-                "pyomo.common.tempfiles", version='5.7.2')
-            return pyutilib_mngr.tempdir
+        elif pyutilib_available:
+            if pyutilib_tempfiles.TempfileManager.tempdir is not None:
+                deprecation_warning(
+                    "The use of the PyUtilib TempfileManager.tempdir "
+                    "to specify the default location for Pyomo "
+                    "temporary files has been deprecated.  "
+                    "Please set TempfileManager.tempdir in "
+                    "pyomo.common.tempfiles",
+                    version='5.7.2',
+                )
+                return pyutilib_tempfiles.TempfileManager.tempdir
         return None
 
     def _remove_filesystem_object(self, name):
@@ -462,13 +463,10 @@ class TempfileContext:
                         # Failure to delete a tempfile
                         # should NOT be fatal
                         logger = logging.getLogger(__name__)
-                        logger.warning("Unable to delete temporary "
-                                       "file %s" % (name,))
+                        logger.warning("Unable to delete temporary file %s" % (name,))
             return
         assert os.path.isdir(name)
-        shutil.rmtree(
-            name,
-            ignore_errors=not deletion_errors_are_fatal)
+        shutil.rmtree(name, ignore_errors=not deletion_errors_are_fatal)
 
 
 # The global Pyomo TempfileManager instance

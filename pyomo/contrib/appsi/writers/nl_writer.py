@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 from typing import List
 from pyomo.core.base.param import _ParamData
 from pyomo.core.base.var import _GeneralVarData
@@ -19,7 +30,7 @@ from pyomo.repn.plugins.ampl.ampl_ import set_pyomo_amplfunc_env
 
 
 class NLWriter(PersistentBase):
-    def __init__(self, only_child_vars=True):
+    def __init__(self, only_child_vars=False):
         super(NLWriter, self).__init__(only_child_vars=only_child_vars)
         self._config = WriterConfig()
         self._writer = None
@@ -59,10 +70,6 @@ class NLWriter(PersistentBase):
             self._var_labeler = TextLabeler()
             self._con_labeler = TextLabeler()
             self._param_labeler = TextLabeler()
-        else:
-            self._var_labeler = NumericLabeler('x')
-            self._con_labeler = NumericLabeler('c')
-            self._param_labeler = NumericLabeler('p')
 
         self._writer = cmodel.NLWriter()
 
@@ -72,33 +79,62 @@ class NLWriter(PersistentBase):
         self._set_pyomo_amplfunc_env()
 
     def _add_variables(self, variables: List[_GeneralVarData]):
-        cmodel.process_pyomo_vars(self._expr_types, variables, self._pyomo_var_to_solver_var_map,
-                                  self._pyomo_param_to_solver_param_map, self._vars,
-                                  self._solver_var_to_pyomo_var_map, False, None, None, False)
+        if self.config.symbolic_solver_labels:
+            set_name = True
+            symbol_map = self._symbol_map
+            labeler = self._var_labeler
+        else:
+            set_name = False
+            symbol_map = None
+            labeler = None
+        cmodel.process_pyomo_vars(
+            self._expr_types,
+            variables,
+            self._pyomo_var_to_solver_var_map,
+            self._pyomo_param_to_solver_param_map,
+            self._vars,
+            self._solver_var_to_pyomo_var_map,
+            set_name,
+            symbol_map,
+            labeler,
+            False,
+        )
 
     def _add_params(self, params: List[_ParamData]):
         cparams = cmodel.create_params(len(params))
         for ndx, p in enumerate(params):
             cp = cparams[ndx]
-            cp.name = self._symbol_map.getSymbol(p, self._param_labeler)
             cp.value = p.value
             self._pyomo_param_to_solver_param_map[id(p)] = cp
+        if self.config.symbolic_solver_labels:
+            for ndx, p in enumerate(params):
+                cp = cparams[ndx]
+                cp.name = self._symbol_map.getSymbol(p, self._param_labeler)
 
     def _add_constraints(self, cons: List[_GeneralConstraintData]):
-        cmodel.process_nl_constraints(self._writer,
-                                      self._expr_types,
-                                      cons,
-                                      self._pyomo_var_to_solver_var_map,
-                                      self._pyomo_param_to_solver_param_map,
-                                      self._active_constraints,
-                                      self._pyomo_con_to_solver_con_map,
-                                      self._solver_con_to_pyomo_con_map)
+        cmodel.process_nl_constraints(
+            self._writer,
+            self._expr_types,
+            cons,
+            self._pyomo_var_to_solver_var_map,
+            self._pyomo_param_to_solver_param_map,
+            self._active_constraints,
+            self._pyomo_con_to_solver_con_map,
+            self._solver_con_to_pyomo_con_map,
+        )
+        if self.config.symbolic_solver_labels:
+            for c, cc in self._pyomo_con_to_solver_con_map.items():
+                cc.name = self._symbol_map.getSymbol(c, self._con_labeler)
 
     def _add_sos_constraints(self, cons: List[_SOSConstraintData]):
         if len(cons) != 0:
             raise NotImplementedError('NL writer does not support SOS constraints')
 
     def _remove_constraints(self, cons: List[_GeneralConstraintData]):
+        if self.config.symbolic_solver_labels:
+            for c in cons:
+                self._symbol_map.removeSymbol(c)
+                self._con_labeler.remove_obj(c)
         for c in cons:
             cc = self._pyomo_con_to_solver_con_map.pop(c)
             self._writer.remove_constraint(cc)
@@ -109,20 +145,35 @@ class NLWriter(PersistentBase):
             raise NotImplementedError('NL writer does not support SOS constraints')
 
     def _remove_variables(self, variables: List[_GeneralVarData]):
+        if self.config.symbolic_solver_labels:
+            for v in variables:
+                self._symbol_map.removeSymbol(v)
+                self._var_labeler.remove_obj(v)
         for v in variables:
             cvar = self._pyomo_var_to_solver_var_map.pop(id(v))
             del self._solver_var_to_pyomo_var_map[cvar]
-            # self._symbol_map.removeSymbol(v)
 
     def _remove_params(self, params: List[_ParamData]):
+        if self.config.symbolic_solver_labels:
+            for p in params:
+                self._symbol_map.removeSymbol(p)
+                self._param_labeler.remove_obj(p)
         for p in params:
             del self._pyomo_param_to_solver_param_map[id(p)]
-            self._symbol_map.removeSymbol(p)
 
     def _update_variables(self, variables: List[_GeneralVarData]):
-        cmodel.process_pyomo_vars(self._expr_types, variables, self._pyomo_var_to_solver_var_map,
-                                  self._pyomo_param_to_solver_param_map, self._vars,
-                                  self._solver_var_to_pyomo_var_map, False, None, None, True)
+        cmodel.process_pyomo_vars(
+            self._expr_types,
+            variables,
+            self._pyomo_var_to_solver_var_map,
+            self._pyomo_param_to_solver_param_map,
+            self._vars,
+            self._solver_var_to_pyomo_var_map,
+            False,
+            None,
+            None,
+            True,
+        )
 
     def update_params(self):
         for p_id, p in self._params.items():
@@ -138,26 +189,41 @@ class NLWriter(PersistentBase):
             sense = 0
         else:
             pyomo_expr_types = cmodel.PyomoExprTypes()
-            repn = generate_standard_repn(obj.expr, compute_values=False, quadratic=False)
-            const = cmodel.appsi_expr_from_pyomo_expr(repn.constant,
-                                                      self._pyomo_var_to_solver_var_map,
-                                                      self._pyomo_param_to_solver_param_map,
-                                                      pyomo_expr_types)
-            lin_vars = [self._pyomo_var_to_solver_var_map[id(i)] for i in repn.linear_vars]
-            lin_coef = [cmodel.appsi_expr_from_pyomo_expr(i,
-                                                          self._pyomo_var_to_solver_var_map,
-                                                          self._pyomo_param_to_solver_param_map,
-                                                          pyomo_expr_types) for i in repn.linear_coefs]
+            repn = generate_standard_repn(
+                obj.expr, compute_values=False, quadratic=False
+            )
+            const = cmodel.appsi_expr_from_pyomo_expr(
+                repn.constant,
+                self._pyomo_var_to_solver_var_map,
+                self._pyomo_param_to_solver_param_map,
+                pyomo_expr_types,
+            )
+            lin_vars = [
+                self._pyomo_var_to_solver_var_map[id(i)] for i in repn.linear_vars
+            ]
+            lin_coef = [
+                cmodel.appsi_expr_from_pyomo_expr(
+                    i,
+                    self._pyomo_var_to_solver_var_map,
+                    self._pyomo_param_to_solver_param_map,
+                    pyomo_expr_types,
+                )
+                for i in repn.linear_coefs
+            ]
             if repn.nonlinear_expr is None:
-                nonlin = cmodel.appsi_expr_from_pyomo_expr(0,
-                                                           self._pyomo_var_to_solver_var_map,
-                                                           self._pyomo_param_to_solver_param_map,
-                                                           pyomo_expr_types)
+                nonlin = cmodel.appsi_expr_from_pyomo_expr(
+                    0,
+                    self._pyomo_var_to_solver_var_map,
+                    self._pyomo_param_to_solver_param_map,
+                    pyomo_expr_types,
+                )
             else:
-                nonlin = cmodel.appsi_expr_from_pyomo_expr(repn.nonlinear_expr,
-                                                           self._pyomo_var_to_solver_var_map,
-                                                           self._pyomo_param_to_solver_param_map,
-                                                           pyomo_expr_types)
+                nonlin = cmodel.appsi_expr_from_pyomo_expr(
+                    repn.nonlinear_expr,
+                    self._pyomo_var_to_solver_var_map,
+                    self._pyomo_param_to_solver_param_map,
+                    pyomo_expr_types,
+                )
             if obj.sense is minimize:
                 sense = 0
             else:
@@ -189,10 +255,14 @@ class NLWriter(PersistentBase):
         self._set_pyomo_amplfunc_env()
 
     def get_ordered_vars(self):
-        return [self._solver_var_to_pyomo_var_map[i] for i in self._writer.get_solve_vars()]
+        return [
+            self._solver_var_to_pyomo_var_map[i] for i in self._writer.get_solve_vars()
+        ]
 
     def get_ordered_cons(self):
-        return [self._solver_con_to_pyomo_con_map[i] for i in self._writer.get_solve_cons()]
+        return [
+            self._solver_con_to_pyomo_con_map[i] for i in self._writer.get_solve_cons()
+        ]
 
     def get_active_objective(self):
         return self._objective

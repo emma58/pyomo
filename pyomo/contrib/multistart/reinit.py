@@ -1,5 +1,15 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 """Helper functions for variable reinitialization."""
-from __future__ import division
 
 import logging
 import random
@@ -64,10 +74,11 @@ def reinitialize_variables(model, config):
                     'Skipping reinitialization of unbounded variable '
                     '%s with bounds (%s, %s). '
                     'To suppress this message, set the '
-                    'suppress_unbounded_warning flag.'
-                    % (var.name, var.lb, var.ub))
+                    'suppress_unbounded_warning flag.' % (var.name, var.lb, var.ub)
+                )
             continue
         val = var.value if var.value is not None else (var.lb + var.ub) / 2
         # apply reinitialization strategy to variable
-        var.set_value(strategies[config.strategy](val, var.lb, var.ub),
-                      skip_validation=True)
+        var.set_value(
+            strategies[config.strategy](val, var.lb, var.ub), skip_validation=True
+        )

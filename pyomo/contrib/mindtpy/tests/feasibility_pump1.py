@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 # -*- coding: utf-8 -*-
 """Example 1 in paper 'A Feasibility Pump for mixed integer nonlinear programs'
 
@@ -10,20 +21,26 @@ Ref:
                      3  constraints
 
 """
-from __future__ import division
 
-from pyomo.environ import (Binary, ConcreteModel, Constraint, Objective,
-                            Var, minimize, Reals)
+from pyomo.environ import (
+    Binary,
+    ConcreteModel,
+    Constraint,
+    Objective,
+    Var,
+    minimize,
+    Reals,
+)
 from pyomo.common.collections import ComponentMap
 
 
-class Feasibility_Pump1(ConcreteModel):
-    """Feasibility_Pump1 example"""
+class FeasPump1(ConcreteModel):
+    """Feasibility Pump example 1"""
 
     def __init__(self, *args, **kwargs):
         """Create the problem."""
-        kwargs.setdefault('name', 'Feasibility_Pump1')
-        super(Feasibility_Pump1, self).__init__(*args, **kwargs)
+        kwargs.setdefault('name', 'Feasibility Pump 1')
+        super(FeasPump1, self).__init__(*args, **kwargs)
         m = self
 
         m.x = Var(within=Binary)
@@ -32,8 +49,9 @@ class Feasibility_Pump1(ConcreteModel):
 
         m.objective = Objective(expr=m.x, sense=minimize)
 
-        m.c1 = Constraint(expr=(m.y1-0.5) * (m.y1-0.5) +
-                          (m.y2-0.5) * (m.y2-0.5) <= 0.25)
+        m.c1 = Constraint(
+            expr=(m.y1 - 0.5) * (m.y1 - 0.5) + (m.y2 - 0.5) * (m.y2 - 0.5) <= 0.25
+        )
         m.c2 = Constraint(expr=m.x - m.y1 <= 3)
         m.c3 = Constraint(expr=m.y2 <= 0)
         m.optimal_value = 0

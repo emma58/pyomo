@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -14,14 +14,21 @@ from pyomo.opt import *
 from pyomo.core import *
 
 import sc
+
 model = sc.pyomo_create_model()
 
+
 def solve_callback(solver, model):
-    print "CB-Solve"
+    print("CB-Solve")
+
+
 def cut_callback(solver, model):
-    print "CB-Cut"
+    print("CB-Cut")
+
+
 def node_callback(solver, model):
-    print "CB-Node"
+    print("CB-Node")
+
 
 instance = model.create()
 
@@ -31,5 +38,4 @@ opt.set_callback('node-callback', node_callback)
 opt.set_callback('solve-callback', solve_callback)
 
 results = opt.solve(instance, tee=True)
-print results
-
+print(results)

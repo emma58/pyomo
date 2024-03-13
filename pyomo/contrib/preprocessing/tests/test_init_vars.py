@@ -1,7 +1,18 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 """Tests initialization of uninitialized variables."""
+
 import pyomo.common.unittest as unittest
-from pyomo.environ import (ConcreteModel, TransformationFactory,
-                           value, Var)
+from pyomo.environ import ConcreteModel, TransformationFactory, value, Var
 
 
 class TestInitVars(unittest.TestCase):
@@ -30,8 +41,7 @@ class TestInitVars(unittest.TestCase):
         self.assertEqual(value(m.v5), 2)
         self.assertEqual(value(m.v6), 3)
 
-        TransformationFactory('contrib.init_vars_midpoint').apply_to(
-            m, overwrite=True)
+        TransformationFactory('contrib.init_vars_midpoint').apply_to(m, overwrite=True)
         self.assertEqual(value(m.v1), 0)
         self.assertEqual(value(m.v2), 2)
         self.assertEqual(value(m.v3), 2)
@@ -62,8 +72,7 @@ class TestInitVars(unittest.TestCase):
         self.assertEqual(value(m.v5), 2)
         self.assertEqual(value(m.v6), 3)
 
-        TransformationFactory('contrib.init_vars_zero').apply_to(
-            m, overwrite=True)
+        TransformationFactory('contrib.init_vars_zero').apply_to(m, overwrite=True)
         self.assertEqual(value(m.v1), 0)
         self.assertEqual(value(m.v2), 2)
         self.assertEqual(value(m.v3), -2)

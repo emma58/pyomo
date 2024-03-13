@@ -1,8 +1,19 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 from collections import defaultdict
 from threading import get_ident, main_thread
 
 
-class MultiThreadWrapper():
+class MultiThreadWrapper:
     """A python object proxy that wraps different instances for each thread.
 
     This is useful for handling thread-safe access to singleton objects without
@@ -20,27 +31,33 @@ class MultiThreadWrapper():
 
     def __getattr__(self, attr):
         return getattr(self._mtdict[get_ident()], attr)
-    
+
     def __setattr__(self, attr, value):
         setattr(self._mtdict[get_ident()], attr, value)
-    
+
     def __delattr__(self, attr):
         delattr(self._mtdict[get_ident()], attr)
-    
+
     def __enter__(self):
         return self._mtdict[get_ident()].__enter__()
-    
+
     def __exit__(self, exc_type, exc_value, traceback):
         return self._mtdict[get_ident()].__exit__(exc_type, exc_value, traceback)
-    
+
     def __dir__(self):
         return list(object.__dir__(self)) + list(self._mtdict[get_ident()].__dir__())
-    
+
     def __str__(self):
         return self._mtdict[get_ident()].__str__()
 
     def __new__(cls, wrapped):
-        return super().__new__(type('MultiThreadMeta' + wrapped.__name__, (cls,), {'__doc__': wrapped.__doc__}))
+        return super().__new__(
+            type(
+                'MultiThreadMeta' + wrapped.__name__,
+                (cls,),
+                {'__doc__': wrapped.__doc__},
+            )
+        )
 
 
 class MultiThreadWrapperWithMain(MultiThreadWrapper):
@@ -65,6 +82,6 @@ class MultiThreadWrapperWithMain(MultiThreadWrapper):
             raise ValueError('Setting `main_thread` attribute is not allowed')
         else:
             super().__setattr__(attr, value)
-    
+
     def __dir__(self):
         return super().__dir__() + ['main_thread']

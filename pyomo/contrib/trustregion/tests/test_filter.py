@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,6 +18,7 @@
 
 import pyomo.common.unittest as unittest
 from pyomo.contrib.trustregion.filter import Filter, FilterElement
+
 
 class TestFilter(unittest.TestCase):
     def setUp(self):
@@ -42,9 +43,7 @@ class TestFilter(unittest.TestCase):
     def test_isAcceptable(self):
         fe = FilterElement(0.5, 0.25)
         # A sufficiently feasible element
-        self.assertTrue(self.tmpFilter.isAcceptable(fe,
-                                                    self.theta_max))
+        self.assertTrue(self.tmpFilter.isAcceptable(fe, self.theta_max))
         fe = FilterElement(10.0, 15.0)
         # A sufficiently infeasible element
-        self.assertFalse(self.tmpFilter.isAcceptable(fe,
-                                                     self.theta_max))
+        self.assertFalse(self.tmpFilter.isAcceptable(fe, self.theta_max))

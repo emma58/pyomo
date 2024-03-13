@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -27,7 +27,10 @@ if __name__ == '__main__':
         callerFrame = inspect.stack()[0]
         _dir = os.path.join(
             dirname(dirname(abspath(inspect.getfile(callerFrame[0])))),
-            'pyomo','scripting','plugins')
+            'pyomo',
+            'scripting',
+            'plugins',
+        )
         sys.path.insert(0, _dir)
         extras = __import__('extras')
         extras.install_extras()

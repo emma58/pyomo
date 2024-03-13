@@ -1,9 +1,27 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 """Tests the equality set propagation module."""
+
 import pyomo.common.unittest as unittest
 from pyomo.common.errors import InfeasibleConstraintException
 
-from pyomo.environ import (ConcreteModel, Constraint, RangeSet,
-                           TransformationFactory, Var, value)
+from pyomo.environ import (
+    ConcreteModel,
+    Constraint,
+    RangeSet,
+    TransformationFactory,
+    Var,
+    value,
+)
 
 
 class TestEqualityPropagate(unittest.TestCase):
@@ -101,18 +119,18 @@ class TestEqualityPropagate(unittest.TestCase):
 
     def test_var_fix_accounts_for_constants(self):
         """Test to make sure that constraints of the form x == y + constant
-        are handled correctly when propogating fixed variables."""
+        are handled correctly when propagating fixed variables."""
         m = ConcreteModel()
         m.v = Var(initialize=1.0)
         m.v2 = Var(initialize=1.0)
         m.v3 = Var(initialize=1.0)
-        m.c = Constraint(expr = m.v - m.v2 + m.v3 == 0)
+        m.c = Constraint(expr=m.v - m.v2 + m.v3 == 0)
         m.v.fix()
         m.v4 = Var(initialize=1.0)
         m.c2 = Constraint(expr=m.v2 == m.v4)
         m.v4.fix()
         TransformationFactory('contrib.propagate_fixed_vars').apply_to(m)
-        
+
         self.assertTrue(m.v.fixed)
         self.assertEqual(value(m.v), 1)
         self.assertTrue(m.v4.fixed)
@@ -182,10 +200,12 @@ class TestEqualityPropagate(unittest.TestCase):
         m.v2 = Var(initialize=5, bounds=(4, 8))
         m.c1 = Constraint(expr=m.v1 == m.v2)
         xfrm = TransformationFactory('contrib.propagate_eq_var_bounds')
-        with self.assertRaisesRegex(InfeasibleConstraintException,
-                                    "Variable v2 has a lower bound 4 > the "
-                                    "upper bound 3 of variable v1, but they "
-                                    "are linked by equality constraints"):
+        with self.assertRaisesRegex(
+            InfeasibleConstraintException,
+            "Variable v2 has a lower bound 4 > the "
+            "upper bound 3 of variable v1, but they "
+            "are linked by equality constraints",
+        ):
             xfrm.apply_to(m)
 
     def test_var_bound_propagate_revert(self):

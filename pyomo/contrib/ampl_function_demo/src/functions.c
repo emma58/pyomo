@@ -1,6 +1,6 @@
 /* ___________________________________________________________________________
  * Pyomo: Python Optimization Modeling Objects
- * Copyright (c) 2008-2022
+ * Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
  * Under the terms of Contract DE-NA0003525 with National Technology and
  * Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -27,7 +27,7 @@
  *
  * The module defines two functions:
  *   - a demo function demonstrating the use of string arguments and
- *     vairable-length argument lists
+ *     variable-length argument lists
  *   - a "safe" cube root function that avoids infinite derivatives at 0
  *
  * The functaions are registered with the ASL using the funcadd()

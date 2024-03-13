@@ -1,15 +1,13 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
-
-__all__ = [ 'AbstractResultsReader', 'ReaderFactory' ]
 
 from pyomo.common import Factory
 
@@ -21,10 +19,12 @@ class AbstractResultsReader(object):
     """Base class that can read optimization results."""
 
     def __init__(self, results_format):
-        self.format=results_format
+        self.format = results_format
 
-    def __call__(self, filename, res=None, suffixes=[]): #pragma:nocover
-        raise TypeError("Method __call__ undefined in reader for format "+str(self.format))
+    def __call__(self, filename, res=None, suffixes=[]):  # pragma:nocover
+        raise TypeError(
+            "Method __call__ undefined in reader for format " + str(self.format)
+        )
 
     #
     # Support "with" statements. Forgetting to call deactivate
@@ -35,4 +35,3 @@ class AbstractResultsReader(object):
 
     def __exit__(self, t, v, traceback):
         pass
-

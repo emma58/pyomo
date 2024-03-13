@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -11,14 +11,19 @@
 
 from pyomo.common.dependencies import attempt_import as _attempt_import
 
+
 def _importer():
     import os
     import sys
     from pyomo.common.envvar import PYOMO_CONFIG_DIR
+
     try:
         pyomo_config_dir = os.path.join(
-            PYOMO_CONFIG_DIR, 'lib', 'python%s.%s' % sys.version_info[:2],
-            'site-packages')
+            PYOMO_CONFIG_DIR,
+            'lib',
+            'python%s.%s' % sys.version_info[:2],
+            'site-packages',
+        )
         sys.path.insert(0, pyomo_config_dir)
         import appsi_cmodel
     except ImportError:
@@ -29,9 +34,12 @@ def _importer():
 
     return appsi_cmodel
 
+
 cmodel, cmodel_available = _attempt_import(
     'appsi_cmodel',
-    error_message=('Appsi requires building a small c++ extension. '
-                   'Please use the "pyomo build-extensions" command'),
+    error_message=(
+        'Appsi requires building a small c++ extension. '
+        'Please use the "pyomo build-extensions" command'
+    ),
     importer=_importer,
 )

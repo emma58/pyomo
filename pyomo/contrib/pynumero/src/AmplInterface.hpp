@@ -1,7 +1,7 @@
 /**___________________________________________________________________________
  *
  * Pyomo: Python Optimization Modeling Objects
- * Copyright (c) 2008-2022
+ * Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
  * Under the terms of Contract DE-NA0003525 with National Technology and
  * Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -100,7 +100,7 @@ public:
 
    // write the solution to the .sol file
    // pass in the ampl_solve_status_num (this is the "solve_status_num" from
-   // the AMPL documentation. It should be interpretted as follows:
+   // the AMPL documentation. It should be interpreted as follows:
    //
    //   number   string       interpretation
    //   0 -  99   solved       optimal solution found

@@ -2,15 +2,13 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
 #  rights in this software.
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
-
-from __future__ import division
 
 import types
 from itertools import islice
@@ -22,7 +20,9 @@ logger = logging.getLogger('pyomo.core')
 
 from pyomo.common.errors import PyomoException, DeveloperError
 from pyomo.common.deprecation import (
-    deprecation_warning, RenamedClass, relocated_module_attribute,
+    deprecation_warning,
+    RenamedClass,
+    relocated_module_attribute,
 )
 from .numvalue import (
     native_types,
@@ -33,39 +33,49 @@ from .numvalue import (
     is_potentially_variable,
 )
 from .base import ExpressionBase
-from .boolean_value import (
-    BooleanValue,
-    BooleanConstant,
-)
-from .expr_common import (
-    _and, _or, _equiv, _inv, _xor, _impl, ExpressionType
-)
+from .boolean_value import BooleanValue, BooleanConstant
+from .expr_common import _and, _or, _equiv, _inv, _xor, _impl, ExpressionType
+from .numeric_expr import NumericExpression
 
 import operator
 
 relocated_module_attribute(
     'EqualityExpression',
-    'pyomo.core.expr.relational_expr',
-    version='TBD')
+    'pyomo.core.expr.relational_expr.EqualityExpression',
+    version='6.4.3',
+    f_globals=globals(),
+)
 relocated_module_attribute(
     'InequalityExpression',
-    'pyomo.core.expr.relational_expr',
-    version='TBD')
+    'pyomo.core.expr.relational_expr.InequalityExpression',
+    version='6.4.3',
+    f_globals=globals(),
+)
 relocated_module_attribute(
     'RangedExpression',
-    'pyomo.core.expr.relational_expr',
-    version='TBD')
+    'pyomo.core.expr.relational_expr.RangedExpression',
+    version='6.4.3',
+    f_globals=globals(),
+)
 relocated_module_attribute(
     'inequality',
-    'pyomo.core.expr.relational_expr',
-    version='TBD')
+    'pyomo.core.expr.relational_expr.inequality',
+    version='6.4.3',
+    f_globals=globals(),
+)
 
 
 def _generate_logical_proposition(etype, lhs, rhs):
-    if lhs.__class__ in native_types and lhs.__class__ not in native_logical_types:
-        raise TypeError("Cannot create Logical expression with lhs of type '%s'" % lhs.__class__)
-    if rhs.__class__ in native_types and rhs.__class__ not in native_logical_types and rhs is not None:
-        raise TypeError("Cannot create Logical expression with rhs of type '%s'" % rhs.__class__)
+    if (
+        lhs.__class__ in native_types and lhs.__class__ not in native_logical_types
+    ) and not isinstance(lhs, BooleanValue):
+        return NotImplemented
+    if (
+        (rhs.__class__ in native_types and rhs.__class__ not in native_logical_types)
+        and not isinstance(rhs, BooleanValue)
+        and not (rhs is None and etype == _inv)
+    ):
+        return NotImplemented
 
     if etype == _equiv:
         return EquivalenceExpression((lhs, rhs))
@@ -81,7 +91,9 @@ def _generate_logical_proposition(etype, lhs, rhs):
     elif etype == _or:
         return lor(lhs, rhs)
     else:
-        raise ValueError("Unknown logical proposition type '%s'" % etype)  # pragma: no cover
+        raise ValueError(
+            "Unknown logical proposition type '%s'" % etype
+        )  # pragma: no cover
 
 
 class BooleanExpression(ExpressionBase, BooleanValue):
@@ -112,23 +124,12 @@ class BooleanExpression(ExpressionBase, BooleanValue):
         Returns: Either a list or tuple (depending on the node storage
             model) containing only the child nodes of this node
         """
-        return self._args_[:self.nargs()]
+        return self._args_[: self.nargs()]
 
-    def __getstate__(self):
-        """
-        Pickle the expression object
-
-        Returns:
-            The pickled state.
-        """
-        state = super().__getstate__()
-        for i in BooleanExpression.__slots__:
-           state[i] = getattr(self,i)
-        return state
 
 class BooleanExpressionBase(metaclass=RenamedClass):
     __renamed__new_class__ = BooleanExpression
-    __renamed__version__ = 'TBD'
+    __renamed__version__ = '6.4.3'
 
 
 """
@@ -182,12 +183,62 @@ def _flattened(args):
                 yield arg
 
 
+def _flattened_boolean_args(args):
+    """Flatten any potentially indexed arguments and check that they are
+    Boolean-valued."""
+    for arg in args:
+        if arg.__class__ in native_types:
+            myiter = (arg,)
+        elif isinstance(arg, (types.GeneratorType, list)):
+            myiter = arg
+        elif arg.is_indexed():
+            myiter = arg.values()
+        else:
+            myiter = (arg,)
+        for _argdata in myiter:
+            if _argdata.__class__ in native_logical_types:
+                yield _argdata
+            elif hasattr(_argdata, 'is_logical_type') and _argdata.is_logical_type():
+                yield _argdata
+            elif isinstance(_argdata, BooleanValue):
+                yield _argdata
+            else:
+                raise ValueError(
+                    "Non-Boolean-valued argument '%s' encountered when constructing "
+                    "expression of Boolean arguments" % arg
+                )
+
+
+def _flattened_numeric_args(args):
+    """Flatten any potentially indexed arguments and check that they are
+    numeric."""
+    for arg in args:
+        if arg.__class__ in native_types:
+            myiter = (arg,)
+        elif isinstance(arg, (types.GeneratorType, list)):
+            myiter = arg
+        elif arg.is_indexed():
+            myiter = arg.values()
+        else:
+            myiter = (arg,)
+        for _argdata in myiter:
+            if _argdata.__class__ in native_numeric_types:
+                yield _argdata
+            elif hasattr(_argdata, 'is_numeric_type') and _argdata.is_numeric_type():
+                yield _argdata
+            else:
+                raise ValueError(
+                    "Non-numeric argument '%s' encountered when constructing "
+                    "expression with numeric arguments" % arg
+                )
+
+
 def land(*args):
     """
     Construct an AndExpression between passed arguments.
     """
     result = AndExpression([])
-    for argdata in _flattened(args):
+    for argdata in _flattened_boolean_args(args):
         result = result.add(argdata)
     return result
 
@@ -197,7 +248,7 @@ def lor(*args):
     Construct an OrExpression between passed arguments.
     """
     result = OrExpression([])
-    for argdata in _flattened(args):
+    for argdata in _flattened_boolean_args(args):
         result = result.add(argdata)
     return result
 
@@ -210,7 +261,7 @@ def exactly(n, *args):
     Usage: exactly(2, m.Y1, m.Y2, m.Y3, ...)
 
     """
-    result = ExactlyExpression([n, ] + list(_flattened(args)))
+    result = ExactlyExpression([n] + list(_flattened_boolean_args(args)))
     return result
 
 
@@ -222,7 +273,7 @@ def atmost(n, *args):
     Usage: atmost(2, m.Y1, m.Y2, m.Y3, ...)
 
     """
-    result = AtMostExpression([n, ] + list(_flattened(args)))
+    result = AtMostExpression([n] + list(_flattened_boolean_args(args)))
     return result
 
 
@@ -234,14 +285,35 @@ def atleast(n, *args):
     Usage: atleast(2, m.Y1, m.Y2, m.Y3, ...)
 
     """
-    result = AtLeastExpression([n, ] + list(_flattened(args)))
+    result = AtLeastExpression([n] + list(_flattened_boolean_args(args)))
     return result
+
+
+def all_different(*args):
+    """Creates a new AllDifferentExpression
+
+    Requires all of the arguments to take on a different value
+
+    Usage: all_different(m.X1, m.X2, ...)
+    """
+    return AllDifferentExpression(list(_flattened_numeric_args(args)))
+
+
+def count_if(*args):
+    """Creates a new CountIfExpression
+
+    Counts the number of True-valued arguments
+
+    Usage: count_if(m.Y1, m.Y2, ...)
+    """
+    return CountIfExpression(list(_flattened_boolean_args(args)))
 
 
 class UnaryBooleanExpression(BooleanExpression):
     """
     Abstract class for single-argument logical expressions.
     """
+
     def nargs(self):
         """
         Returns number of arguments in expression
@@ -253,6 +325,7 @@ class NotExpression(UnaryBooleanExpression):
     """
     This is the node for a NotExpression, this node should have exactly one child
     """
+
     PRECEDENCE = 2
 
     def getname(self, *arg, **kwd):
@@ -269,6 +342,7 @@ class BinaryBooleanExpression(BooleanExpression):
     """
     Abstract class for binary logical expressions.
     """
+
     def nargs(self):
         """
         Return the number of argument the expression has
@@ -281,6 +355,7 @@ class EquivalenceExpression(BinaryBooleanExpression):
     Logical equivalence statement: Y_1 iff Y_2.
 
     """
+
     __slots__ = ()
 
     PRECEDENCE = 6
@@ -299,9 +374,10 @@ class XorExpression(BinaryBooleanExpression):
     """
     Logical Exclusive OR statement: Y_1 ⊻ Y_2
     """
+
     __slots__ = ()
 
-    PRECEDENCE = 5
+    PRECEDENCE = 4
 
     def getname(self, *arg, **kwd):
         return 'xor'
@@ -317,6 +393,7 @@ class ImplicationExpression(BinaryBooleanExpression):
     """
     Logical Implication statement: Y_1 --> Y_2.
     """
+
     __slots__ = ()
 
     PRECEDENCE = 6
@@ -337,6 +414,7 @@ class NaryBooleanExpression(BooleanExpression):
 
     This class should never be initialized.
     """
+
     __slots__ = ('_nargs',)
 
     def __init__(self, args):
@@ -351,18 +429,6 @@ class NaryBooleanExpression(BooleanExpression):
 
     def getname(self, *arg, **kwd):
         return 'NaryBooleanExpression'
-
-    def __getstate__(self):
-        """
-        Pickle the expression object
-
-        Returns:
-            The pickled state.
-        """
-        state = super().__getstate__()
-        for i in NaryBooleanExpression.__slots__:
-           state[i] = getattr(self, i)
-        return state
 
 
 def _add_to_and_or_expression(orig_expr, new_arg):
@@ -390,9 +456,10 @@ class AndExpression(NaryBooleanExpression):
     """
     This is the node for AndExpression.
     """
+
     __slots__ = ()
 
-    PRECEDENCE = 4
+    PRECEDENCE = 3
 
     def getname(self, *arg, **kwd):
         return 'and'
@@ -416,9 +483,10 @@ class OrExpression(NaryBooleanExpression):
     """
     This is the node for OrExpression.
     """
+
     __slots__ = ()
 
-    PRECEDENCE = 4
+    PRECEDENCE = 5
 
     def getname(self, *arg, **kwd):
         return 'or'
@@ -448,6 +516,7 @@ class ExactlyExpression(NaryBooleanExpression):
     Usage: exactly(1, True, False, False) --> True
 
     """
+
     __slots__ = ()
 
     PRECEDENCE = 9
@@ -472,6 +541,7 @@ class AtMostExpression(NaryBooleanExpression):
     Usage: atmost(1, True, False, False) --> True
 
     """
+
     __slots__ = ()
 
     PRECEDENCE = 9
@@ -496,6 +566,7 @@ class AtLeastExpression(NaryBooleanExpression):
     Usage: atleast(1, True, False, False) --> True
 
     """
+
     __slots__ = ()
 
     PRECEDENCE = 9
@@ -508,6 +579,56 @@ class AtLeastExpression(NaryBooleanExpression):
 
     def _apply_operation(self, result):
         return sum(result[1:]) >= result[0]
+
+
+class AllDifferentExpression(NaryBooleanExpression):
+    """
+    Logical expression that all of the N child statements have different values.
+    All arguments are expected to be discrete-valued.
+    """
+
+    __slots__ = ()
+
+    PRECEDENCE = None
+
+    def getname(self, *arg, **kwd):
+        return 'all_different'
+
+    def _to_string(self, values, verbose, smap):
+        return "all_different(%s)" % (", ".join(values))
+
+    def _apply_operation(self, result):
+        last = None
+        # we know these are integer-valued, so we can just sort them an make
+        # sure that no adjacent pairs have the same value.
+        for val in sorted(result):
+            if last == val:
+                return False
+            last = val
+        return True
+
+
+class CountIfExpression(NumericExpression):
+    """
+    Logical expression that returns the number of True child statements.
+    All arguments are expected to be Boolean-valued.
+    """
+
+    __slots__ = ()
+    PRECEDENCE = None
+
+    # NumericExpression assumes binary operator, so we have to override.
+    def nargs(self):
+        return len(self._args_)
+
+    def getname(self, *arg, **kwd):
+        return 'count_if'
+
+    def _to_string(self, values, verbose, smap):
+        return "count_if(%s)" % (", ".join(values))
+
+    def _apply_operation(self, result):
+        return sum(value(r) for r in result)
 
 
 special_boolean_atom_types = {ExactlyExpression, AtMostExpression, AtLeastExpression}

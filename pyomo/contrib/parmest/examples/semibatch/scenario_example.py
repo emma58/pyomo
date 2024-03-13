@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -17,16 +17,15 @@ import pyomo.contrib.parmest.scenariocreator as sc
 
 
 def main():
-    
     # Vars to estimate in parmest
     theta_names = ['k1', 'k2', 'E1', 'E2']
 
     # Data: list of dictionaries
-    data = [] 
+    data = []
     file_dirname = dirname(abspath(str(__file__)))
     for exp_num in range(10):
-        fname = join(file_dirname, 'exp'+str(exp_num+1)+'.out')
-        with open(fname,'r') as infile:
+        fname = join(file_dirname, 'exp' + str(exp_num + 1) + '.out')
+        with open(fname, 'r') as infile:
             d = json.load(infile)
             data.append(d)
 
@@ -39,14 +38,15 @@ def main():
     experimentscens = sc.ScenarioSet("Experiments")
     scenmaker.ScenariosFromExperiments(experimentscens)
     experimentscens.write_csv(output_file)
-    
+
     # Use the bootstrap to make 3 scenarios and print
     bootscens = sc.ScenarioSet("Bootstrap")
-    scenmaker.ScenariosFromBoostrap(bootscens, 3)
+    scenmaker.ScenariosFromBootstrap(bootscens, 3)
     for s in bootscens.ScensIterator():
         print("{}, {}".format(s.name, s.probability))
-        for n,v in s.ThetaVals.items():
+        for n, v in s.ThetaVals.items():
             print("   {}={}".format(n, v))
+
 
 if __name__ == "__main__":
     main()

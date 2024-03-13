@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 from abc import ABCMeta, abstractmethod
 import enum
 from typing import Optional, Union, Tuple
@@ -47,9 +58,7 @@ class DirectLinearSolverInterface(LinearSolverInterface, metaclass=ABCMeta):
 
     @abstractmethod
     def do_back_solve(
-        self,
-        rhs: Union[np.ndarray, BlockVector],
-        raise_on_error: bool = True,
+        self, rhs: Union[np.ndarray, BlockVector], raise_on_error: bool = True
     ) -> Tuple[Optional[Union[np.ndarray, BlockVector]], LinearSolverResults]:
         pass
 
@@ -59,7 +68,6 @@ class DirectLinearSolverInterface(LinearSolverInterface, metaclass=ABCMeta):
         rhs: Union[np.ndarray, BlockVector],
         raise_on_error: bool = True,
     ) -> Tuple[Optional[Union[np.ndarray, BlockVector]], LinearSolverResults]:
-
         symbolic_res = self.do_symbolic_factorization(
             matrix, raise_on_error=raise_on_error
         )

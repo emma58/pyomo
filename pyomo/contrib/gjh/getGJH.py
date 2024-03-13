@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -21,33 +21,31 @@ logger = logging.getLogger('pyomo.common')
 #     https://ampl.com/resources/hooking-your-solver-to-ampl/
 # All 32-bit downloads are used - 64-bit is available only for Linux
 urlmap = {
-    'linux':   'https://ampl.com/netlib/ampl/student/linux/gjh.gz',
-    'windows': 'https://ampl.com/netlib/ampl/student/mswin/gjh.exe.gz',
-    'cygwin':  'https://ampl.com/netlib/ampl/student/mswin/gjh.exe.gz',
-    'darwin':  'https://ampl.com/netlib/ampl/student/macosx/x86_32/gjh.gz',
+    'linux': 'https://netlib.org/ampl/student/linux/gjh.gz',
+    'windows': 'https://netlib.org/ampl/student/mswin/gjh.exe.gz',
+    'cygwin': 'https://netlib.org/ampl/student/mswin/gjh.exe.gz',
+    'darwin': 'https://netlib.org/ampl/student/macosx/x86_32/gjh.gz',
 }
-exemap = {
-    'linux':   '',
-    'windows': '.exe',
-    'cygwin':  '.exe',
-    'darwin':  '',
-}
+exemap = {'linux': '', 'windows': '.exe', 'cygwin': '.exe', 'darwin': ''}
+
 
 def get_gjh(downloader):
     system, bits = downloader.get_sysinfo()
     url = downloader.get_platform_url(urlmap)
 
-    downloader.set_destination_filename(
-        os.path.join('bin', 'gjh'+exemap[system]))
+    downloader.set_destination_filename(os.path.join('bin', 'gjh' + exemap[system]))
 
-    logger.info("Fetching GJH from %s and installing it to %s"
-                % (url, downloader.destination()))
+    logger.info(
+        "Fetching GJH from %s and installing it to %s" % (url, downloader.destination())
+    )
 
     downloader.get_gzipped_binary_file(url)
 
     mode = os.stat(downloader.destination()).st_mode
-    os.chmod( downloader.destination(),
-              mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH )
+    os.chmod(
+        downloader.destination(), mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    )
+
 
 def main(argv):
     downloader = FileDownloader()

@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 #
 # Batch reactor example from Biegler book on Nonlinear Programming Chapter 9
 #
@@ -38,15 +49,17 @@ def create_model():
 
     def _diffeq1(m, t):
         return m.dza[t] == -m.p1 * m.za[t] + m.p2 * m.zb[t]
+
     m.diffeq1 = Constraint(m.t, rule=_diffeq1)
 
     def _diffeq2(m, t):
-        return m.dzb[t] == m.p1 * m.za[t] - \
-                           (m.p2 + m.p3) * m.zb[t] + m.p4 * m.zc[t]
+        return m.dzb[t] == m.p1 * m.za[t] - (m.p2 + m.p3) * m.zb[t] + m.p4 * m.zc[t]
+
     m.diffeq2 = Constraint(m.t, rule=_diffeq2)
 
     def _algeq1(m, t):
         return m.za[t] + m.zb[t] + m.zc[t] == 1
+
     m.algeq1 = Constraint(m.t, rule=_algeq1)
     return m
 
@@ -89,6 +102,7 @@ def plot_result(m, sim, tsim, profiles):
     plt.xlabel('t')
     plt.legend(loc='best')
     plt.show()
+
 
 if __name__ == "__main__":
     model = create_model()

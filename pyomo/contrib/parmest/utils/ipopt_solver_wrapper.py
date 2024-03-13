@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -11,6 +11,7 @@
 
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.opt import TerminationCondition
+
 
 def ipopt_solve_with_stats(model, solver, max_iter=500, max_cpu_time=120):
     """
@@ -38,9 +39,7 @@ def ipopt_solve_with_stats(model, solver, max_iter=500, max_cpu_time=120):
 
     TempfileManager.push()
     tempfile = TempfileManager.create_tempfile(suffix='ipopt_out', text=True)
-    opts = {'output_file': tempfile,
-            'max_iter': max_iter,
-            'max_cpu_time': max_cpu_time}
+    opts = {'output_file': tempfile, 'max_iter': max_iter, 'max_cpu_time': max_cpu_time}
 
     status_obj = solver.solve(model, options=opts, tee=True)
     solved = True
@@ -59,10 +58,14 @@ def ipopt_solve_with_stats(model, solver, max_iter=500, max_cpu_time=120):
                 iters = int(tokens[3])
                 tokens_m_2 = line_m_2.split()
                 regu = str(tokens_m_2[6])
-            elif line.startswith('Total CPU secs in IPOPT (w/o function evaluations)   ='):
+            elif line.startswith(
+                'Total CPU secs in IPOPT (w/o function evaluations)   ='
+            ):
                 tokens = line.split()
                 time += float(tokens[9])
-            elif line.startswith('Total CPU secs in NLP function evaluations           ='):
+            elif line.startswith(
+                'Total CPU secs in NLP function evaluations           ='
+            ):
                 tokens = line.split()
                 time += float(tokens[8])
             line_m_2 = line_m_1

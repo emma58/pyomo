@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -38,9 +38,11 @@ class PATHAMPL(ASL):
 
     def _default_executable(self):
         executable = Executable("pathampl")
-        if not executable:                      #pragma:nocover
-            logger.warning("Could not locate the 'pathampl' executable, "
-                           "which is required for solver %s" % self.name)
+        if not executable:  # pragma:nocover
+            logger.warning(
+                "Could not locate the 'pathampl' executable, "
+                "which is required for solver %s" % self.name
+            )
             self.enable = False
             return None
         return executable.path()

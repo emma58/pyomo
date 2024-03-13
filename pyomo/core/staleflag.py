@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,10 +9,20 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
+
 class _StaleFlagManager(object):
     def __init__(self):
         self._current = 0
         self.mark_all_as_stale()
+
+    def stale_mapper(self, encode, value):
+        if encode:
+            return self.is_stale(value)
+        else:
+            if value:
+                return 0
+            else:
+                return self.get_flag(0)
 
     def _get_flag(self, current_flag):
         """Return the current global stale flag value"""
@@ -58,5 +68,6 @@ class _StaleFlagManager(object):
         else:
             setattr(self, 'get_flag', getattr(self, '_get_flag'))
             self._current += 1
+
 
 StaleFlagManager = _StaleFlagManager()

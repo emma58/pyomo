@@ -1,7 +1,18 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 # ____________________________________________________________________________
 #
 # Pyomo: Python Optimization Modeling Objects
-# Copyright (c) 2008-2022
+# Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 # Under the terms of Contract DE-NA0003525 with National Technology and
 # Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,8 +29,10 @@ import logging
 
 import pyomo.environ as pyo
 from pyomo.common.dependencies import (
-    numpy as np, numpy_available,
-    pandas as pd, pandas_available,
+    numpy as np,
+    numpy_available,
+    pandas as pd,
+    pandas_available,
 )
 from pyomo.contrib.sensitivity_toolbox.sens import SensitivityInterface
 from pyomo.contrib.sensitivity_toolbox.k_aug import K_augInterface
@@ -36,7 +49,7 @@ def simple_model_1():
 
     m.p = pyo.Param(mutable=True, initialize=1.0)
 
-    m.eq_con = pyo.Constraint(expr=m.v1*m.v2 - m.p == 0)
+    m.eq_con = pyo.Constraint(expr=m.v1 * m.v2 - m.p == 0)
 
     m.obj = pyo.Objective(expr=m.v1**2 + m.v2**2, sense=pyo.minimize)
 
@@ -44,7 +57,6 @@ def simple_model_1():
 
 
 class TestK_augInterface(unittest.TestCase):
-
     @unittest.skipIf(not opt_k_aug.available(), "k_aug is not available")
     def test_clear_dir_k_aug(self):
         m = simple_model_1()
@@ -59,7 +71,7 @@ class TestK_augInterface(unittest.TestCase):
 
         sens_param = [m.p]
         sens.setup_sensitivity(sens_param)
-        
+
         k_aug.k_aug(m, tee=True)
 
         # We are back in our working directory
@@ -93,7 +105,7 @@ class TestK_augInterface(unittest.TestCase):
 
         sens_param = [m.p]
         sens.setup_sensitivity(sens_param)
-        
+
         # Call k_aug
         k_aug.k_aug(m, tee=True)
         self.assertIsInstance(k_aug.data["dsdp_in_.in"], str)

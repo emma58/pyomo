@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -58,10 +58,11 @@ class Factory(object):
         if name in self._cls:
             del self._cls[name]
             del self._doc[name]
-    
+
     def register(self, name, doc=None):
         def fn(cls):
             self._cls[name] = cls
             self._doc[name] = doc
             return cls
+
         return fn

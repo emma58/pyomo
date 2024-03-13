@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -10,7 +10,7 @@
 #  ___________________________________________________________________________
 
 """Automatically initialize variables."""
-from __future__ import division
+
 
 from pyomo.core.base.var import Var
 from pyomo.core.base.transformation import TransformationFactory
@@ -19,8 +19,9 @@ from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
 
 
 @TransformationFactory.register(
-        'contrib.init_vars_midpoint',
-        doc="Initialize non-fixed variables to the midpoint of their bounds.")
+    'contrib.init_vars_midpoint',
+    doc="Initialize non-fixed variables to the midpoint of their bounds.",
+)
 class InitMidpoint(IsomorphicTransformation):
     """Initialize non-fixed variables to the midpoint of their bounds.
 
@@ -36,8 +37,7 @@ class InitMidpoint(IsomorphicTransformation):
             overwrite: if False, transformation will not overwrite existing
                 variable values.
         """
-        for var in instance.component_data_objects(
-                ctype=Var, descend_into=True):
+        for var in instance.component_data_objects(ctype=Var, descend_into=True):
             if var.fixed:
                 continue
             if var.value is not None and not overwrite:
@@ -52,12 +52,12 @@ class InitMidpoint(IsomorphicTransformation):
                 # if one bound does not exist, set variable value to the other
                 var.set_value(value(var.lb))
             else:
-                var.set_value((value(var.lb) + value(var.ub)) / 2.)
+                var.set_value((value(var.lb) + value(var.ub)) / 2.0)
 
 
 @TransformationFactory.register(
-        'contrib.init_vars_zero',
-        doc="Initialize non-fixed variables to zero.")
+    'contrib.init_vars_zero', doc="Initialize non-fixed variables to zero."
+)
 class InitZero(IsomorphicTransformation):
     """Initialize non-fixed variables to zero.
 
@@ -73,8 +73,7 @@ class InitZero(IsomorphicTransformation):
             overwrite: if False, transformation will not overwrite existing
                 variable values.
         """
-        for var in instance.component_data_objects(
-                ctype=Var, descend_into=True):
+        for var in instance.component_data_objects(ctype=Var, descend_into=True):
             if var.fixed:
                 continue
             if var.value is not None and not overwrite:

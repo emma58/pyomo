@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -21,15 +21,13 @@ x = [0.0, 1.5, 3.0, 5.0]
 y = [1.1, -1.1, 2.0, 1.1]
 
 model = ConcreteModel()
-model.index = Set(initialize=[1,2,3])
+model.index = Set(initialize=[1, 2, 3])
 model.x = Var(model.index, bounds=(min(x), max(x)))
 model.y = Var(model.index)
 
-model.fx = Piecewise(model.index,
-                     model.y, model.x,
-                     pw_pts=x,
-                     pw_constr_type='EQ',
-                     f_rule=y)
+model.fx = Piecewise(
+    model.index, model.y, model.x, pw_pts=x, pw_constr_type='EQ', f_rule=y
+)
 
 model.c = ConstraintList()
 model.c.add(model.x[1] >= 1.0)

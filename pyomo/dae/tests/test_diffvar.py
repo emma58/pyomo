@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,7 +9,7 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-# 
+#
 # Unit Tests for DerivativeVar Objects
 #
 
@@ -26,7 +26,6 @@ currdir = dirname(abspath(__file__)) + os.sep
 
 
 class TestDerivativeVar(unittest.TestCase):
-
     # test valid declarations
     def test_valid(self):
         m = ConcreteModel()
@@ -70,7 +69,6 @@ class TestDerivativeVar(unittest.TestCase):
         del m.dv
         del m.dv2
         del m.v
-        del m.v_index
 
         m.v = Var(m.x, m.t)
         m.dv = DerivativeVar(m.v, wrt=m.x)

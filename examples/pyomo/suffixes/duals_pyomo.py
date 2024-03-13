@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -21,8 +21,7 @@ model.con = Constraint(expr=model.x >= 1)
 ###
 
 # Declare an IMPORT Suffix to store the dual information that will
-# be returned by the solver. When Suffix components are declared 
+# be returned by the solver. When Suffix components are declared
 # with an IMPORT direction, Pyomo solver interfaces will attempt to collect
 # this named information from a solver solution.
 model.dual = Suffix(direction=Suffix.IMPORT)
-

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -27,8 +27,6 @@ the rest of the package, or Pyomo except through the import of NetworkX.
 
 
 def _get_projected_digraph(bg, matching, top_nodes):
-    """
-    """
     digraph = DiGraph()
     digraph.add_nodes_from(top_nodes)
     for n in top_nodes:
@@ -45,8 +43,6 @@ def _get_projected_digraph(bg, matching, top_nodes):
 
 
 def _get_reachable_from(digraph, sources):
-    """
-    """
     _filter = set()
     reachable = []
     for node in sources:
@@ -94,16 +90,9 @@ def dulmage_mendelsohn(bg, top_nodes=None, matching=None):
     _filter.update(b_unmatched)
     _filter.update(b_matched_with_reachable)
     t_other = [t for t in top_nodes if t not in _filter]
-    b_other = [b for b in bot_nodes if b not in _filter]
+    b_other = [matching[t] for t in t_other]
 
-    return ((
-        t_unmatched,
-        t_reachable,
-        t_matched_with_reachable,
-        t_other,
-        ), (
-        b_unmatched,
-        b_reachable,
-        b_matched_with_reachable,
-        b_other,
-        ))
+    return (
+        (t_unmatched, t_reachable, t_matched_with_reachable, t_other),
+        (b_unmatched, b_reachable, b_matched_with_reachable, b_other),
+    )

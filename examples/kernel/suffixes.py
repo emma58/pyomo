@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 import pyomo.kernel as pmo
 
 #
@@ -7,8 +18,8 @@ import pyomo.kernel as pmo
 # collect dual information when the model is solved
 b = pmo.block()
 b.x = pmo.variable()
-b.c = pmo.constraint(expr= b.x >= 1)
-b.o = pmo.objective(expr= b.x)
+b.c = pmo.constraint(expr=b.x >= 1)
+b.o = pmo.objective(expr=b.x)
 b.dual = pmo.suffix(direction=pmo.suffix.IMPORT)
 
 # suffixes behave as dictionaries that map

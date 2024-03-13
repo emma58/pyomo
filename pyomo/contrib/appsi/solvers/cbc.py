@@ -1,6 +1,23 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.common.fileutils import Executable
-from pyomo.contrib.appsi.base import PersistentSolver, Results, TerminationCondition, SolverConfig, PersistentSolutionLoader
+from pyomo.contrib.appsi.base import (
+    PersistentSolver,
+    Results,
+    TerminationCondition,
+    SolverConfig,
+    PersistentSolutionLoader,
+)
 from pyomo.contrib.appsi.writers import LPWriter
 from pyomo.common.log import LogStream
 import logging
@@ -28,17 +45,21 @@ logger = logging.getLogger(__name__)
 
 
 class CbcConfig(SolverConfig):
-    def __init__(self,
-                 description=None,
-                 doc=None,
-                 implicit=False,
-                 implicit_domain=None,
-                 visibility=0):
-        super(CbcConfig, self).__init__(description=description,
-                                        doc=doc,
-                                        implicit=implicit,
-                                        implicit_domain=implicit_domain,
-                                        visibility=visibility)
+    def __init__(
+        self,
+        description=None,
+        doc=None,
+        implicit=False,
+        implicit_domain=None,
+        visibility=0,
+    ):
+        super(CbcConfig, self).__init__(
+            description=description,
+            doc=doc,
+            implicit=implicit,
+            implicit_domain=implicit_domain,
+            visibility=visibility,
+        )
 
         self.declare('executable', ConfigValue())
         self.declare('filename', ConfigValue(domain=str))
@@ -54,7 +75,7 @@ class CbcConfig(SolverConfig):
 
 
 class Cbc(PersistentSolver):
-    def __init__(self, only_child_vars=True):
+    def __init__(self, only_child_vars=False):
         self._config = CbcConfig()
         self._solver_options = dict()
         self._writer = LPWriter(only_child_vars=only_child_vars)
@@ -72,11 +93,13 @@ class Cbc(PersistentSolver):
         return self.Availability.FullLicense
 
     def version(self):
-        results = subprocess.run([str(self.config.executable), '-stop'],
-                                 timeout=5,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT,
-                                 universal_newlines=True)
+        results = subprocess.run(
+            [str(self.config.executable), '-stop'],
+            timeout=5,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
         version = results.stdout.splitlines()[1]
         version = version.split(':')[1]
         version = version.strip()
@@ -193,7 +216,7 @@ class Cbc(PersistentSolver):
             TempfileManager.add_tempfile(self._filename + '.soln', exists=False)
             TempfileManager.add_tempfile(self._filename + '.log', exists=False)
             timer.start('write lp file')
-            self._writer.write(model, self._filename+'.lp', timer=timer)
+            self._writer.write(model, self._filename + '.lp', timer=timer)
             timer.stop('write lp file')
             res = self._apply_solver(timer)
             self._last_results_object = res
@@ -255,14 +278,14 @@ class Cbc(PersistentSolver):
 
         symbol_map = self._writer.symbol_map
 
-        for line in all_lines[first_con_line:last_con_line+1]:
+        for line in all_lines[first_con_line : last_con_line + 1]:
             split_line = line.strip('*')
             split_line = split_line.split()
             name = split_line[1]
             orig_name = name[:-3]
             if orig_name == 'obj_const_con':
                 continue
-            con = symbol_map.bySymbol[orig_name]()
+            con = symbol_map.bySymbol[orig_name]
             dual_val = float(split_line[-1])
             if con in self._dual_sol:
                 if abs(dual_val) > abs(self._dual_sol[con]):
@@ -270,7 +293,7 @@ class Cbc(PersistentSolver):
             else:
                 self._dual_sol[con] = dual_val
 
-        for line in all_lines[first_var_line:last_var_line+1]:
+        for line in all_lines[first_var_line : last_var_line + 1]:
             split_line = line.strip('*')
             split_line = split_line.split()
             name = split_line[1]
@@ -278,13 +301,15 @@ class Cbc(PersistentSolver):
                 continue
             val = float(split_line[2])
             rc = float(split_line[3])
-            var = symbol_map.bySymbol[name]()
+            var = symbol_map.bySymbol[name]
             self._primal_sol[id(var)] = (var, val)
             self._reduced_costs[id(var)] = (var, rc)
 
-        if (self.version() < (2, 10, 2) and
-                self._writer.get_active_objective() is not None and
-                self._writer.get_active_objective().sense == maximize):
+        if (
+            self.version() < (2, 10, 2)
+            and self._writer.get_active_objective() is not None
+            and self._writer.get_active_objective().sense == maximize
+        ):
             if obj_val is not None:
                 obj_val = -obj_val
             for con, dual_val in self._dual_sol.items():
@@ -292,7 +317,10 @@ class Cbc(PersistentSolver):
             for v_id, (v, rc_val) in self._reduced_costs.items():
                 self._reduced_costs[v_id] = (v, -rc_val)
 
-        if results.termination_condition == TerminationCondition.optimal and self.config.load_solution:
+        if (
+            results.termination_condition == TerminationCondition.optimal
+            and self.config.load_solution
+        ):
             for v_id, (v, val) in self._primal_sol.items():
                 v.set_value(val, skip_validation=True)
             if self._writer.get_active_objective() is None:
@@ -305,12 +333,12 @@ class Cbc(PersistentSolver):
             else:
                 results.best_feasible_objective = obj_val
         elif self.config.load_solution:
-            raise RuntimeError('A feasible solution was not found, so no solution can be loaded.'
-                               'Please set opt.config.load_solution=False and check '
-                               'results.termination_condition and '
-                               'resutls.best_feasible_objective before loading a solution.')
-
-        results.solution_loader = PersistentSolutionLoader(solver=self)
+            raise RuntimeError(
+                'A feasible solution was not found, so no solution can be loaded.'
+                'Please set opt.config.load_solution=False and check '
+                'results.termination_condition and '
+                'results.best_feasible_objective before loading a solution.'
+            )
 
         return results
 
@@ -338,8 +366,10 @@ class Cbc(PersistentSolver):
                         tmp_v = '"' + tmp_v + '"'
 
                 if _bad:
-                    raise ValueError("Unable to properly escape solver option:"
-                                     "\n\t%s=%s" % (key, val) )
+                    raise ValueError(
+                        "Unable to properly escape solver option:"
+                        "\n\t%s=%s" % (key, val)
+                    )
                 yield tmp_k, tmp_v
 
         cmd = [str(config.executable)]
@@ -349,9 +379,9 @@ class Cbc(PersistentSolver):
             cmd.extend(['-timeMode', 'elapsed'])
         for key, val in _check_and_escape_options():
             if val.strip() != '':
-                cmd.extend(['-'+key, val])
+                cmd.extend(['-' + key, val])
             else:
-                action_options.append('-'+key)
+                action_options.append('-' + key)
         cmd.extend(['-printingOptions', 'all'])
         cmd.extend(['-import', self._filename + '.lp'])
         cmd.extend(action_options)
@@ -359,31 +389,38 @@ class Cbc(PersistentSolver):
         cmd.extend(['-solve'])
         cmd.extend(['-solu', self._filename + '.soln'])
 
-        ostreams = [LogStream(level=self.config.log_level, logger=self.config.solver_output_logger)]
+        ostreams = [
+            LogStream(
+                level=self.config.log_level, logger=self.config.solver_output_logger
+            )
+        ]
         if self.config.stream_solver:
             ostreams.append(sys.stdout)
 
         with TeeStream(*ostreams) as t:
             timer.start('subprocess')
-            cp = subprocess.run(cmd,
-                                timeout=timeout,
-                                stdout=t.STDOUT,
-                                stderr=t.STDERR,
-                                universal_newlines=True)
+            cp = subprocess.run(
+                cmd,
+                timeout=timeout,
+                stdout=t.STDOUT,
+                stderr=t.STDERR,
+                universal_newlines=True,
+            )
             timer.stop('subprocess')
 
         if cp.returncode != 0:
             if self.config.load_solution:
-                raise RuntimeError('A feasible solution was not found, so no solution can be loaded.'
-                                   'Please set opt.config.load_solution=False and check '
-                                   'results.termination_condition and '
-                                   'results.best_feasible_objective before loading a solution.')
+                raise RuntimeError(
+                    'A feasible solution was not found, so no solution can be loaded. '
+                    'If using the appsi.solvers.Cbc interface, you can '
+                    'set opt.config.load_solution=False. If using the environ.SolverFactory '
+                    'interface, you can set opt.solve(model, load_solutions = False). '
+                    'Then you can check results.termination_condition and '
+                    'results.best_feasible_objective before loading a solution.'
+                )
             results = Results()
             results.termination_condition = TerminationCondition.error
             results.best_feasible_objective = None
-            self._primal_sol = None
-            self._dual_sol = None
-            self._reduced_costs = None
         else:
             timer.start('parse solution')
             results = self._parse_soln()
@@ -398,9 +435,22 @@ class Cbc(PersistentSolver):
             else:
                 results.best_objective_bound = math.inf
 
+        results.solution_loader = PersistentSolutionLoader(solver=self)
+
         return results
 
-    def get_primals(self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None) -> Mapping[_GeneralVarData, float]:
+    def get_primals(
+        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
+    ) -> Mapping[_GeneralVarData, float]:
+        if (
+            self._last_results_object is None
+            or self._last_results_object.best_feasible_objective is None
+        ):
+            raise RuntimeError(
+                'Solver does not currently have a valid solution. Please '
+                'check the termination condition.'
+            )
+
         res = ComponentMap()
         if vars_to_load is None:
             for v_id, (v, val) in self._primal_sol.items():
@@ -410,14 +460,38 @@ class Cbc(PersistentSolver):
                 res[v] = self._primal_sol[id(v)][1]
         return res
 
-    def get_duals(self, cons_to_load = None):
+    def get_duals(self, cons_to_load=None):
+        if (
+            self._last_results_object is None
+            or self._last_results_object.termination_condition
+            != TerminationCondition.optimal
+        ):
+            raise RuntimeError(
+                'Solver does not currently have valid duals. Please '
+                'check the termination condition.'
+            )
+
         if cons_to_load is None:
             return {k: v for k, v in self._dual_sol.items()}
         else:
             return {c: self._dual_sol[c] for c in cons_to_load}
 
-    def get_reduced_costs(self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None) -> Mapping[_GeneralVarData, float]:
+    def get_reduced_costs(
+        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
+    ) -> Mapping[_GeneralVarData, float]:
+        if (
+            self._last_results_object is None
+            or self._last_results_object.termination_condition
+            != TerminationCondition.optimal
+        ):
+            raise RuntimeError(
+                'Solver does not currently have valid reduced costs. Please '
+                'check the termination condition.'
+            )
+
         if vars_to_load is None:
             return ComponentMap((k, v) for k, v in self._reduced_costs.values())
         else:
-            return ComponentMap((v, self._reduced_costs[id(v)][1]) for v in vars_to_load)
+            return ComponentMap(
+                (v, self._reduced_costs[id(v)][1]) for v in vars_to_load
+            )

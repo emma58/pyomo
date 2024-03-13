@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -10,5 +10,5 @@
 #  ___________________________________________________________________________
 
 from pyomo.common.deprecation import relocated_module
-relocated_module('pyomo.contrib.parmest.utils.ipopt_solver_wrapper',
-                 version='6.4.2')
+
+relocated_module('pyomo.contrib.parmest.utils.ipopt_solver_wrapper', version='6.4.2')

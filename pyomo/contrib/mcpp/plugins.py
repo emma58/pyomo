@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -14,7 +14,7 @@ from pyomo.common.extensions import ExtensionBuilderFactory
 from .getMCPP import get_mcpp
 from .build import MCPPBuilder
 
+
 def load():
     DownloadFactory.register('mcpp')(get_mcpp)
     ExtensionBuilderFactory.register('mcpp')(MCPPBuilder)
-

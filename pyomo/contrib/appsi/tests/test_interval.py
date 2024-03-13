@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 from pyomo.contrib.appsi.cmodel import cmodel, cmodel_available
 import pyomo.common.unittest as unittest
 import math
@@ -30,7 +41,23 @@ class TestInterval(IntervalTestBase, unittest.TestCase):
 @unittest.skipUnless(cmodel_available, 'appsi extensions are not available')
 class TestCInterval(unittest.TestCase):
     def test_pow_with_inf(self):
-        x_list = [0, -math.inf, math.inf, -3, 3, -2, 2, -1, 1, -2.5, 2.5, -0.5, 0.5, -1.5, 1.5]
+        x_list = [
+            0,
+            -math.inf,
+            math.inf,
+            -3,
+            3,
+            -2,
+            2,
+            -1,
+            1,
+            -2.5,
+            2.5,
+            -0.5,
+            0.5,
+            -1.5,
+            1.5,
+        ]
         y_list = list(x_list)
         for x in x_list:
             for y in y_list:

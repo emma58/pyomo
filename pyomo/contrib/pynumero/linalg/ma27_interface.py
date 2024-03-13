@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 from .base import DirectLinearSolverInterface, LinearSolverStatus, LinearSolverResults
 from .ma27 import MA27Interface
 from scipy.sparse import isspmatrix_coo, tril, spmatrix
@@ -27,7 +38,6 @@ class MA27(DirectLinearSolverInterface):
     def do_symbolic_factorization(
         self, matrix: Union[spmatrix, BlockMatrix], raise_on_error: bool = True
     ) -> LinearSolverResults:
-
         if not isspmatrix_coo(matrix):
             matrix = matrix.tocoo()
         matrix = tril(matrix)
@@ -59,7 +69,6 @@ class MA27(DirectLinearSolverInterface):
     def do_numeric_factorization(
         self, matrix: Union[spmatrix, BlockMatrix], raise_on_error: bool = True
     ) -> LinearSolverResults:
-
         if not isspmatrix_coo(matrix):
             matrix = matrix.tocoo()
         matrix = tril(matrix)
@@ -96,7 +105,6 @@ class MA27(DirectLinearSolverInterface):
     def do_back_solve(
         self, rhs: Union[np.ndarray, BlockVector], raise_on_error: bool = True
     ) -> Tuple[Optional[Union[np.ndarray, BlockVector]], LinearSolverResults]:
-
         if isinstance(rhs, BlockVector):
             _rhs = rhs.flatten()
             result = _rhs

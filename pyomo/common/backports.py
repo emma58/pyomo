@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,13 +9,6 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-# backport of contextlib.nullcontext for supporting Python < 3.7
-class nullcontext(object):
-    def __init__(self, enter_result=None):
-        self.result = enter_result
+from pyomo.common.deprecation import relocated_module_attribute
 
-    def __enter__(self):
-        return self.result
-
-    def __exit__(self, et, ev, tb):
-        return
+relocated_module_attribute('nullcontext', 'contextlib.nullcontext', version='6.7.0')

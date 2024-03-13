@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -40,7 +40,6 @@ class ResultsReader_yaml(results.AbstractResultsReader):
         return res
 
 
-
 @results.ReaderFactory.register(str(ResultsFormat.json))
 class ResultsReader_json(results.AbstractResultsReader):
     """
@@ -60,4 +59,3 @@ class ResultsReader_json(results.AbstractResultsReader):
         #
         res.read(filename, using_yaml=False)
         return res
-

@@ -1,4 +1,16 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 import atexit
+
 
 def python_is_shutting_down():
     """Returns `True` if the interpreter is in the process of shutting down.
@@ -10,7 +22,9 @@ def python_is_shutting_down():
     """
     return not python_is_shutting_down.isalive
 
+
 python_is_shutting_down.isalive = [True]
+
 
 @atexit.register
 def _flag_shutting_down():

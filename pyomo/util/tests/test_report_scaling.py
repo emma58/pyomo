@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -40,7 +40,7 @@ class TestReportScaling(unittest.TestCase):
         m.c[0] = m.x[0] + m.x[3] == 0
         m.c[1] = 1 / m.x[1] == 1
         m.c[2] = m.x[1] * m.x[3] == 1
-        m.c[3] = m.x[3] + m.p*m.x[0] == 1
+        m.c[3] = m.x[3] + m.p * m.x[0] == 1
 
         out = StringIO()
         with LoggingIntercept(out, 'pyomo.util.report_scaling', level=logging.INFO):

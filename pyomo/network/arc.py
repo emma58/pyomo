@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,12 +9,12 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-__all__ = [ 'Arc' ]
-
 from pyomo.network.port import Port
 from pyomo.core.base.component import ActiveComponentData, ModelComponentFactory
 from pyomo.core.base.indexed_component import (
-    ActiveIndexedComponent, UnindexedComponent_set)
+    ActiveIndexedComponent,
+    UnindexedComponent_set,
+)
 from pyomo.core.base.global_set import UnindexedComponent_index
 from pyomo.core.base.misc import apply_indexed_rule
 from pyomo.common.deprecation import RenamedClass
@@ -37,14 +37,16 @@ def _iterable_to_dict(vals, directed, name):
         if ports is None or len(ports) != 2:
             raise ValueError(
                 "Value for arc '%s' is not either a "
-                "dict or a two-member iterable." % name)
+                "dict or a two-member iterable." % name
+            )
         if directed:
             source, destination = ports
             ports = None
         else:
             source = destination = None
-        vals = dict(source=source, destination=destination,
-                    ports=ports, directed=directed)
+        vals = dict(
+            source=source, destination=destination, ports=ports, directed=directed
+        )
     elif "directed" not in vals:
         vals["directed"] = directed
     return vals
@@ -78,8 +80,7 @@ class _ArcData(ActiveComponentData):
         # following constructors:
         #   - ActiveComponentData
         #   - ComponentData
-        self._component = weakref_ref(component) if (component is not None) \
-                          else None
+        self._component = weakref_ref(component) if (component is not None) else None
         self._index = NOTSET
         self._active = True
 
@@ -88,16 +89,6 @@ class _ArcData(ActiveComponentData):
         self._expanded_block = None
         if len(kwds):
             self.set_value(kwds)
-
-    def __getstate__(self):
-        state = super(_ArcData, self).__getstate__()
-        for i in _ArcData.__slots__:
-            state[i] = getattr(self, i)
-        return state
-
-    # Note: None of the slots on this class need to be edited, so we
-    # don't need to implement a specialized __setstate__ method, and
-    # can quietly rely on the super() class's implementation.
 
     def __getattr__(self, name):
         """Returns `self.expanded_block.name` if it exists"""
@@ -110,24 +101,21 @@ class _ArcData(ActiveComponentData):
                 pass
         # Since the base classes don't support getattr, we can just
         # throw the "normal" AttributeError
-        raise AttributeError("'%s' object has no attribute '%s'"
-                             % (self.__class__.__name__, name))
+        raise AttributeError(
+            "'%s' object has no attribute '%s'" % (self.__class__.__name__, name)
+        )
 
     @property
     def source(self):
         # directed can be true before construction
         # so make sure ports is not None
-        return self._ports[0] if (
-            self._directed and self._ports is not None
-            ) else None
+        return self._ports[0] if (self._directed and self._ports is not None) else None
 
     src = source
 
     @property
     def destination(self):
-        return self._ports[1] if (
-            self._directed and self._ports is not None
-            ) else None
+        return self._ports[1] if (self._directed and self._ports is not None) else None
 
     dest = destination
 
@@ -147,8 +135,11 @@ class _ArcData(ActiveComponentData):
         """Set the port attributes on this arc"""
         # the following allows m.a = Arc(directed=True); m.a = (m.p, m.q)
         # and m.a will be directed
-        d = self._directed if self._directed is not None else \
-            self.parent_component()._init_directed
+        d = (
+            self._directed
+            if self._directed is not None
+            else self.parent_component()._init_directed
+        )
 
         vals = _iterable_to_dict(vals, d, self.name)
 
@@ -159,8 +150,9 @@ class _ArcData(ActiveComponentData):
 
         if len(vals):
             raise ValueError(
-                "set_value passed unrecognized keywords in val:\n\t" +
-                "\n\t".join("%s = %s" % (k, v) for k, v in vals.items()))
+                "set_value passed unrecognized keywords in val:\n\t"
+                + "\n\t".join("%s = %s" % (k, v) for k, v in vals.items())
+            )
 
         if directed is not None:
             if source is None and destination is None:
@@ -172,13 +164,14 @@ class _ArcData(ActiveComponentData):
                     except:
                         raise ValueError(
                             "Failed to unpack 'ports' argument of arc '%s'. "
-                            "Argument must be a 2-member tuple or list."
-                            % self.name)
+                            "Argument must be a 2-member tuple or list." % self.name
+                        )
             elif not directed:
                 # throw an error if they gave an inconsistent directed value
                 raise ValueError(
                     "Passed False value for 'directed' for arc '%s', but "
-                    "specified source or destination." % self.name)
+                    "specified source or destination." % self.name
+                )
 
         self._validate_ports(source, destination, ports)
 
@@ -191,8 +184,7 @@ class _ArcData(ActiveComponentData):
                 self.source._dests.remove(weakref_self)
                 self.destination._sources.remove(weakref_self)
 
-        self._ports = tuple(ports) if ports is not None \
-            else (source, destination)
+        self._ports = tuple(ports) if ports is not None else (source, destination)
         self._directed = source is not None
         weakref_self = weakref_ref(self)
         for port in self._ports:
@@ -205,44 +197,53 @@ class _ArcData(ActiveComponentData):
         msg = "Arc %s: " % self.name
         if ports is not None:
             if source is not None or destination is not None:
-                raise ValueError(msg +
-                    "cannot specify 'source' or 'destination' "
-                    "when using 'ports' argument.")
-            if (type(ports) not in (list, tuple) or len(ports) != 2):
-                raise ValueError(msg +
-                    "argument 'ports' must be list or tuple "
-                    "containing exactly 2 Ports.")
+                raise ValueError(
+                    msg + "cannot specify 'source' or 'destination' "
+                    "when using 'ports' argument."
+                )
+            if type(ports) not in (list, tuple) or len(ports) != 2:
+                raise ValueError(
+                    msg + "argument 'ports' must be list or tuple "
+                    "containing exactly 2 Ports."
+                )
             for p in ports:
                 try:
                     if p.ctype is not Port:
-                        raise ValueError(msg +
-                            "found object '%s' in 'ports' not "
-                            "of type Port." % p.name)
+                        raise ValueError(
+                            msg + "found object '%s' in 'ports' not "
+                            "of type Port." % p.name
+                        )
                     elif p.is_indexed():
-                        raise ValueError(msg +
-                            "found indexed Port '%s' in 'ports', must "
-                            "use single Ports for Arc." % p.name)
+                        raise ValueError(
+                            msg + "found indexed Port '%s' in 'ports', must "
+                            "use single Ports for Arc." % p.name
+                        )
                 except AttributeError:
-                    raise ValueError(msg +
-                        "found object '%s' in 'ports' not "
-                        "of type Port." % str(p))
+                    raise ValueError(
+                        msg + "found object '%s' in 'ports' not "
+                        "of type Port." % str(p)
+                    )
         else:
             if source is None or destination is None:
-                raise ValueError(msg +
-                    "must specify both 'source' and 'destination' "
-                    "for directed Arc.")
+                raise ValueError(
+                    msg + "must specify both 'source' and 'destination' "
+                    "for directed Arc."
+                )
             for p, side in [(source, "source"), (destination, "destination")]:
                 try:
                     if p.ctype is not Port:
-                        raise ValueError(msg +
-                            "%s object '%s' not of type Port." % (p.name, side))
+                        raise ValueError(
+                            msg + "%s object '%s' not of type Port." % (p.name, side)
+                        )
                     elif p.is_indexed():
-                        raise ValueError(msg +
-                            "found indexed Port '%s' as %s, must use "
-                            "single Ports for Arc." % (source.name, side))
+                        raise ValueError(
+                            msg + "found indexed Port '%s' as %s, must use "
+                            "single Ports for Arc." % (source.name, side)
+                        )
                 except AttributeError:
-                    raise ValueError(msg +
-                        "%s object '%s' not of type Port." % (str(p), side))
+                    raise ValueError(
+                        msg + "%s object '%s' not of type Port." % (str(p), side)
+                    )
 
 
 @ModelComponentFactory.register("Component used for connecting two Ports.")
@@ -289,19 +290,22 @@ class Arc(ActiveIndexedComponent):
         if source is None and destination is None and ports is None:
             self._init_vals = None
         else:
-            self._init_vals = dict(
-                source=source, destination=destination, ports=ports)
+            self._init_vals = dict(source=source, destination=destination, ports=ports)
 
     def construct(self, data=None):
         """Initialize the Arc"""
+        if self._constructed:
+            return
+        self._constructed = True
+
         if is_debug_set(logger):
             logger.debug("Constructing Arc %s" % self.name)
 
-        if self._constructed:
-            return
-
         timer = ConstructionTimer(self)
-        self._constructed = True
+
+        if self._anonymous_sets is not None:
+            for _set in self._anonymous_sets:
+                _set.construct()
 
         if self._rule is None and self._init_vals is None:
             # No construction rule or values specified
@@ -309,7 +313,8 @@ class Arc(ActiveIndexedComponent):
         elif self._rule is not None and self._init_vals is not None:
             raise ValueError(
                 "Cannot specify rule along with source/destination/ports "
-                "keywords for arc '%s'" % self.name)
+                "keywords for arc '%s'" % self.name
+            )
 
         self_parent = self._parent()
 
@@ -324,8 +329,8 @@ class Arc(ActiveIndexedComponent):
                     err = sys.exc_info()[1]
                     logger.error(
                         "Rule failed when generating values for "
-                        "arc %s:\n%s: %s"
-                        % (self.name, type(err).__name__, err))
+                        "arc %s:\n%s: %s" % (self.name, type(err).__name__, err)
+                    )
                     raise
                 tmp = _iterable_to_dict(tmp, self._init_directed, self.name)
             self._setitem_when_not_present(None, tmp)
@@ -333,7 +338,8 @@ class Arc(ActiveIndexedComponent):
             if self._init_vals is not None:
                 raise IndexError(
                     "Arc '%s': Cannot initialize multiple indices "
-                    "of an arc with single ports" % self.name)
+                    "of an arc with single ports" % self.name
+                )
             for idx in self._index_set:
                 try:
                     tmp = apply_indexed_rule(self, self._rule, self_parent, idx)
@@ -342,7 +348,8 @@ class Arc(ActiveIndexedComponent):
                     logger.error(
                         "Rule failed when generating values for "
                         "arc %s with index %s:\n%s: %s"
-                        % (self.name, str(idx), type(err).__name__, err))
+                        % (self.name, str(idx), type(err).__name__, err)
+                    )
                     raise
                 tmp = _iterable_to_dict(tmp, self._init_directed, self.name)
                 self._setitem_when_not_present(idx, tmp)
@@ -351,18 +358,22 @@ class Arc(ActiveIndexedComponent):
     def _pprint(self):
         """Return data that will be printed for this component."""
         return (
-            [("Size", len(self)),
-             ("Index", self._index_set if self.is_indexed() else None),
-             ("Active", self.active)],
+            [
+                ("Size", len(self)),
+                ("Index", self._index_set if self.is_indexed() else None),
+                ("Active", self.active),
+            ],
             self.items(),
             ("Ports", "Directed", "Active"),
-            lambda k, v: ["(%s, %s)" % v.ports if v.ports is not None else None,
-                          v.directed,
-                          v.active])
+            lambda k, v: [
+                "(%s, %s)" % v.ports if v.ports is not None else None,
+                v.directed,
+                v.active,
+            ],
+        )
 
 
 class ScalarArc(_ArcData, Arc):
-
     def __init__(self, *args, **kwds):
         _ArcData.__init__(self, self)
         Arc.__init__(self, *args, **kwds)
@@ -376,9 +387,11 @@ class ScalarArc(_ArcData, Arc):
         are still None, so you may need to repass some attributes.
         """
         if not self._constructed:
-            raise ValueError("Setting the value of arc '%s' before "
-                             "the Arc has been constructed (there "
-                             "is currently no object to set)." % self.name)
+            raise ValueError(
+                "Setting the value of arc '%s' before "
+                "the Arc has been constructed (there "
+                "is currently no object to set)." % self.name
+            )
         if len(self._data) == 0:
             self._data[None] = self
         try:
@@ -403,5 +416,3 @@ class IndexedArc(Arc):
     def expanded_block(self):
         # indexed block that contains all the blocks for this arc
         return self._expanded_block
-
-

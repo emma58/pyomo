@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -23,7 +23,6 @@ model = ConcreteModel()
 model.x = Var(initialize=1.0)
 model.y = Var(initialize=1.0)
 
-model.OBJ = Objective(expr=model.x*model.y)
+model.OBJ = Objective(expr=model.x * model.y)
 
 model.CON1 = Constraint(expr=model.y**2 == 4)
-

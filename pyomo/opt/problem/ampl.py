@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -14,13 +14,10 @@ Utilities to support the definition of optimization applications that
 can be optimized with the Acro COLIN optimizers.
 """
 
-__all__ = ['AmplModel']
-
 import os
 
-from pyomo.opt.base import (ProblemFormat,
-                            convert_problem,
-                            guess_format)
+from pyomo.opt.base import ProblemFormat, convert_problem, guess_format
+
 
 class AmplModel(object):
     """
@@ -67,4 +64,3 @@ class AmplModel(object):
             if os.path.exists(filename):
                 os.remove(filename)
             os.rename(res[0][0], filename)
-

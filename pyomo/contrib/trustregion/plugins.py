@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -19,6 +19,7 @@
 import logging
 
 logger = logging.getLogger('pyomo.contrib.trustregion')
+
 
 def load():
     from pyomo.contrib.trustregion.TRF import TrustRegionSolver

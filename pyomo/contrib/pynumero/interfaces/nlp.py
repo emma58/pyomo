@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -13,7 +13,7 @@ classes to represent nonlinear programming problems. There are two
 classes that provide different representations for the NLP.
 
 The first interface (NLP) presents the NLP in the following form
-(where all equality and inequality constaints are combined)
+(where all equality and inequality constraints are combined)
 
 minimize             f(x)
 subject to    g_L <= g(x) <= g_U
@@ -21,7 +21,7 @@ subject to    g_L <= g(x) <= g_U
 
 where x \in R^{n_x} are the primal variables,
       x_L \in R^{n_x} are the lower bounds of the primal variables,
-      x_U \in R^{n_x} are the uppper bounds of the primal variables,
+      x_U \in R^{n_x} are the upper bounds of the primal variables,
       g: R^{n_x} \rightarrow R^{n_c} are constraints (combined 
          equality and inequality)
       
@@ -36,7 +36,7 @@ subject to           h(x) = 0
 
 where x \in R^{n_x} are the primal variables,
       x_L \in R^{n_x} are the lower bounds of the primal variables,
-      x_U \in R^{n_x} are the uppper bounds of the primal variables,
+      x_U \in R^{n_x} are the upper bounds of the primal variables,
       h: R^{n_x} \rightarrow R^{n_eq} are the equality constraints
       q: R^{n_x} \rightarrow R^{n_ineq} are the inequality constraints
 
@@ -50,15 +50,14 @@ evaluate_jacobian_ineq.
 .. rubric:: Contents
 
 """
-import abc
 
-__all__ = ['NLP']
+import abc
 
 
 class NLP(object, metaclass=abc.ABCMeta):
     def __init__(self):
         pass
-    
+
     @abc.abstractmethod
     def n_primals(self):
         """
@@ -84,7 +83,7 @@ class NLP(object, metaclass=abc.ABCMeta):
         Override this to provide string names for the constraints
         """
         return [str(i) for i in range(self.n_constraints())]
-    
+
     @abc.abstractmethod
     def nnz_jacobian(self):
         """
@@ -157,7 +156,7 @@ class NLP(object, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def init_duals(self):
         """
-        Returns vector with initial values for the dual variables 
+        Returns vector with initial values for the dual variables
         of the constraints
         """
         pass
@@ -165,7 +164,7 @@ class NLP(object, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def create_new_vector(self, vector_type):
         """
-        Creates a vector of the appropriate length and structure as 
+        Creates a vector of the appropriate length and structure as
         requested
 
         Parameters
@@ -235,7 +234,7 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_obj_factor(self):
-        """Get the value of the objective function factor as 
+        """Get the value of the objective function factor as
         set by set_obj_factor. This is the value that will
         be used in calls to the evaluation of the hessian
         of the lagrangian (evaluate_hessian_lag)
@@ -244,7 +243,7 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_obj_scaling(self):
-        """ Return the desired scaling factor to use for the
+        """Return the desired scaling factor to use for the
         for the objective function. None indicates no scaling.
         This indicates potential scaling for the model, but the
         evaluation methods should return *unscaled* values
@@ -257,7 +256,7 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_primals_scaling(self):
-        """ Return the desired scaling factors to use for the
+        """Return the desired scaling factors to use for the
         for the primals. None indicates no scaling.
         This indicates potential scaling for the model, but the
         evaluation methods should return *unscaled* values
@@ -270,7 +269,7 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_constraints_scaling(self):
-        """ Return the desired scaling factors to use for the
+        """Return the desired scaling factors to use for the
         for the constraints. None indicates no scaling.
         This indicates potential scaling for the model, but the
         evaluation methods should return *unscaled* values
@@ -283,7 +282,7 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def evaluate_objective(self):
-        """Returns value of objective function evaluated at the 
+        """Returns value of objective function evaluated at the
         values given for the primal variables in set_primals
 
         Returns
@@ -294,7 +293,7 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def evaluate_grad_objective(self, out=None):
-        """Returns gradient of the objective function evaluated at the 
+        """Returns gradient of the objective function evaluated at the
         values given for the primal variables in set_primals
 
         Parameters
@@ -361,33 +360,34 @@ class NLP(object, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def report_solver_status(self, status_code, status_message):
-        """Report the solver status to NLP class using the values for the 
+        """Report the solver status to NLP class using the values for the
         primals and duals defined in the set methods"""
         pass
 
 
 class ExtendedNLP(NLP, metaclass=abc.ABCMeta):
-    """ This interface extends the NLP interface to support a presentation
+    """This interface extends the NLP interface to support a presentation
     of the problem that separates equality and inequality constraints
     """
+
     def __init__(self):
         super(ExtendedNLP, self).__init__()
         pass
-    
+
     @abc.abstractmethod
     def n_eq_constraints(self):
         """
         Returns number of equality constraints
         """
         pass
-    
+
     @abc.abstractmethod
     def n_ineq_constraints(self):
         """
         Returns number of inequality constraints
         """
         pass
-    
+
     @abc.abstractmethod
     def nnz_jacobian_eq(self):
         """
@@ -445,7 +445,7 @@ class ExtendedNLP(NLP, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def create_new_vector(self, vector_type):
         """
-        Creates a vector of the appropriate length and structure as 
+        Creates a vector of the appropriate length and structure as
         requested
 
         Parameters
@@ -502,7 +502,7 @@ class ExtendedNLP(NLP, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_eq_constraints_scaling(self):
-        """ Return the desired scaling factors to use for the
+        """Return the desired scaling factors to use for the
         for the equality constraints. None indicates no scaling.
         This indicates potential scaling for the model, but the
         evaluation methods should return *unscaled* values
@@ -515,7 +515,7 @@ class ExtendedNLP(NLP, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_ineq_constraints_scaling(self):
-        """ Return the desired scaling factors to use for the
+        """Return the desired scaling factors to use for the
         for the inequality constraints. None indicates no scaling.
         This indicates potential scaling for the model, but the
         evaluation methods should return *unscaled* values
@@ -591,4 +591,3 @@ class ExtendedNLP(NLP, metaclass=abc.ABCMeta):
         matrix_like
         """
         pass
-

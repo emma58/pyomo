@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -10,6 +10,7 @@
 #  ___________________________________________________________________________
 
 import pytest
+
 
 def pytest_runtest_setup(item):
     """
@@ -45,8 +46,9 @@ def pytest_runtest_setup(item):
     elif markeroption:
         return
     elif item_markers:
-        if (not set(implicit_markers).issubset(item_markers)
-            and not item_markers.issubset(set(extended_implicit_markers))):
+        if not set(implicit_markers).issubset(
+            item_markers
+        ) and not item_markers.issubset(set(extended_implicit_markers)):
             pytest.skip('SKIPPED: Only running default, solver, and unmarked tests.')
 
 

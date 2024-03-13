@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 #
 # Example from Scipy odeint examples
 #
@@ -32,10 +43,12 @@ def create_model():
 
     def _diffeq1(m, t):
         return m.domegadt[t] == -m.b * m.omega[t] - m.c * sin(m.theta[t])
+
     m.diffeq1 = Constraint(m.t, rule=_diffeq1)
 
     def _diffeq2(m, t):
         return m.dthetadt[t] == m.omega[t]
+
     m.diffeq2 = Constraint(m.t, rule=_diffeq2)
 
     return m
@@ -77,6 +90,7 @@ def plot_result(m, sim, tsim, profiles):
     plt.xlabel('t')
     plt.legend(loc='best')
     plt.show()
+
 
 if __name__ == "__main__":
     model = create_model()

@@ -1,3 +1,14 @@
+#  ___________________________________________________________________________
+#
+#  Pyomo: Python Optimization Modeling Objects
+#  Copyright (c) 2008-2024
+#  National Technology and Engineering Solutions of Sandia, LLC
+#  Under the terms of Contract DE-NA0003525 with National Technology and
+#  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
+#  rights in this software.
+#  This software is distributed under the 3-clause BSD License.
+#  ___________________________________________________________________________
+
 import json
 import pyomo.environ as pyo
 from warehouse_model import create_wl_model
@@ -32,7 +43,7 @@ for i in model.WH:
 # @:printloopset
 
 # @printslicing:
-for v in model.x['Ashland',:]:
+for v in model.x['Ashland', :]:
     print('{0} = {1}'.format(v, pyo.value(v)))
 # @:printslicing
 

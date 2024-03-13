@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,15 +9,14 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-__all__ = ['ProblemInformation', 'ProblemSense']
-
 import enum
 from pyomo.opt.results.container import MapContainer
 
+
 class ProblemSense(str, enum.Enum):
-    unknown='unknown'
-    minimize='minimize'
-    maximize='maximize'
+    unknown = 'unknown'
+    minimize = 'minimize'
+    maximize = 'maximize'
 
     # Overloading __str__ is needed to match the behavior of the old
     # pyutilib.enum class (removed June 2020). There are spots in the
@@ -29,7 +28,6 @@ class ProblemSense(str, enum.Enum):
 
 
 class ProblemInformation(MapContainer):
-
     def __init__(self):
         MapContainer.__init__(self)
         self.declare('name')
@@ -43,4 +41,3 @@ class ProblemInformation(MapContainer):
         self.declare('number_of_continuous_variables')
         self.declare('number_of_nonzeros')
         self.declare('sense', value=ProblemSense.unknown, required=True)
-

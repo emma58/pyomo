@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2022
+#  Copyright (c) 2008-2024
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -11,6 +11,7 @@
 
 from pyomo.core import Var
 from pyomo.core.base.indexed_component import UnindexedComponent_set
+
 
 def create_var(comp, name, block, index_set=None):
     if index_set is None:
@@ -22,6 +23,7 @@ def create_var(comp, name, block, index_set=None):
     new_var = Var(index_set)
     block.add_component(name, new_var)
     return new_var
+
 
 def _tighten(src, dest):
     starting_lb = dest.lb
@@ -38,6 +40,7 @@ def _tighten(src, dest):
             dest.setub(src.ub)
         else:
             dest.setub(min(starting_ub, src.ub))
+
 
 def tighten_var_domain(comp, new_var, index_set=None):
     if index_set is None:
@@ -61,6 +64,7 @@ def tighten_var_domain(comp, new_var, index_set=None):
             pass
 
     return new_var
+
 
 def replicate_var(comp, name, block, index_set=None):
     """
