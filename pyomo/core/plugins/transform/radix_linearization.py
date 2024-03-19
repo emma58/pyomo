@@ -9,31 +9,43 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-from pyomo.core.expr import ProductExpression, PowExpression
-from pyomo.core.expr.numvalue import as_numeric
-from pyomo.core import Binary, value
+from pyomo.common import deprecated
+from pyomo.common.collections import ComponentMap
+from pyomo.common.config import (
+    ConfigDict,
+    ConfigValue,
+    document_kwargs_from_configdict,
+    PositiveInt,
+)
+#from pyomo.core.expr import ProductExpression, PowExpression
+#from pyomo.core.expr.numvalue import as_numeric
+#from pyomo.core import Binary, value
 from pyomo.core.base import (
     Transformation,
     TransformationFactory,
     Var,
     Constraint,
-    ConstraintList,
     Block,
-    RangeSet,
 )
-from pyomo.core.base.var import _VarData
+from pyomo.core.util import target_list
+#from pyomo.core.base.var import _VarData
+from pyomo.repn.quadratic import QuadraticRepnVisitor
 
 import logging
 
 logger = logging.getLogger(__name__)
 
+##DEBUG
+from pytest import set_trace
+
 
 @TransformationFactory.register(
-    "core.radix_linearization",
-    doc="Linearize bilinear and quadratic terms through "
+    "core.radix_discretization",
+    doc="Discretize bilinear and (optionally) quadratic terms through "
     "radix discretization (multiparametric disaggregation)",
 )
-class RadixLinearization(Transformation):
+@document_kwargs_from_configdict('CONFIG')
+class RadixDiscretization(Transformation):
     """
     This plugin generates linear relaxations of bilinear problems using
     the multiparametric disaggregation technique of Kolodziej, Castro,
@@ -44,44 +56,96 @@ class RadixLinearization(Transformation):
        disaggregation technique."  J.Glob.Optim 57 pp.1039-1063. 2013.
        (DOI 10.1007/s10898-012-0022-1)
     """
+    CONFIG = ConfigDict('core.radix_discretization')
+    CONFIG.declare(
+        'precision',
+        ConfigValue(
+            default=8,
+            domain=int,
+            description="Precision at which to discretely approximate continuous Vars",
+            doc="""
+            
+            This specifies the precision (how many powers of 10) at which 
+            continuous Vars appearing in bilinear terms are approximated.
+            """
+        ),
+    )
+    CONFIG.declare(
+        'basis',
+        ConfigValue(
+            default=10,
+            domain=PositiveInt,
+            description="Basis",
+            doc="""
 
-    def _create_using(self, model, **kwds):
-        precision = kwds.pop('precision', 8)
-        user_discretize = kwds.pop('discretize', set())
-        verbose = kwds.pop('verbose', False)
+            Basis for the discretization. Default is 10, but any integer greater
+            than 2 is allowed.
+            """
+        ),
+    )
+    CONFIG.declare(
+        'verbose',
+        ConfigValue(
+            default=False,
+            domain=bool,
+            description="Enable verbose output during transformation",
+        ),
+    )
+    CONFIG.declare(
+        'discretize',
+        ConfigValue(
+            default=None,
+            #domain=TODO,
+            description="Set of Vars to choose for discretization",
+        ),
+    )
+    CONFIG.declare(
+        'targets',
+        ConfigValue(
+            default=None,
+            domain=target_list,
+            description="target or list of targets that will be transformed",
+        ),
+    )
 
-        M = model.clone()
+    def _apply_to(self, model, **kwds):
+        self._config = self.CONFIG(kwds.pop('options', {}))
+        self._config.set_value(kwds)
 
         # TODO: if discretize is not empty, we must translate those
         # components over to the components on the cloned instance
         _discretize = {}
-        if user_discretize:
-            for _var in user_discretize:
-                _v = M.find_component(_var.name)
-                if _v.component() is _v:
-                    for _vv in _v.itervalues():
-                        _discretize.setdefault(id(_vv), len(_discretize))
-                else:
-                    _discretize.setdefault(id(_v), len(_discretize))
+        # if user_discretize:
+        #     for _var in user_discretize:
+        #         _v = M.find_component(_var.name)
+        #         if _v.component() is _v:
+        #             for _vv in _v.itervalues():
+        #                 _discretize.setdefault(id(_vv), len(_discretize))
+        #         else:
+        #             _discretize.setdefault(id(_v), len(_discretize))
 
         # Iterate over all Constraints and identify the bilinear and
         # quadratic terms
+        var_map = {}
+        visitor = QuadraticRepnVisitor({}, var_map, {}, None)
         bilinear_terms = []
         quadratic_terms = []
-        for constraint in M.component_map(Constraint, active=True).itervalues():
-            for cname, c in constraint._data.iteritems():
-                if c.body.polynomial_degree() != 2:
-                    continue
-                self._collect_bilinear(c.body, bilinear_terms, quadratic_terms)
+        # ESJ TODO: targets
+        for constraint in model.component_data_objects(Constraint, active=True):
+            repn = visitor.walk_expression(constraint.body)
+            if repn.nonlinear:
+                continue
+            if repn.quadratic:
+                self._collect_bilinear(repn, var_map, bilinear_terms, quadratic_terms)
 
         # We want to find the (minimum?) number of variables to
         # discretize so that we cover all the bilinearities -- without
         # discretizing both sides of any single bilinear expression.
         # First step: figure out how many expressions each term appears
         # in
-        _counts = {}
+        _counts = ComponentMap()
         for q in quadratic_terms:
-            if not q[1].is_continuous():
+            if not q[0].is_continuous():
                 continue
             _id = id(q[1])
             if _id not in _counts:
@@ -167,8 +231,6 @@ class RadixLinearization(Transformation):
         for _expr, _x1, _x2 in bilinear_terms:
             self._discretize_term(_expr, _x1, _x2, _block, _discretize, _known_bilinear)
 
-        # Return the discretized instance!
-        return M
 
     def _discretize_variable(self, b, v, idx):
         _lb, _ub = v.bounds
@@ -259,35 +321,55 @@ class RadixLinearization(Transformation):
 
         return _w
 
-    def _collect_bilinear(self, expr, bilin, quad):
-        if not expr.is_expression_type():
-            return
-        if type(expr) is ProductExpression:
-            if len(expr._numerator) != 2:
-                for e in expr._numerator:
-                    self._collect_bilinear(e, bilin, quad)
-                # No need to check denominator, as this is poly_degree==2
-                return
-            if not isinstance(expr._numerator[0], _VarData) or not isinstance(
-                expr._numerator[1], _VarData
-            ):
-                raise RuntimeError("Cannot yet handle complex subexpressions")
-            if expr._numerator[0] is expr._numerator[1]:
-                quad.append((expr, expr._numerator[0]))
-            else:
-                bilin.append((expr, expr._numerator[0], expr._numerator[1]))
-            return
-        if type(expr) is PowExpression and value(expr._args[1]) == 2:
-            # Note: directly testing the value of the exponent above is
-            # safe: we have already verified that this expression is
-            # polynominal, so the exponent must be constant.
-            tmp = ProductExpression()
-            tmp._numerator = [expr._args[0], expr._args[0]]
-            tmp._denominator = []
-            expr._args = (tmp, as_numeric(1))  # THIS CODE DOES NOT WORK
-            # quad.append( (tmp, tmp._args[0]) )
-            self._collect_bilinear(tmp, bilin, quad)
-            return
-        # All other expression types
-        for e in expr._args:
-            self._collect_bilinear(e, bilin, quad)
+    def _collect_bilinear(self, repn, var_map, bilinear, quadratic):
+        for (i, j), coef in repn.quadratic.items():
+            x = var_map[i]
+            y = var_map[j]
+            if x is y:
+                quadratic.append((x, coef))
+            bilinear.append((x, y, coef))
+
+        # if type(expr) is ProductExpression:
+        #     if len(expr._numerator) != 2:
+        #         for e in expr._numerator:
+        #             self._collect_bilinear(e, bilin, quad)
+        #         # No need to check denominator, as this is poly_degree==2
+        #         return
+        #     if not isinstance(expr._numerator[0], _VarData) or not isinstance(
+        #         expr._numerator[1], _VarData
+        #     ):
+        #         raise RuntimeError("Cannot yet handle complex subexpressions")
+        #     if expr._numerator[0] is expr._numerator[1]:
+        #         quad.append((expr, expr._numerator[0]))
+        #     else:
+        #         bilin.append((expr, expr._numerator[0], expr._numerator[1]))
+        #     return
+        # if type(expr) is PowExpression and value(expr._args[1]) == 2:
+        #     # Note: directly testing the value of the exponent above is
+        #     # safe: we have already verified that this expression is
+        #     # polynominal, so the exponent must be constant.
+        #     tmp = ProductExpression()
+        #     tmp._numerator = [expr._args[0], expr._args[0]]
+        #     tmp._denominator = []
+        #     expr._args = (tmp, as_numeric(1))  # THIS CODE DOES NOT WORK
+        #     # quad.append( (tmp, tmp._args[0]) )
+        #     self._collect_bilinear(tmp, bilin, quad)
+        #     return
+        # # All other expression types
+        # for e in expr._args:
+        #     self._collect_bilinear(e, bilin, quad)
+
+
+@TransformationFactory.register(
+    "core.radix_linearization",
+    doc="[DEPRECATED] please use 'core.radix_discretization'",
+)
+@deprecated(
+    "The 'core.radix_linearization' transformation is deprecated. "
+    "Please use 'core.radix_discretization' instead.",
+    logger='pyomo.core',
+    version='TBD'
+)
+class RadixLinearization(RadixDiscretization):
+    def __init__(self):
+        super(RadixLinearization, self).__init__()
