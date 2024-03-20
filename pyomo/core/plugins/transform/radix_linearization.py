@@ -10,13 +10,14 @@
 #  ___________________________________________________________________________
 
 from pyomo.common import deprecated
-from pyomo.common.collections import ComponentMap
+from pyomo.common.collections import ComponentMap, ComponentSet, DefaultComponentMap
 from pyomo.common.config import (
     ConfigDict,
     ConfigValue,
     document_kwargs_from_configdict,
     PositiveInt,
 )
+from pyomo.common.modeling import unique_component_name
 #from pyomo.core.expr import ProductExpression, PowExpression
 #from pyomo.core.expr.numvalue import as_numeric
 #from pyomo.core import Binary, value
@@ -26,6 +27,8 @@ from pyomo.core.base import (
     Var,
     Constraint,
     Block,
+    Set,
+    Binary
 )
 from pyomo.core.util import target_list
 #from pyomo.core.base.var import _VarData
@@ -114,7 +117,7 @@ class RadixDiscretization(Transformation):
 
         # TODO: if discretize is not empty, we must translate those
         # components over to the components on the cloned instance
-        _discretize = {}
+        _discretize = ComponentMap()
         # if user_discretize:
         #     for _var in user_discretize:
         #         _v = M.find_component(_var.name)
@@ -136,61 +139,46 @@ class RadixDiscretization(Transformation):
             if repn.nonlinear:
                 continue
             if repn.quadratic:
-                self._collect_bilinear(repn, var_map, bilinear_terms, quadratic_terms)
+                self._collect_bilinear(repn, constraint, var_map,
+                                       bilinear_terms, quadratic_terms)
 
         # We want to find the (minimum?) number of variables to
         # discretize so that we cover all the bilinearities -- without
         # discretizing both sides of any single bilinear expression.
         # First step: figure out how many expressions each term appears
         # in
-        _counts = ComponentMap()
-        for q in quadratic_terms:
-            if not q[0].is_continuous():
-                continue
-            _id = id(q[1])
-            if _id not in _counts:
-                _counts[_id] = (q[1], set())
-            _counts[_id][1].add(_id)
-        for bi in bilinear_terms:
-            for i in (0, 1):
-                if not bi[i + 1].is_continuous():
-                    continue
-                _id = id(bi[i + 1])
-                if _id not in _counts:
-                    _counts[_id] = (bi[i + 1], set())
-                _counts[_id][1].add(id(bi[2 - i]))
+        _counts = DefaultComponentMap(ComponentSet)
+        _bilinearities = DefaultComponentMap(ComponentSet)
+        for v, cons, idx in quadratic_terms:
+            if v.is_continuous():
+                _counts[v].add((v, cons, idx))
+                _bilinearities[v].add(v)
+        for v1, v2, cons, idx in bilinear_terms:
+            if v1.is_continuous():
+                _counts[v1].add((v2, cons, idx))
+                _bilinearities[v1].add(v2)
+            if v2.is_continuous():
+                _counts[v2].add((v1, cons, idx))
+                _bilinearities[v2].add(v1)
 
-        _tmp_counts = dict(_counts)
+        _tmp_bilinearities = ComponentMap(_bilinearities)
         # First, remove the variables that the user wants to have discretized
-        for _id in _discretize:
-            for _i in _tmp_counts[_id][1]:
-                if _i == _id:
-                    continue
-                _tmp_counts[_i][1].remove(_id)
-            del _tmp_counts[_id]
-        # All quadratic terms must be discretized (?)
-        # for q in quadratic_terms:
-        #    _id = id(q[1])
-        #    if _id not in _tmp_counts:
-        #        continue
-        #    _discretize.setdefault(_id, len(_discretize))
-        #    for _i in _tmp_counts[_id][1]:
-        #        if _i == _id:
-        #            continue
-        #        _tmp_counts[_i][1].remove(_id)
-        #    del _tmp_counts[_id]
+        for v in _discretize:
+            if v in _tmp_bilinearities:
+                del _tmp_bilinearities[v]
 
         # Now pick a (minimal) subset of the terms in bilinear expressions
-        while _tmp_counts:
-            _ct, _id = max((len(_tmp_counts[i][1]), i) for i in _tmp_counts)
+        while _tmp_bilinearities:
+            _ct, _id = max((len(_tmp_bilinearities[v]), id(v)) for v in
+                           _tmp_bilinearities)
+            v = var_map[_id]
             if not _ct:
                 break
-            _discretize.setdefault(_id, len(_discretize))
-            for _i in list(_tmp_counts[_id][1]):
-                if _i == _id:
-                    continue
-                _tmp_counts[_i][1].remove(_id)
-            del _tmp_counts[_id]
+            _discretize[v] = len(_discretize)
+            for v2 in _tmp_bilinearities[v]:
+                if v2 in _tmp_bilinearities:
+                    _tmp_bilinearities[v2].remove(v)
+            del _tmp_bilinearities[v]
 
         #
         # Discretize things
@@ -198,25 +186,32 @@ class RadixDiscretization(Transformation):
 
         # Define a block (namespace) for holding the disaggregated
         # variables and new constraints
-        if False:  # Set to true when the LP writer is fixed
-            M._radix_linearization = Block()
-            _block = M._radix_linearization
-        else:
-            _block = M
-        _block.DISCRETIZATION = RangeSet(precision)
-        _block.DISCRETIZED_VARIABLES = RangeSet(0, len(_discretize) - 1)
-        _block.z = Var(
-            _block.DISCRETIZED_VARIABLES, _block.DISCRETIZATION, within=Binary
-        )
-        _block.dv = Var(_block.DISCRETIZED_VARIABLES, bounds=(0, 2**-precision))
+
+        # TODO: This doesn't work on hierarchical models... In fact, we have
+        # bigger issues in that case because we will have to reference the
+        # linearization constraints on other Blocks depending on where the
+        # Constraints actually live...
+        trans_block_name = unique_component_name(
+            model, '_pyomo_core_radix_linearization')
+        trans_block = Block()
+        model.add_component(trans_block_name, trans_block)
+        precision = self._config.precision
+        
+        trans_block.DISCRETIZATION = Set(initialize=range(1, precision + 1))
+        trans_block.DISCRETIZED_VARIABLES = Set(initialize=range(len(_discretize)))
+        trans_block.z = Var(trans_block.DISCRETIZED_VARIABLES,
+                            trans_block.DISCRETIZATION, domain=Binary)
+        # ESJ: Why are these bounds right?
+        trans_block.dv = Var(trans_block.DISCRETIZED_VARIABLES, bounds=(0,
+                                                                        2**-precision))
 
         # Actually discretize the terms we have marked for discretization
-        for _id, _idx in _discretize.items():
-            if verbose:
+        for v, _idx in _discretize.items():
+            if self._config.verbose:
                 logger.info(
-                    "Discretizing variable %s as %s" % (_counts[_id][0].name, _idx)
+                    "Discretizing variable %s as %s" % (v, _idx)
                 )
-            self._discretize_variable(_block, _counts[_id][0], _idx)
+            self._discretize_variable(trans_block, v, _idx)
 
         _known_bilinear = {}
         # For each quadratic term, if it hasn't been discretized /
@@ -230,7 +225,6 @@ class RadixDiscretization(Transformation):
         # use...
         for _expr, _x1, _x2 in bilinear_terms:
             self._discretize_term(_expr, _x1, _x2, _block, _discretize, _known_bilinear)
-
 
     def _discretize_variable(self, b, v, idx):
         _lb, _ub = v.bounds
@@ -321,43 +315,15 @@ class RadixDiscretization(Transformation):
 
         return _w
 
-    def _collect_bilinear(self, repn, var_map, bilinear, quadratic):
+    def _collect_bilinear(self, repn, constraint, var_map, bilinear, quadratic):
+        idx = 0
         for (i, j), coef in repn.quadratic.items():
             x = var_map[i]
             y = var_map[j]
             if x is y:
-                quadratic.append((x, coef))
-            bilinear.append((x, y, coef))
-
-        # if type(expr) is ProductExpression:
-        #     if len(expr._numerator) != 2:
-        #         for e in expr._numerator:
-        #             self._collect_bilinear(e, bilin, quad)
-        #         # No need to check denominator, as this is poly_degree==2
-        #         return
-        #     if not isinstance(expr._numerator[0], _VarData) or not isinstance(
-        #         expr._numerator[1], _VarData
-        #     ):
-        #         raise RuntimeError("Cannot yet handle complex subexpressions")
-        #     if expr._numerator[0] is expr._numerator[1]:
-        #         quad.append((expr, expr._numerator[0]))
-        #     else:
-        #         bilin.append((expr, expr._numerator[0], expr._numerator[1]))
-        #     return
-        # if type(expr) is PowExpression and value(expr._args[1]) == 2:
-        #     # Note: directly testing the value of the exponent above is
-        #     # safe: we have already verified that this expression is
-        #     # polynominal, so the exponent must be constant.
-        #     tmp = ProductExpression()
-        #     tmp._numerator = [expr._args[0], expr._args[0]]
-        #     tmp._denominator = []
-        #     expr._args = (tmp, as_numeric(1))  # THIS CODE DOES NOT WORK
-        #     # quad.append( (tmp, tmp._args[0]) )
-        #     self._collect_bilinear(tmp, bilin, quad)
-        #     return
-        # # All other expression types
-        # for e in expr._args:
-        #     self._collect_bilinear(e, bilin, quad)
+                quadratic.append((x, constraint, idx))
+            bilinear.append((x, y, constraint, idx))
+            idx += 1
 
 
 @TransformationFactory.register(
