@@ -16,6 +16,7 @@ import logging
 
 from pyomo.environ import (
     TransformationFactory,
+    Binary,
     Block,
     Set,
     Constraint,
@@ -46,6 +47,8 @@ from pyomo.repn.linear import LinearRepnVisitor
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 import pyomo.gdp.tests.models as models
 import pyomo.gdp.tests.common_tests as ct
+
+from pyomo.util.vars_from_expressions import get_vars_from_components
 
 import random
 from io import StringIO
@@ -924,6 +927,23 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         self.assertIs(
             transformed[0].parent_block(), m.b.simpledisj2.transformation_block
         )
+
+    def test_one_indicator_var_for_two_term(self):
+        m = ConcreteModel()
+        m.x = Var(bounds=(1, 14))
+        m.disjunction = Disjunction(expr=[[m.x == 3,], [m.x >= 4]]) 
+
+        hull = TransformationFactory('gdp.hull')
+        hull.apply_to(m, one_indicator_for_two_term=True)
+
+        binaries = []
+        for v in get_vars_from_components(m, (Constraint, Objective),
+                                          active=True, descend_into=Block):
+            if v.domain == Binary:
+                binaries.append(v)
+
+        self.assertEqual(len(binaries), 1)
+        self.assertIs(binaries[0], m.disjunction.disjuncts[0].binary_indicator_var)
 
 
 class MultiTermDisj(unittest.TestCase, CommonTests):
