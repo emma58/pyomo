@@ -50,7 +50,6 @@ from pyomo.gdp.util import (
     is_child_of,
     _warn_for_active_disjunct,
 )
-from pyomo.core.util import target_list
 from pyomo.util.vars_from_expressions import get_vars_from_components
 from weakref import ref as weakref_ref
 
@@ -108,22 +107,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
     corresponding OR or XOR constraint.
     """
 
-    CONFIG = cfg.ConfigDict('gdp.hull')
-    CONFIG.declare(
-        'targets',
-        cfg.ConfigValue(
-            default=None,
-            domain=target_list,
-            description="target or list of targets that will be relaxed",
-            doc="""
-
-        This specifies the target or list of targets to relax as either a
-        component or a list of components. If None (default), the entire model
-        is transformed. Note that if the transformation is done out of place,
-        the list of targets should be attached to the model before it is cloned,
-        and the list will specify the targets on the cloned instance.""",
-        ),
-    )
+    CONFIG = GDP_to_MIP_Transformation.CONFIG()
     CONFIG.declare(
         'perspective function',
         cfg.ConfigValue(
@@ -309,6 +293,12 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         # change their active status when we transform them, but we still need
         # this list after the fact.
         active_disjuncts = [disj for disj in obj.disjuncts if disj.active]
+        two_term = False
+        if self._config.one_indicator_for_two_term and len(active_disjuncts) == 2:
+            two_term = True
+            binary = active_disjuncts[0].binary_indicator_var
+            self._indicator_var_expr[active_disjuncts[0]] = binary
+            self._indicator_var_expr[active_disjuncts[1]] = 1 - binary
 
         # We put *all* transformed things on the parent Block of this
         # disjunction. We'll mark the disaggregated Vars as local, but beyond
@@ -405,7 +395,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
         parent_local_var_list = self._get_local_var_list(parent_disjunct)
         or_expr = 0
         for disjunct in obj.disjuncts:
-            or_expr += disjunct.indicator_var.get_associated_binary()
+            or_expr += self._get_indicator_var(disjunct)
             if disjunct.active:
                 self._transform_disjunct(
                     obj=disjunct,
@@ -416,10 +406,11 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     parent_disjunct_local_vars=local_vars_by_disjunct[parent_disjunct],
                     disjunct_disaggregated_var_map=disjunct_disaggregated_var_map,
                 )
-        xorConstraint.add(index, (or_expr, 1))
-        # map the DisjunctionData to its XOR constraint to mark it as
-        # transformed
-        obj._algebraic_constraint = weakref_ref(xorConstraint[index])
+        if not two_term:
+            xorConstraint.add(index, (or_expr, 1))
+            # map the DisjunctionData to its XOR constraint to mark it as
+            # transformed
+            obj._algebraic_constraint = weakref_ref(xorConstraint[index])
 
         # Now add the reaggregation constraints
         for var in all_vars_to_disaggregate:
@@ -439,7 +430,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     parent_local_var_list.append(disaggregated_var)
                 local_vars_by_disjunct[parent_disjunct].add(disaggregated_var)
                 var_free = 1 - sum(
-                    disj.indicator_var.get_associated_binary()
+                    self._get_indicator_var(disj)
                     for disj in disjuncts_var_appears_in[var]
                 )
                 self._declare_disaggregated_var_bounds(
@@ -546,7 +537,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 bigmConstraint=bigmConstraint,
                 lb_idx='lb',
                 ub_idx='ub',
-                var_free_indicator=obj.indicator_var.get_associated_binary(),
+                var_free_indicator=self._get_indicator_var(obj),
             )
             # update the bigm constraint mappings
             data_dict = disaggregatedVar.parent_block().private_data()
@@ -575,7 +566,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                 bigmConstraint=bigmConstraint,
                 lb_idx='lb',
                 ub_idx='ub',
-                var_free_indicator=obj.indicator_var.get_associated_binary(),
+                var_free_indicator=self._get_indicator_var(obj),
             )
             # update the bigm constraint mappings
             data_dict = var.parent_block().private_data()
@@ -688,7 +679,7 @@ class Hull_Reformulation(GDP_to_MIP_Transformation):
                     c.body, substitute=zero_substitute_map
                 )
 
-            y = disjunct.binary_indicator_var
+            y = self._get_indicator_var(disjunct)
             if NL:
                 if mode == "LeeGrossmann":
                     sub_expr = clone_without_expression_components(

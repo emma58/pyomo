@@ -13,11 +13,13 @@ from functools import wraps
 
 from pyomo.common.autoslots import AutoSlots
 from pyomo.common.collections import ComponentMap, DefaultComponentMap
+from pyomo.common.config import ConfigDict, ConfigValue
 from pyomo.common.log import is_debug_set
 from pyomo.common.modeling import unique_component_name
 
 from pyomo.core.base import Transformation, TransformationFactory
 from pyomo.core.base.external import ExternalFunction
+from pyomo.core.util import target_list
 from pyomo.core import (
     Any,
     Block,
@@ -64,6 +66,34 @@ class GDP_to_MIP_Transformation(Transformation):
     """
     Base class for transformations from GDP to MIP
     """
+    CONFIG = ConfigDict()
+    CONFIG.declare(
+        'targets',
+        ConfigValue(
+            default=None,
+            domain=target_list,
+            description="target or list of targets that will be relaxed",
+            doc="""
+
+        This specifies the target or list of targets to relax as either a
+        component or a list of components. If None (default), the entire model
+        is transformed. Note that if the transformation is done out of place,
+        the list of targets should be attached to the model before it is cloned,
+        and the list will specify the targets on the cloned instance.""",
+        ),
+    )
+    CONFIG.declare(
+        'one_indicator_for_two_term',
+        ConfigValue(
+            default=False,
+            domain=bool,
+            description="Whether or not to reduce to one indicator binary variable "
+            "in the transformed model for two-term Disjunctions",
+            doc="""
+            TODO
+            """
+        ),
+    )
 
     def __init__(self, logger):
         """Initialize transformation object."""
@@ -102,10 +132,12 @@ class GDP_to_MIP_Transformation(Transformation):
         self._generate_debug_messages = False
         self._transformation_blocks = {}
         self._algebraic_constraints = {}
+        self._indicator_var_expr = {}
 
     def _restore_state(self):
         self._transformation_blocks.clear()
         self._algebraic_constraints.clear()
+        self._indicator_var_expr = {}
         if hasattr(self, '_config'):
             del self._config
 
@@ -120,6 +152,11 @@ class GDP_to_MIP_Transformation(Transformation):
         self._config = self.CONFIG(kwds.pop('options', {}))
         self._config.set_value(kwds)
         self._generate_debug_messages = is_debug_set(self.logger)
+
+    def _get_indicator_var(self, disjunct):
+        if disjunct in self._indicator_var_expr:
+            return self._indicator_var_expr[disjunct]
+        return disjunct.binary_indicator_var
 
     def _transform_logical_constraints(self, instance, targets):
         # transform any logical constraints that might be anywhere on the stuff
