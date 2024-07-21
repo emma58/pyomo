@@ -51,7 +51,6 @@ from pyomo.gdp.plugins.bigm_mixin import (
 from pyomo.gdp.plugins.gdp_to_mip_transformation import GDP_to_MIP_Transformation
 from pyomo.gdp.transformed_disjunct import _TransformedDisjunct
 from pyomo.gdp.util import is_child_of, _get_constraint_transBlock, _to_dict
-from pyomo.core.util import target_list
 from pyomo.network import Port
 from pyomo.repn import generate_standard_repn
 from weakref import ref as weakref_ref, ReferenceType
@@ -122,22 +121,7 @@ class BigM_Transformation(GDP_to_MIP_Transformation, _BigM_MixIn):
 
     """
 
-    CONFIG = ConfigDict("gdp.bigm")
-    CONFIG.declare(
-        'targets',
-        ConfigValue(
-            default=None,
-            domain=target_list,
-            description="target or list of targets that will be relaxed",
-            doc="""
-
-        This specifies the list of components to relax. If None (default), the
-        entire model is transformed. Note that if the transformation is done out
-        of place, the list of targets should be attached to the model before it
-        is cloned, and the list will specify the targets on the cloned
-        instance.""",
-        ),
-    )
+    CONFIG = GDP_to_MIP_Transformation.CONFIG()
     CONFIG.declare(
         'bigM',
         ConfigValue(

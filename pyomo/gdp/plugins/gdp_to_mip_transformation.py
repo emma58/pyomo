@@ -94,6 +94,16 @@ class GDP_to_MIP_Transformation(Transformation):
             """
         ),
     )
+    CONFIG.declare(
+        'omit_var_references',
+        ConfigValue(
+            default=False,
+            domain=bool,
+            description="Omit creating References to Vars declared in inactive parts "
+            "of the tree during the transformation. This is safe to turn to True "
+            "except when using the Baron or GAMS writers to solve the model."
+        ),
+    )
 
     def __init__(self, logger):
         """Initialize transformation object."""
@@ -306,12 +316,14 @@ class GDP_to_MIP_Transformation(Transformation):
         # accessible when the Disjunct is deactivated. Note that in hull, we do
         # this after we have moved up the transformation blocks for nested
         # disjunctions, so that we don't have duplicate references.
-        varRefBlock = disjunct._transformation_block().localVarReferences
-        for v in block.component_objects(Var, descend_into=Block, active=None):
-            varRefBlock.add_component(
-                unique_component_name(varRefBlock, v.getname(fully_qualified=False)),
-                Reference(v),
-            )
+        if not self._config.omit_var_references:
+            varRefBlock = disjunct._transformation_block().localVarReferences
+            for v in block.component_objects(Var, descend_into=Block, active=None):
+                varRefBlock.add_component(
+                    unique_component_name(varRefBlock,
+                                          v.getname(fully_qualified=False)),
+                    Reference(v),
+                )
 
         # Now look through the component map of block and transform everything
         # we have a handler for. Yell if we don't know how to handle it. (Note
