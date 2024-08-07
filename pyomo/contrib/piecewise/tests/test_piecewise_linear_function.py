@@ -75,6 +75,8 @@ class TestPiecewiseLinearFunction2D(unittest.TestCase):
             places=7,
         )
 
+        self.assertEqual(pw.num_pieces, 3)
+
     def check_x_squared_approx(self, pw, x):
         self.assertEqual(len(pw._simplices), 3)
         self.assertEqual(len(pw._linear_functions), 3)
@@ -92,6 +94,8 @@ class TestPiecewiseLinearFunction2D(unittest.TestCase):
         assertExpressionsStructurallyEqual(
             self, pw._linear_functions[2](x), 16 * x - 60, places=7
         )
+
+        self.assertEqual(pw.num_pieces, 3)
 
     def test_pw_linear_approx_of_ln_x_simplices(self):
         m = self.make_ln_x_model()

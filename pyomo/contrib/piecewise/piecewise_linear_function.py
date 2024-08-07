@@ -50,6 +50,15 @@ class PiecewiseLinearFunctionData(BlockData):
             self._points = []
             self._linear_functions = []
 
+    @property
+    def num_pieces(self):
+        """
+        Returns the number of domain-linear function pairs that define this piecewise-
+        linear function. Note that it is possible for contiguous domains to have the
+        same function, and in that case they will each be counted by this metric.
+        """
+        return len(self._linear_functions)
+
     def __call__(self, *args):
         """
         Returns a PiecewiseLinearExpression which is an instance of this
