@@ -10,7 +10,7 @@
 #  ___________________________________________________________________________
 
 from pyomo.contrib.piecewise.transform.reduced_inner_representation_gdp import (
-    ReducedInnerRepresentationGDPTransformation
+    ReducedInnerRepresentationGDPTransformation,
 )
 from pyomo.core import Constraint
 from pyomo.core.base import TransformationFactory
@@ -31,8 +31,9 @@ class AccidentalReducedInnerRepresentationGDPTransformation(
     CONFIG = ReducedInnerRepresentationGDPTransformation.CONFIG()
     _transformation_name = 'pw_linear_accidental_reduced_inner_repn'
 
-    def _add_disjunctive_constraints(self, disj, transBlock, extreme_pts,
-                                     num_extreme_pts):
+    def _add_disjunctive_constraints(
+        self, disj, transBlock, extreme_pts, num_extreme_pts
+    ):
         disj.lambdas_sum_to_one = Constraint(
             expr=sum(transBlock.lambdas[i] for i in extreme_pts) >= 1
         )
