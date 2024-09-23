@@ -30,6 +30,9 @@ from pyomo.contrib.piecewise.transform.multiple_choice import (
 from pyomo.contrib.piecewise.transform.reduced_inner_representation_gdp import (
     ReducedInnerRepresentationGDPTransformation,
 )
+from pyomo.contrib.piecewise.transform.accidental_reduced_inner_representation import (
+    AccidentalReducedInnerRepresentationGDPTransformation,
+)
 from pyomo.contrib.piecewise.transform.convex_combination import (
     ConvexCombinationTransformation,
 )
