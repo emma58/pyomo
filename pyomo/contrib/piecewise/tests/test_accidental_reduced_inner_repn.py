@@ -29,8 +29,11 @@ class TestTransformPiecewiseModelToAccidentalReducedInnerRepnGDP(unittest.TestCa
         self.assertIsInstance(d.lambdas_sum_to_one, Constraint)
         self.assertEqual(len(d.lambdas_sum_to_one), 1)
         transBlock = d.parent_block()
-        assertExpressionsEqual(self, d.lambdas_sum_to_one.expr,
-                               sum(transBlock.lambdas[i] for i in pts) >= 1)
+        assertExpressionsEqual(
+            self,
+            d.lambdas_sum_to_one.expr,
+            sum(transBlock.lambdas[i] for i in pts) >= 1,
+        )
 
     def check_log_trans_block_structure(self, transBlock):
         m = transBlock.model()
@@ -252,7 +255,8 @@ class TestTransformPiecewiseModelToAccidentalReducedInnerRepnGDP(unittest.TestCa
     def test_solve_convex_combo_model(self):
         m = models.make_log_x_model()
         TransformationFactory(
-            'contrib.piecewise.accidental_reduced_inner_repn_gdp').apply_to(m)
+            'contrib.piecewise.accidental_reduced_inner_repn_gdp'
+        ).apply_to(m)
         TransformationFactory('gdp.mbigm').apply_to(m)
         SolverFactory('gurobi').solve(m)
 

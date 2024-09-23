@@ -26,10 +26,10 @@ from pyomo.gdp import Disjunct, Disjunction
     "functions.",
 )
 class AccidentalReducedInnerRepresentationGDPTransformation(
-        PiecewiseLinearTransformationBase):
-    """
-    
-    """
+    PiecewiseLinearTransformationBase
+):
+    """ """
+
     CONFIG = PiecewiseLinearTransformationBase.CONFIG()
     _transformation_name = 'pw_linear_accidental_reduced_inner_repn'
 
@@ -87,8 +87,8 @@ class AccidentalReducedInnerRepresentationGDPTransformation(
             # the reduced inner formulation, so if this works, I should
             # centralize the rest.
             disj.lambdas_sum_to_one = Constraint(
-                expr=sum(transBlock.lambdas[i] for i in
-                         extreme_pts_by_simplex[simplex]) >= 1
+                expr=sum(transBlock.lambdas[i] for i in extreme_pts_by_simplex[simplex])
+                >= 1
             )
 
         # Make the disjunction
