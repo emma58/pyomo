@@ -104,13 +104,9 @@ class ReducedInnerRepresentationGDPTransformation(PiecewiseLinearTransformationB
         # disjunctive constraints
         for simplex in pw_linear_func._simplices:
             disj = transBlock.disjuncts[len(transBlock.disjuncts)]
-            cons = disj.lambdas_zero_for_other_simplices = Constraint(
-                NonNegativeIntegers
-            )
-            extreme_pts = extreme_pts_by_simplex[simplex]
-            for i in range(num_extreme_pts):
-                if i not in extreme_pts:
-                    cons[len(cons)] = transBlock.lambdas[i] <= 0
+            self._add_disjunctive_constraints(disj, transBlock,
+                                              extreme_pts_by_simplex[simplex],
+                                              num_extreme_pts)
         # Make the disjunction
         transBlock.pick_a_piece = Disjunction(
             expr=[d for d in transBlock.disjuncts.values()]
@@ -136,3 +132,12 @@ class ReducedInnerRepresentationGDPTransformation(PiecewiseLinearTransformationB
             )
 
         return transBlock.substitute_var
+
+    def _add_disjunctive_constraints(self, disj, transBlock, extreme_pts,
+                                     num_extreme_pts):
+        cons = disj.lambdas_zero_for_other_simplices = Constraint(
+            NonNegativeIntegers
+        )
+        for i in range(num_extreme_pts):
+            if i not in extreme_pts:
+                cons[len(cons)] = transBlock.lambdas[i] <= 0
