@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -20,10 +20,10 @@ from pyomo.common.tee import TeeStream, capture_output
 from pyomo.common.log import LogStream
 from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.base import SymbolMap
-from pyomo.core.base.var import _GeneralVarData
-from pyomo.core.base.constraint import _GeneralConstraintData
-from pyomo.core.base.sos import _SOSConstraintData
-from pyomo.core.base.param import _ParamData
+from pyomo.core.base.var import VarData
+from pyomo.core.base.constraint import ConstraintData
+from pyomo.core.base.sos import SOSConstraintData
+from pyomo.core.base.param import ParamData
 from pyomo.core.expr.numvalue import value, is_constant
 from pyomo.repn import generate_standard_repn
 from pyomo.core.expr.numeric_expr import NPV_MaxExpression, NPV_MinExpression
@@ -176,11 +176,19 @@ class Highs(PersistentBase, PersistentSolver):
             return self.Availability.NotFound
 
     def version(self):
-        version = (
-            highspy.HIGHS_VERSION_MAJOR,
-            highspy.HIGHS_VERSION_MINOR,
-            highspy.HIGHS_VERSION_PATCH,
-        )
+        try:
+            version = (
+                highspy.HIGHS_VERSION_MAJOR,
+                highspy.HIGHS_VERSION_MINOR,
+                highspy.HIGHS_VERSION_PATCH,
+            )
+        except AttributeError:
+            # Older versions of Highs do not have the above attributes
+            # and the solver version can only be obtained by making
+            # an instance of the solver class.
+            tmp = highspy.Highs()
+            version = (tmp.versionMajor(), tmp.versionMinor(), tmp.versionPatch())
+
         return version
 
     @property
@@ -213,6 +221,29 @@ class Highs(PersistentBase, PersistentSolver):
         return SymbolMap()
         # raise RuntimeError('Highs interface does not have a symbol map')
 
+    def warm_start_capable(self):
+        return True
+
+    def _warm_start(self):
+        # Collect all variable values
+        col_value = np.zeros(len(self._pyomo_var_to_solver_var_map))
+        has_values = False
+
+        for var_id, col_ndx in self._pyomo_var_to_solver_var_map.items():
+            var = self._vars[var_id][0]
+            if var.value is not None:
+                col_value[col_ndx] = value(var)
+                has_values = True
+
+        if has_values:
+            solution = highspy.HighsSolution()
+            solution.col_value = col_value
+            solution.value_valid = True
+            solution.dual_valid = False
+
+            # Set the solution as a MIP start
+            self._solver_model.setSolution(solution)
+
     def _solve(self, timer: HierarchicalTimer):
         config = self.config
         options = self.highs_options
@@ -225,22 +256,27 @@ class Highs(PersistentBase, PersistentSolver):
         if self.config.stream_solver:
             ostreams.append(sys.stdout)
 
-        with TeeStream(*ostreams) as t:
-            with capture_output(output=t.STDOUT, capture_fd=True):
-                self._solver_model.setOptionValue('log_to_console', True)
-                if config.logfile != '':
-                    self._solver_model.setOptionValue('log_file', config.logfile)
+        with capture_output(output=TeeStream(*ostreams), capture_fd=True):
+            self._solver_model.setOptionValue('log_to_console', True)
+            if config.logfile != '':
+                self._solver_model.setOptionValue('log_file', config.logfile)
 
-                if config.time_limit is not None:
-                    self._solver_model.setOptionValue('time_limit', config.time_limit)
-                if config.mip_gap is not None:
-                    self._solver_model.setOptionValue('mip_rel_gap', config.mip_gap)
+            if config.time_limit is not None:
+                self._solver_model.setOptionValue('time_limit', config.time_limit)
+            if config.mip_gap is not None:
+                self._solver_model.setOptionValue('mip_rel_gap', config.mip_gap)
 
-                for key, option in options.items():
-                    self._solver_model.setOptionValue(key, option)
-                timer.start('optimize')
-                self._solver_model.run()
-                timer.stop('optimize')
+            for key, option in options.items():
+                self._solver_model.setOptionValue(key, option)
+
+            if config.warmstart:
+                self._warm_start()
+            timer.start('optimize')
+            ostreams[-1].write("RUN!\n")
+            if self.version()[:2] >= (1, 8):
+                self._solver_model.HandleKeyboardInterrupt = True
+            self._solver_model.run()
+            timer.stop('optimize')
 
         return self._postsolve(timer)
 
@@ -308,7 +344,7 @@ class Highs(PersistentBase, PersistentSolver):
 
         return lb, ub, vtype
 
-    def _add_variables(self, variables: List[_GeneralVarData]):
+    def _add_variables(self, variables: List[VarData]):
         self._sol = None
         if self._last_results_object is not None:
             self._last_results_object.solution_loader.invalidate()
@@ -335,7 +371,7 @@ class Highs(PersistentBase, PersistentSolver):
             len(vtypes), np.array(indices), np.array(vtypes)
         )
 
-    def _add_params(self, params: List[_ParamData]):
+    def _add_params(self, params: List[ParamData]):
         pass
 
     def _reinit(self):
@@ -364,19 +400,18 @@ class Highs(PersistentBase, PersistentSolver):
         ]
         if self.config.stream_solver:
             ostreams.append(sys.stdout)
-        with TeeStream(*ostreams) as t:
-            with capture_output(output=t.STDOUT, capture_fd=True):
-                self._reinit()
-                self._model = model
-                if self.use_extensions and cmodel_available:
-                    self._expr_types = cmodel.PyomoExprTypes()
+        with capture_output(output=TeeStream(*ostreams), capture_fd=True):
+            self._reinit()
+            self._model = model
+            if self.use_extensions and cmodel_available:
+                self._expr_types = cmodel.PyomoExprTypes()
 
-                self._solver_model = highspy.Highs()
-                self.add_block(model)
-                if self._objective is None:
-                    self.set_objective(None)
+            self._solver_model = highspy.Highs()
+            self.add_block(model)
+            if self._objective is None:
+                self.set_objective(None)
 
-    def _add_constraints(self, cons: List[_GeneralConstraintData]):
+    def _add_constraints(self, cons: List[ConstraintData]):
         self._sol = None
         if self._last_results_object is not None:
             self._last_results_object.solution_loader.invalidate()
@@ -456,13 +491,13 @@ class Highs(PersistentBase, PersistentSolver):
             np.array(coef_values, dtype=np.double),
         )
 
-    def _add_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def _add_sos_constraints(self, cons: List[SOSConstraintData]):
         if cons:
             raise NotImplementedError(
                 'Highs interface does not support SOS constraints'
             )
 
-    def _remove_constraints(self, cons: List[_GeneralConstraintData]):
+    def _remove_constraints(self, cons: List[ConstraintData]):
         self._sol = None
         if self._last_results_object is not None:
             self._last_results_object.solution_loader.invalidate()
@@ -473,7 +508,7 @@ class Highs(PersistentBase, PersistentSolver):
             indices_to_remove.append(con_ndx)
             self._mutable_helpers.pop(con, None)
         self._solver_model.deleteRows(
-            len(indices_to_remove), np.array(indices_to_remove)
+            len(indices_to_remove), np.sort(np.array(indices_to_remove))
         )
         con_ndx = 0
         new_con_map = dict()
@@ -487,13 +522,13 @@ class Highs(PersistentBase, PersistentSolver):
             {v: k for k, v in self._pyomo_con_to_solver_con_map.items()}
         )
 
-    def _remove_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def _remove_sos_constraints(self, cons: List[SOSConstraintData]):
         if cons:
             raise NotImplementedError(
                 'Highs interface does not support SOS constraints'
             )
 
-    def _remove_variables(self, variables: List[_GeneralVarData]):
+    def _remove_variables(self, variables: List[VarData]):
         self._sol = None
         if self._last_results_object is not None:
             self._last_results_object.solution_loader.invalidate()
@@ -515,10 +550,10 @@ class Highs(PersistentBase, PersistentSolver):
         self._pyomo_var_to_solver_var_map.clear()
         self._pyomo_var_to_solver_var_map.update(new_var_map)
 
-    def _remove_params(self, params: List[_ParamData]):
+    def _remove_params(self, params: List[ParamData]):
         pass
 
-    def _update_variables(self, variables: List[_GeneralVarData]):
+    def _update_variables(self, variables: List[VarData]):
         self._sol = None
         if self._last_results_object is not None:
             self._last_results_object.solution_loader.invalidate()

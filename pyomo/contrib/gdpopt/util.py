@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -499,15 +499,16 @@ def lower_logger_level_to(logger, level=None, tee=False):
             sh.setLevel(level)
         level_changed = True
 
-    yield
-
-    if tee:
-        logger.handlers.clear()
-        for h in handlers:
-            logger.addHandler(h)
-        logger.propagate = True
-    if level_changed:
-        logger.setLevel(old_logger_level)
+    try:
+        yield
+    finally:
+        if tee:
+            logger.handlers.clear()
+            for h in handlers:
+                logger.addHandler(h)
+            logger.propagate = True
+        if level_changed:
+            logger.setLevel(old_logger_level)
 
 
 def _add_bigm_constraint_to_transformed_model(m, constraint, block):
@@ -553,6 +554,13 @@ def _add_bigm_constraint_to_transformed_model(m, constraint, block):
     # making a Reference to the ComponentData so that it will look like an
     # indexed component for now. If I redesign bigm at some point, then this
     # could be prettier.
-    bigm._transform_constraint(Reference(constraint), parent_disjunct, None, [], [])
+    bigm._transform_constraint(
+        Reference(constraint),
+        parent_disjunct,
+        None,
+        [],
+        [],
+        1 - parent_disjunct.binary_indicator_var,
+    )
     # Now get rid of it because this is a class attribute!
     del bigm._config

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -10,8 +10,9 @@
 #  ___________________________________________________________________________
 
 import collections
+import itertools
+import operator
 import logging
-from operator import attrgetter
 
 from pyomo.common.config import (
     ConfigBlock,
@@ -20,7 +21,9 @@ from pyomo.common.config import (
     document_kwargs_from_configdict,
 )
 from pyomo.common.dependencies import scipy, numpy as np
+from pyomo.common.enums import ObjectiveSense
 from pyomo.common.gc_manager import PauseGC
+from pyomo.common.numeric_types import native_types, value
 from pyomo.common.timing import TicTocTimer
 
 from pyomo.core.base import (
@@ -33,13 +36,15 @@ from pyomo.core.base import (
     SortComponents,
     Suffix,
     SymbolMap,
-    maximize,
 )
 from pyomo.opt import WriterFactory
 from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.linear_template import LinearTemplateRepnVisitor
+from pyomo.repn.quadratic import QuadraticRepnVisitor, QuadraticTemplateRepnVisitor
 from pyomo.repn.util import (
     FileDeterminism,
     FileDeterminism_to_SortComponents,
+    TemplateVarRecorder,
     categorize_valid_components,
     initialize_var_map_from_column_order,
     ordered_active_constraints,
@@ -52,7 +57,7 @@ from pyomo.network import Port
 
 logger = logging.getLogger(__name__)
 
-RowEntry = collections.namedtuple('RowEntry', ['constraint', 'bound_type'])
+RowEntry = collections.namedtuple("RowEntry", ["constraint", "bound_type"])
 
 
 # TODO: make a proper base class
@@ -61,124 +66,200 @@ class LinearStandardFormInfo(object):
 
     Attributes
     ----------
-    c : scipy.sparse.csr_array
+    c : scipy.sparse.csc_array
 
         The objective coefficients.  Note that this is a sparse array
         and may contain multiple rows (for multiobjective problems).  The
-        objectives may be calculated by "c @ x"
+        objectives may be calculated by ``c @ x``
+
+    c_offset : numpy.ndarray
+
+        The list of objective constant offsets
 
     A : scipy.sparse.csc_array
 
         The constraint coefficients.  The constraint bodies may be
-        calculated by "A @ x"
+        calculated by ``A @ x``
 
     rhs : numpy.ndarray
 
         The constraint right-hand sides.
 
-    rows : List[Tuple[_ConstraintData, int]]
+    rows : List[Tuple[ConstraintData, int]]
 
         The list of Pyomo constraint objects corresponding to the rows
         in `A`.  Each element in the list is a 2-tuple of
-        (_ConstraintData, row_multiplier).  The `row_multiplier` will be
+        (ConstraintData, row_multiplier).  The `row_multiplier` will be
         +/- 1 indicating if the row was multiplied by -1 (corresponding
         to a constraint lower bound) or +1 (upper bound).
 
-    columns : List[_VarData]
+    columns : List[VarData]
 
         The list of Pyomo variable objects corresponding to columns in
         the `A` and `c` matrices.
 
-    eliminated_vars: List[Tuple[_VarData, NumericExpression]]
+    objectives : List[ObjectiveData]
+
+        The list of Pyomo objective objects corresponding to the active objectives
+
+    eliminated_vars: List[Tuple[VarData, NumericExpression]]
 
         The list of variables from the original model that do not appear
         in the standard form (usually because they were replaced by
         nonnegative variables).  Each entry is a 2-tuple of
-        (:py:class:`_VarData`, :py:class`NumericExpression`|`float`).
+        (:py:class:`VarData`, :py:class`NumericExpression`|`float`).
         The list is in the necessary order for correct evaluation (i.e.,
         all variables appearing in the expression must either have
         appeared in the standard form, or appear *earlier* in this list.
 
     """
 
-    def __init__(self, c, A, rhs, rows, columns, eliminated_vars):
+    is_quadratic = False
+
+    def __init__(self, c, c_offset, A, rhs, rows, columns, objectives, eliminated_vars):
         self.c = c
+        self.c_offset = c_offset
         self.A = A
         self.rhs = rhs
         self.rows = rows
         self.columns = columns
+        self.objectives = objectives
         self.eliminated_vars = eliminated_vars
+        logger.debug(f" c: {c.toarray()}")
+        logger.debug(f" c_offset: {c_offset}")
+        logger.debug(f" A: {A.toarray()}")
+        logger.debug(f" rhs: {rhs}")
+        logger.debug(f" rows: {rows}")
+        logger.debug(f" columns: {columns}")
+        logger.debug(f" objectives: {objectives}")
+        logger.debug(f" eliminated_vars: {eliminated_vars}")
 
     @property
     def x(self):
+        "Alias for :attr:`columns`"
         return self.columns
 
     @property
     def b(self):
+        "Alias for :attr:`rhs`"
         return self.rhs
 
 
+class QuadraticStandardFormInfo(LinearStandardFormInfo):
+    """
+    Extension of LinearStandardFormInfo with list of Q (quadratic) matrices
+    """
+
+    def __init__(self, *args, Q_list: list = None, Q_obj: list = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.Q_list = Q_list
+        self.Q_obj = Q_obj
+        for i, q in enumerate(Q_obj):
+            logger.debug(f"  Q objective[{i}]: {None if q is None else q.toarray()}")
+        for i, q in enumerate(Q_list):
+            logger.debug(f"  Q constraint[{i}]: {None if q is None else q.toarray()}")
+        for Q in [Q_list, Q_obj]:
+            if isinstance(Q, list) and any([q is not None and q is not [] for q in Q]):
+                self.is_quadratic = True
+
+
 @WriterFactory.register(
-    'compile_standard_form', 'Compile an LP to standard form (`min cTx s.t. Ax <= b`)'
+    "compile_standard_form",
+    r"Compile an LP to standard form (:math:`\min c^Tx s.t. Ax \le b)`",
 )
 class LinearStandardFormCompiler(object):
-    CONFIG = ConfigBlock('compile_standard_form')
+    r"""Compiler to convert an LP to the matrix representation of the
+    standard form:
+
+    .. math::
+
+        \min\ & c^Tx \\
+        s.t.\ & Ax \le b
+
+    and return the compiled representation as NumPy arrays and SciPy
+    sparse matrices.
+
+    """
+
+    CONFIG = ConfigBlock("compile_standard_form")
+
     CONFIG.declare(
-        'nonnegative_vars',
+        "nonnegative_vars",
         ConfigValue(
             default=False,
             domain=bool,
-            description='Convert all variables to be nonnegative variables',
+            description="Convert all variables to be nonnegative variables",
         ),
     )
     CONFIG.declare(
-        'slack_form',
+        "slack_form",
         ConfigValue(
             default=False,
             domain=bool,
-            description='Add slack variables and return `min cTx s.t. Ax == b`',
+            description="Add slack variables and return "
+            r":math:`\min c^Tx; s.t. Ax = b`",
         ),
     )
     CONFIG.declare(
-        'show_section_timing',
+        "mixed_form",
         ConfigValue(
             default=False,
             domain=bool,
-            description='Print timing after each stage of the compilation process',
+            description="Return A in mixed form (the comparison operator is a "
+            "mix of <=, ==, and >=)",
         ),
     )
     CONFIG.declare(
-        'file_determinism',
+        "set_sense",
+        ConfigValue(
+            default=ObjectiveSense.minimize,
+            domain=InEnum(ObjectiveSense),
+            description="If not None, map all objectives to the specified sense.",
+        ),
+    )
+    CONFIG.declare(
+        "show_section_timing",
+        ConfigValue(
+            default=False,
+            domain=bool,
+            description="Print timing after each stage of the compilation process",
+        ),
+    )
+    CONFIG.declare(
+        "file_determinism",
         ConfigValue(
             default=FileDeterminism.ORDERED,
             domain=InEnum(FileDeterminism),
-            description='How much effort to ensure result is deterministic',
+            description="How much effort to ensure result is deterministic",
             doc="""
             How much effort do we want to put into ensuring the
             resulting matrices are produced deterministically:
-                NONE (0) : None
-                ORDERED (10): rely on underlying component ordering (default)
-                SORT_INDICES (20) : sort keys of indexed components
-                SORT_SYMBOLS (30) : sort keys AND sort names (not declaration order)
+
+               - ``NONE`` (0): None
+               - ``ORDERED`` (10): rely on underlying component ordering (default)
+               - ``SORT_INDICES`` (20) : sort keys of indexed components
+               - ``SORT_SYMBOLS`` (30) : sort keys AND sort names (not
+                 declaration order)
+
             """,
         ),
     )
     CONFIG.declare(
-        'row_order',
+        "row_order",
         ConfigValue(
             default=None,
-            description='Preferred constraint ordering',
+            description="Preferred constraint ordering",
             doc="""
             List of constraints in the order that they should appear in
-            the resulting `A` matrix.  Unspecified constraints will
+            the resulting ``A`` matrix.  Unspecified constraints will
             appear at the end.""",
         ),
     )
     CONFIG.declare(
-        'column_order',
+        "column_order",
         ConfigValue(
             default=None,
-            description='Preferred variable ordering',
+            description="Preferred variable ordering",
             doc="""
             List of variables in the order that they should appear in
             the compiled representation.  Unspecified variables will be
@@ -191,7 +272,7 @@ class LinearStandardFormCompiler(object):
 
     @document_kwargs_from_configdict(CONFIG)
     def write(self, model, ostream=None, **options):
-        """Convert a model to standard form (`min cTx s.t. Ax <= b`)
+        """Convert a model to standard form
 
         Returns
         -------
@@ -202,7 +283,7 @@ class LinearStandardFormCompiler(object):
         model: ConcreteModel
             The concrete Pyomo model to write out.
 
-        ostream: None
+        ostream:
             This is provided for API compatibility with other writers
             and is ignored here.
 
@@ -217,11 +298,25 @@ class LinearStandardFormCompiler(object):
 
 
 class _LinearStandardFormCompiler_impl(object):
+    # Making these methods class attributes so that others can change the hooks
+    # _get_visitor = LinearRepnVisitor
+    _get_visitor = QuadraticRepnVisitor
+    _to_vector = None
+    _csc_matrix = None
+    _csr_matrix = None
+
     def __init__(self, config):
         self.config = config
+        # We defer the first instantiation of these attributes so we do
+        # not trigger the numpy / scipy imports when the module is
+        # imported
+        if _LinearStandardFormCompiler_impl._to_vector is None:
+            _LinearStandardFormCompiler_impl._to_vector = np.fromiter
+            _LinearStandardFormCompiler_impl._csc_matrix = scipy.sparse.csc_array
+            _LinearStandardFormCompiler_impl._csr_matrix = scipy.sparse.csr_array
 
     def write(self, model):
-        timing_logger = logging.getLogger('pyomo.common.timing.writer')
+        timing_logger = logging.getLogger("pyomo.common.timing.writer")
         timer = TicTocTimer(logger=timing_logger)
         with_debug_timing = (
             timing_logger.isEnabledFor(logging.DEBUG) and timing_logger.hasHandlers()
@@ -255,19 +350,28 @@ class _LinearStandardFormCompiler_impl(object):
                 % (
                     model.name,
                     "\n\t".join(
-                        "%s:\n\t\t%s" % (k, "\n\t\t".join(map(attrgetter('name'), v)))
+                        "%s:\n\t\t%s"
+                        % (k, "\n\t\t".join(map(operator.attrgetter("name"), v)))
                         for k, v in unknown.items()
                     ),
                 )
             )
 
+        logger.debug(f"component_map: {component_map}")
+
         self.var_map = var_map = {}
         initialize_var_map_from_column_order(model, self.config, var_map)
-        var_order = {_id: i for i, _id in enumerate(var_map)}
+        logger.debug(f"var_map: {var_map}")
 
-        visitor = LinearRepnVisitor({}, var_map, var_order, sorter)
+        var_recorder = TemplateVarRecorder(var_map, None, sorter)
+        visitor = self._get_visitor({}, var_recorder=var_recorder)
+        logger.debug(f"visitor = {type(visitor)}")
 
-        timer.toc('Initialized column order', level=logging.DEBUG)
+        # template_visitor = LinearTemplateRepnVisitor({}, var_recorder=var_recorder)
+        template_visitor = QuadraticTemplateRepnVisitor({}, var_recorder=var_recorder)
+        logger.debug(f"template_visitor = {type(template_visitor)}")
+
+        timer.toc("Initialized column order", level=logging.DEBUG)
 
         # We don't export any suffix information to the Standard Form
         #
@@ -286,7 +390,7 @@ class _LinearStandardFormCompiler_impl(object):
                         suffixesByName[name] = [suffix]
             for name, suffixes in suffixesByName.items():
                 n = len(suffixes)
-                plural = 's' if n > 1 else ''
+                plural = "s" if n > 1 else ""
                 logger.warning(
                     f"EXPORT Suffix '{name}' found on {n} block{plural}:\n    "
                     + "\n    ".join(s.name for s in suffixes)
@@ -296,90 +400,227 @@ class _LinearStandardFormCompiler_impl(object):
         #
         # Process objective
         #
-        if not component_map[Objective]:
-            objectives = [Objective(expr=1)]
-            objectives[0].construct()
-        else:
-            objectives = []
-            for blk in component_map[Objective]:
-                objectives.extend(
-                    blk.component_data_objects(
-                        Objective, active=True, descend_into=False, sort=sorter
-                    )
+        set_sense = self.config.set_sense
+
+        objectives = []
+        for blk in component_map[Objective]:
+            objectives.extend(
+                blk.component_data_objects(
+                    Objective, active=True, descend_into=False, sort=sorter
                 )
+            )
+        obj_nnz = 0
+        obj_offset = []
         obj_data = []
         obj_index = []
         obj_index_ptr = [0]
-        for i, obj in enumerate(objectives):
-            repn = visitor.walk_expression(obj.expr)
-            if repn.nonlinear is not None:
-                raise ValueError(
-                    f"Model objective ({obj.name}) contains nonlinear terms that "
-                    "cannot be compiled to standard (linear) form."
+
+        obj_quadratic_nnz = 0
+        obj_quadratic_data = []
+        obj_quadratic_index = []
+        obj_quadratic_index_ptr = [0]
+
+        for _i, obj in enumerate(objectives):
+            logger.debug(f"OBJECTIVE: {_i}:{obj} {obj.sense} ({type(obj)})")
+            if hasattr(obj, "template_expr"):
+                expanded_expression_values = template_visitor.expand_expression(
+                    obj, obj.template_expr()
                 )
-            N = len(repn.linear)
-            obj_data.append(np.fromiter(repn.linear.values(), float, N))
-            if obj.sense == maximize:
-                obj_data[-1] *= -1
-            obj_index.append(
-                np.fromiter(map(var_order.__getitem__, repn.linear), float, N)
-            )
+                offset, linear_index, linear_data, _, _ = expanded_expression_values[:5]
+
+                N = len(linear_index)
+                obj_index.append(linear_index)
+                obj_data.append(linear_data)
+                obj_offset.append(offset)
+
+                if len(expanded_expression_values) > 5:
+                    quadratic_index, quadratic_data = expanded_expression_values[5:]
+                else:
+                    quadratic_index, quadratic_data = [], []
+                N_quadratic = len(quadratic_data)
+                obj_quadratic_nnz += N_quadratic
+                obj_quadratic_data.append(quadratic_data)
+                if N_quadratic > 0:
+                    obj_quadratic_index.append(quadratic_index)
+                    obj_quadratic_index_ptr.append(obj_quadratic_nnz)
+
+            else:
+                repn = visitor.walk_expression(obj.expr)
+                N = len(repn.linear)
+                obj_index.append(map(var_recorder.var_order.__getitem__, repn.linear))
+                obj_data.append(repn.linear.values())
+                obj_offset.append(repn.constant)
+
+                if repn.nonlinear is not None:
+                    raise ValueError(
+                        f"Model objective ({obj.name}) contains nonlinear terms that "
+                        "cannot be compiled to standard (linear) form."
+                    )
+
+            obj_nnz += N
+            if set_sense is not None and set_sense != obj.sense:
+                obj_data[-1] = -self._to_vector(obj_data[-1], float, N)
+                obj_offset[-1] *= -1
             obj_index_ptr.append(obj_index_ptr[-1] + N)
             if with_debug_timing:
-                timer.toc('Objective %s', obj, level=logging.DEBUG)
+                timer.toc("Objective %s", obj, level=logging.DEBUG)
+
+        logger.debug("processed objectives\n")
 
         #
         # Tabulate constraints
         #
         slack_form = self.config.slack_form
+        mixed_form = self.config.mixed_form
+
+        if slack_form and mixed_form:
+            raise ValueError("cannot specify both slack_form and mixed_form")
         rows = []
         rhs = []
+        con_nnz = 0
         con_data = []
         con_index = []
         con_index_ptr = [0]
-        last_parent = None
-        for con in ordered_active_constraints(model, self.config):
-            if with_debug_timing and con.parent_component() is not last_parent:
-                if last_parent is not None:
-                    timer.toc('Constraint %s', last_parent, level=logging.DEBUG)
-                last_parent = con.parent_component()
-            # Note: Constraint.lb/ub guarantee a return value that is
-            # either a (finite) native_numeric_type, or None
-            lb = con.lb
-            ub = con.ub
 
-            repn = visitor.walk_expression(con.body)
+        con_quadratic_nnz = 0
+        con_quadratic_data = []
+        con_quadratic_index = []
+        con_quadratic_index_ptr = [0]
+        last_parent = None
+        for _i, con in enumerate(ordered_active_constraints(model, self.config)):
+            logger.debug(f"CONSTRAINT: {_i}:{con} ({type(con)})")
+            if with_debug_timing and con._component is not last_parent:
+                if last_parent is not None:
+                    timer.toc("Constraint %s", last_parent(), level=logging.DEBUG)
+                last_parent = con._component
+
+            if hasattr(con, "template_expr"):
+                expanded_expression_values = template_visitor.expand_expression(
+                    con, con.template_expr()
+                )
+                offset, linear_index, linear_data, lb, ub = expanded_expression_values[
+                    :5
+                ]
+
+                N = len(linear_data)
+                logger.debug(
+                    f"   N: {N}, offset: {offset}, linear_index: {linear_index}, linear_data: {linear_data}, "
+                    f"lb: {lb}, ub: {ub}"
+                )
+                if len(expanded_expression_values) > 5:
+                    quadratic_index, quadratic_data = expanded_expression_values[5:]
+                else:
+                    quadratic_index, quadratic_data = [], []
+                N_quadratic = len(quadratic_data)
+                logger.debug(
+                    f"     N_quadratic: {N_quadratic}, quadratic_index: {quadratic_index}, quadratic_data: {quadratic_data}"
+                )
+                con_quadratic_nnz += N_quadratic
+                con_quadratic_data.append(quadratic_data)
+                if N_quadratic > 0:
+                    con_quadratic_index.append(quadratic_index)
+                    con_quadratic_index_ptr.append(con_quadratic_nnz)
+
+            else:
+                # Note: lb and ub could be a number, expression, or None
+                lb, body, ub = con.to_bounded_expression()
+                if lb.__class__ not in native_types:
+                    lb = value(lb)
+                if ub.__class__ not in native_types:
+                    ub = value(ub)
+                repn = visitor.walk_expression(body)
+
+                if repn.nonlinear is not None:
+
+                    raise ValueError(
+                        f"Model constraint ({con.name}) contains nonlinear terms that "
+                        "cannot be compiled to standard (linear) form."
+                    )
+
+                N = len(repn.linear)
+                # Pull out the constant: we will move it to the bounds
+                offset = repn.constant
+
+                linear_index = map(var_recorder.var_order.__getitem__, repn.linear)
+                linear_data = repn.linear.values()
+                logger.debug(
+                    f"  N: {N}, offset: {offset}, linear_index: {linear_index}, linear_data: {linear_data}"
+                )
+                if getattr(repn, "quadratic", None):
+                    N_quadratic = len(repn.quadratic)
+                    con_quadratic_nnz += N_quadratic
+                    quadratic_index = map(
+                        lambda k: (
+                            var_recorder.var_order[k[0]],
+                            var_recorder.var_order[k[1]],
+                        ),
+                        repn.quadratic,
+                    )
+
+                    quadratic_data = repn.quadratic.values()
+                    logger.debug(
+                        f"     N_quadratic: {N_quadratic}, quadratic_index: {quadratic_index}, quadratic_data: {quadratic_data}"
+                    )
+                    con_quadratic_data.append(quadratic_data)
+                    con_quadratic_index.append(quadratic_index)
+                    con_quadratic_index_ptr.append(con_quadratic_nnz)
+                else:
+                    con_quadratic_data.append([])
+
+                    N_quadratic = 0
 
             if lb is None and ub is None:
                 # Note: you *cannot* output trivial (unbounded)
                 # constraints in matrix format.  I suppose we could add a
                 # slack variable, but that seems rather silly.
                 continue
-            if repn.nonlinear is not None:
-                raise ValueError(
-                    f"Model constraint ({con.name}) contains nonlinear terms that "
-                    "cannot be compiled to standard (linear) form."
-                )
 
-            # Pull out the constant: we will move it to the bounds
-            offset = repn.constant
-            repn.constant = 0
-
-            if not repn.linear:
+            if not N and not N_quadratic:
+                # This is a constant constraint
+                # TODO: add a (configurable) feasibility tolerance
                 if (lb is None or lb <= offset) and (ub is None or ub >= offset):
                     continue
                 raise InfeasibleError(
                     f"model contains a trivially infeasible constraint, '{con.name}'"
                 )
 
-            if slack_form:
-                _data = list(repn.linear.values())
-                _index = list(map(var_order.__getitem__, repn.linear))
+            if mixed_form:
+                logger.debug("mixed_form")
+                if lb == ub:
+                    con_nnz += N
+                    logger.debug(f"rows.append(RowEntry({con}, 0))\n")
+                    rows.append(RowEntry(con, 0))
+                    rhs.append(ub - offset)
+                    con_data.append(linear_data)
+                    con_index.append(linear_index)
+                    con_index_ptr.append(con_nnz)
+                else:
+                    if ub is not None:
+                        if lb is not None:
+                            linear_index = list(linear_index)
+                        con_nnz += N
+                        logger.debug(f"rows.append(RowEntry({con}, +1))\n")
+                        rows.append(RowEntry(con, 1))
+                        rhs.append(ub - offset)
+                        con_data.append(linear_data)
+                        con_index.append(linear_index)
+                        con_index_ptr.append(con_nnz)
+                    if lb is not None:
+                        con_nnz += N
+                        logger.debug(f"rows.append(RowEntry({con}, -1))\n")
+                        rows.append(RowEntry(con, -1))
+                        rhs.append(lb - offset)
+                        con_data.append(linear_data)
+                        con_index.append(linear_index)
+                        con_index_ptr.append(con_nnz)
+            elif slack_form:
+                logger.debug("slack_form")
                 if lb == ub:  # TODO: add tolerance?
                     rhs.append(ub - offset)
                 else:
                     # add slack variable
-                    v = Var(name=f'_slack_{len(rhs)}', bounds=(None, None))
+                    con_nnz += 1
+                    v = Var(name=f"_slack_{len(rhs)}", bounds=(None, None))
                     v.construct()
                     if lb is None:
                         rhs.append(ub - offset)
@@ -390,118 +631,289 @@ class _LinearStandardFormCompiler_impl(object):
                         if ub is not None:
                             v.lb = lb - ub
                     var_map[id(v)] = v
-                    var_order[id(v)] = slack_col = len(var_order)
-                    _data.append(1)
-                    _index.append(slack_col)
+                    if var_recorder.var_order is not None:
+                        var_recorder.var_order[id(v)] = slack_col = len(
+                            var_recorder.var_order
+                        )
+                    linear_data = list(linear_data)
+                    linear_data.append(1)
+                    linear_index = list(linear_index)
+                    linear_index.append(slack_col)
+                con_nnz += N
                 rows.append(RowEntry(con, 1))
-                con_data.append(np.array(_data))
-                con_index.append(np.array(_index))
-                con_index_ptr.append(con_index_ptr[-1] + len(_index))
+                con_data.append(linear_data)
+                con_index.append(linear_index)
+                con_index_ptr.append(con_nnz)
             else:
-                N = len(repn.linear)
-                _data = np.fromiter(repn.linear.values(), float, N)
-                _index = np.fromiter(map(var_order.__getitem__, repn.linear), float, N)
+                logger.info("not mixed or slack form")
                 if ub is not None:
+                    if lb is not None:
+                        linear_index = list(linear_index)
+                    con_nnz += N
                     rows.append(RowEntry(con, 1))
                     rhs.append(ub - offset)
-                    con_data.append(_data)
-                    con_index.append(_index)
-                    con_index_ptr.append(con_index_ptr[-1] + N)
+                    con_data.append(linear_data)
+                    con_index.append(linear_index)
+                    con_index_ptr.append(con_nnz)
                 if lb is not None:
+                    con_nnz += N
                     rows.append(RowEntry(con, -1))
                     rhs.append(offset - lb)
-                    con_data.append(-_data)
-                    con_index.append(_index)
-                    con_index_ptr.append(con_index_ptr[-1] + N)
+                    con_data.append(-np.array(list(linear_data)))
+                    con_index.append(linear_index)
+                    con_index_ptr.append(con_nnz)
 
         if with_debug_timing:
             # report the last constraint
-            timer.toc('Constraint %s', last_parent, level=logging.DEBUG)
+            timer.toc("Constraint %s", last_parent(), level=logging.DEBUG)
+
+        logger.debug("completed constraints\n")
 
         # Get the variable list
         columns = list(var_map.values())
+        n_cols = len(columns)
+
         # Convert the compiled data to scipy sparse matrices
-        c = scipy.sparse.csr_array(
-            (np.concatenate(obj_data), np.concatenate(obj_index), obj_index_ptr),
-            [len(obj_index_ptr) - 1, len(columns)],
-        ).tocsc()
-        A = scipy.sparse.csr_array(
-            (np.concatenate(con_data), np.concatenate(con_index), con_index_ptr),
-            [len(rows), len(columns)],
-        ).tocsc()
-
-        # Some variables in the var_map may not actually appear in the
-        # objective or constraints (e.g., added from col_order, or
-        # multiplied by 0 in the expressions).  The easiest way to check
-        # for empty columns is to convert from CSR to CSC and then look
-        # at the index pointer list (an O(num_var) operation).
-        c_ip = c.indptr
-        A_ip = A.indptr
-        active_var_idx = list(
-            filter(
-                lambda i: A_ip[i] != A_ip[i + 1] or c_ip[i] != c_ip[i + 1],
-                range(len(columns)),
-            )
+        logger.debug(f"converting objective: {obj_index}")
+        logger.debug(
+            f"objective.is_quadratic: {any([qd for qd in obj_quadratic_data])}"
         )
-        nCol = len(active_var_idx)
-        if nCol != len(columns):
-            # Note that the indptr can't just use range() because a var
-            # may only appear in the objectives or the constraints.
-            columns = list(map(columns.__getitem__, active_var_idx))
-            active_var_idx.append(c.indptr[-1])
-            c = scipy.sparse.csc_array(
-                (c.data, c.indices, c.indptr.take(active_var_idx)), [c.shape[0], nCol]
+
+        c, Q_obj = self._create_csc_quadratic(
+            obj_data,
+            obj_index,
+            obj_index_ptr,
+            obj_nnz,
+            n_cols,
+            obj_quadratic_data,
+            obj_quadratic_index,
+        )
+
+        logger.debug(
+            f"Objective:\n  c: {c.toarray()}\n  "
+            f"Q: {[q if not hasattr(q, 'toarray') else q.toarray() for q in Q_obj]}\n  "
+            f"offset: {obj_offset}"
+        )
+
+        logger.debug(f"converting constraints: {con_index}")
+        is_quadratic = any([qd for qd in con_quadratic_data]) or any(
+            [qd for qd in obj_quadratic_data]
+        )
+
+        # if quadratic, create A (linear) and quadratic Q matrices
+        if is_quadratic:
+            A, Q_list = self._create_csc_quadratic(
+                con_data,
+                con_index,
+                con_index_ptr,
+                con_nnz,
+                n_cols,
+                con_quadratic_data,
+                con_quadratic_index,
             )
-            active_var_idx[-1] = A.indptr[-1]
-            A = scipy.sparse.csc_array(
-                (A.data, A.indices, A.indptr.take(active_var_idx)), [A.shape[0], nCol]
+            if with_debug_timing:
+                timer.toc("Formed matrices", level=logging.DEBUG)
+            info = QuadraticStandardFormInfo(
+                c,
+                np.array(obj_offset),
+                A,
+                rhs,
+                rows,
+                columns,
+                objectives,
+                [],
+                Q_list=Q_list,
+                Q_obj=Q_obj,
             )
 
-        if self.config.nonnegative_vars:
-            c, A, columns, eliminated_vars = _csc_to_nonnegative_vars(c, A, columns)
-        else:
-            eliminated_vars = []
+        else:  # linear: single A matrix
+            A = self._create_csc(con_data, con_index, con_index_ptr, con_nnz, n_cols)
 
-        info = LinearStandardFormInfo(c, A, rhs, rows, columns, eliminated_vars)
-        timer.toc("Generated linear standard form representation", delta=False)
+            if with_debug_timing:
+                timer.toc("Formed matrices", level=logging.DEBUG)
+
+            # Some variables in the var_map may not actually appear in the
+            # objective or constraints (e.g., added from col_order, or
+            # multiplied by 0 in the expressions).  The easiest way to check
+            # for empty columns is to convert from CSR to CSC and then look
+            # at the index pointer list (an O(num_var) operation).
+            c_ip = c.indptr
+            A_ip = A.indptr
+            active_var_mask = (A_ip[1:] > A_ip[:-1]) | (c_ip[1:] > c_ip[:-1])
+
+            # Masks on NumPy arrays are very fast.  Build the reduced A
+            # indptr and then check if we actually have to manipulate the
+            # columns
+            augmented_mask = np.concatenate((active_var_mask, [True]))
+            reduced_A_indptr = A.indptr[augmented_mask]
+            n_cols -= len(reduced_A_indptr) - 1
+            if n_cols > 0:
+                columns = [v for k, v in zip(active_var_mask, columns) if k]
+                c = self._csc_matrix(
+                    (c.data, c.indices, c.indptr[augmented_mask]),
+                    [c.shape[0], len(columns)],
+                )
+                # active_var_idx[-1] = len(columns)
+                A = self._csc_matrix(
+                    (A.data, A.indices, reduced_A_indptr), [A.shape[0], len(columns)]
+                )
+
+            if with_debug_timing:
+                timer.toc("Eliminated %s unused columns", n_cols, level=logging.DEBUG)
+
+            if self.config.nonnegative_vars:
+                c, A, columns, eliminated_vars = self._csc_to_nonnegative_vars(
+                    c, A, columns
+                )
+            else:
+                eliminated_vars = []
+
+            info = LinearStandardFormInfo(
+                c,
+                np.array(obj_offset),
+                A,
+                rhs,
+                rows,
+                columns,
+                objectives,
+                eliminated_vars,
+            )
+
+        timer.toc("Generated standard form representation", delta=False)
+        logger.debug(f"RETURNING: {type(info)} ")
         return info
 
+    def _create_csc(
+        self,
+        data,
+        index,
+        index_ptr,
+        nnz,
+        n_cols,
+        *,
+        sum_duplicates=True,
+        eliminate_zeros=True,
+    ):
+        logger.debug(
+            f"data={data}, index={[i for i in index]}, "
+            f"index_ptr={index_ptr}, nnz={nnz}, n_cols={n_cols}"
+        )
+        data = self._to_vector(itertools.chain.from_iterable(data), np.float64, nnz)
+        index = self._to_vector(itertools.chain.from_iterable(index), np.int32, nnz)
+        if not nnz:
+            # The empty CSC has no (or few) rows and a large number of
+            # columns and no nonzeros: it is faster / easier to create
+            # the empty CSR on the python side and convert it to CSC on
+            # the C (numpy) side, as opposed to creating the large [0] *
+            # (n_cols + 1) array on the Python side and transfer it to C
+            # (numpy)
+            return self._csr_matrix(
+                (data, index, index_ptr), [len(index_ptr) - 1, n_cols]
+            ).tocsc()
 
-def _csc_to_nonnegative_vars(c, A, columns):
-    eliminated_vars = []
-    new_columns = []
-    new_c_data = []
-    new_c_indices = []
-    new_c_indptr = [0]
-    new_A_data = []
-    new_A_indices = []
-    new_A_indptr = [0]
-    for i, v in enumerate(columns):
-        lb, ub = v.bounds
-        if lb is None or lb < 0:
-            name = v.name
-            new_columns.append(
-                Var(
-                    name=f'_neg_{i}',
-                    domain=v.domain,
-                    bounds=(0, None if lb is None else -lb),
+        index_ptr = np.array(index_ptr, dtype=np.int32)
+        A = self._csr_matrix((data, index, index_ptr), [len(index_ptr) - 1, n_cols])
+        A = A.tocsc()
+        if sum_duplicates:
+            A.sum_duplicates()
+        if eliminate_zeros:
+            A.eliminate_zeros()
+        return A
+
+    # For quadratic programs, create A (linear) matrix and list of Q (quadratic) matrices
+    def _create_csc_quadratic(
+        self,
+        linear_data,
+        linear_index,
+        linear_indez_ptr,
+        linear_nnz,
+        n_cols,
+        quadratic_data,
+        quadratic_index,
+    ) -> tuple:
+
+        # Create A (linear) matrix, but do not reduce; need to keep rows in order to correspond with
+        # Q matrices
+        A = self._create_csc(
+            linear_data,
+            linear_index,
+            linear_indez_ptr,
+            linear_nnz,
+            n_cols,
+            sum_duplicates=False,
+            eliminate_zeros=False,
+        )
+
+        qi = iter(quadratic_index)
+        Q_list = []
+        for i, coefficients in enumerate(quadratic_data):
+
+            if coefficients:
+                index = list(next(qi))
+                row_ind, col_ind = zip(*index)
+
+                Q = self._csr_matrix(
+                    (np.array(list(coefficients)), (row_ind, col_ind)),
+                    shape=[n_cols, n_cols],
                 )
-            )
-            new_columns[-1].construct()
-            s, e = A.indptr[i : i + 2]
-            new_A_data.append(-A.data[s:e])
-            new_A_indices.append(A.indices[s:e])
-            new_A_indptr.append(new_A_indptr[-1] + e - s)
-            s, e = c.indptr[i : i + 2]
-            new_c_data.append(-c.data[s:e])
-            new_c_indices.append(c.indices[s:e])
-            new_c_indptr.append(new_c_indptr[-1] + e - s)
-            if ub is None or ub > 0:
-                # Crosses 0; split into 2 vars
+                Q = Q.tocsc()
+
+            else:
+                Q = None
+
+            Q_list.append(Q)
+
+        return A, Q_list
+
+    def _csc_to_nonnegative_vars(self, c, A, columns):
+        eliminated_vars = []
+        new_columns = []
+        new_c_data = []
+        new_c_indices = []
+        new_c_indptr = [0]
+        new_A_data = []
+        new_A_indices = []
+        new_A_indptr = [0]
+        for i, v in enumerate(columns):
+            lb, ub = v.bounds
+            if lb is None or lb < 0:
+                name = v.name
                 new_columns.append(
-                    Var(name=f'_pos_{i}', domain=v.domain, bounds=(0, ub))
+                    Var(
+                        name=f"_neg_{i}",
+                        domain=v.domain,
+                        bounds=(0, None if lb is None else -lb),
+                    )
                 )
                 new_columns[-1].construct()
+                s, e = A.indptr[i : i + 2]
+                new_A_data.append(-A.data[s:e])
+                new_A_indices.append(A.indices[s:e])
+                new_A_indptr.append(new_A_indptr[-1] + e - s)
+                s, e = c.indptr[i : i + 2]
+                new_c_data.append(-c.data[s:e])
+                new_c_indices.append(c.indices[s:e])
+                new_c_indptr.append(new_c_indptr[-1] + e - s)
+                if ub is None or ub > 0:
+                    # Crosses 0; split into 2 vars
+                    new_columns.append(
+                        Var(name=f"_pos_{i}", domain=v.domain, bounds=(0, ub))
+                    )
+                    new_columns[-1].construct()
+                    s, e = A.indptr[i : i + 2]
+                    new_A_data.append(A.data[s:e])
+                    new_A_indices.append(A.indices[s:e])
+                    new_A_indptr.append(new_A_indptr[-1] + e - s)
+                    s, e = c.indptr[i : i + 2]
+                    new_c_data.append(c.data[s:e])
+                    new_c_indices.append(c.indices[s:e])
+                    new_c_indptr.append(new_c_indptr[-1] + e - s)
+                    eliminated_vars.append((v, new_columns[-1] - new_columns[-2]))
+                else:
+                    new_columns[-1].lb = -ub
+                    eliminated_vars.append((v, -new_columns[-1]))
+            else:  # lb >= 0
+                new_columns.append(v)
                 s, e = A.indptr[i : i + 2]
                 new_A_data.append(A.data[s:e])
                 new_A_indices.append(A.indices[s:e])
@@ -510,28 +922,14 @@ def _csc_to_nonnegative_vars(c, A, columns):
                 new_c_data.append(c.data[s:e])
                 new_c_indices.append(c.indices[s:e])
                 new_c_indptr.append(new_c_indptr[-1] + e - s)
-                eliminated_vars.append((v, new_columns[-1] - new_columns[-2]))
-            else:
-                new_columns[-1].lb = -ub
-                eliminated_vars.append((v, -new_columns[-1]))
-        else:  # lb >= 0
-            new_columns.append(v)
-            s, e = A.indptr[i : i + 2]
-            new_A_data.append(A.data[s:e])
-            new_A_indices.append(A.indices[s:e])
-            new_A_indptr.append(new_A_indptr[-1] + e - s)
-            s, e = c.indptr[i : i + 2]
-            new_c_data.append(c.data[s:e])
-            new_c_indices.append(c.indices[s:e])
-            new_c_indptr.append(new_c_indptr[-1] + e - s)
 
-    nCol = len(new_columns)
-    c = scipy.sparse.csc_array(
-        (np.concatenate(new_c_data), np.concatenate(new_c_indices), new_c_indptr),
-        [c.shape[0], nCol],
-    )
-    A = scipy.sparse.csc_array(
-        (np.concatenate(new_A_data), np.concatenate(new_A_indices), new_A_indptr),
-        [A.shape[0], nCol],
-    )
-    return c, A, new_columns, eliminated_vars
+        n_cols = len(new_columns)
+        c = self._csc_matrix(
+            (np.concatenate(new_c_data), np.concatenate(new_c_indices), new_c_indptr),
+            [c.shape[0], n_cols],
+        )
+        A = self._csc_matrix(
+            (np.concatenate(new_A_data), np.concatenate(new_A_indices), new_A_indptr),
+            [A.shape[0], n_cols],
+        )
+        return c, A, new_columns, eliminated_vars

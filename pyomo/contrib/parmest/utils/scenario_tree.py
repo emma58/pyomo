@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -25,7 +25,7 @@ import pyomo.environ as pyo
 
 def build_vardatalist(self, model, varlist=None):
     """
-    Convert a list of pyomo variables to a list of ScalarVar and _GeneralVarData. If varlist is none, builds a
+    Convert a list of pyomo variables to a list of ScalarVar and VarData. If varlist is none, builds a
     list of all variables in the model. The new list is stored in the vars_to_tighten attribute. By CD Laird
 
     Parameters

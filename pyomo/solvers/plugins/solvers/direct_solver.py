@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -15,14 +15,14 @@ import logging
 from pyomo.solvers.plugins.solvers.direct_or_persistent_solver import (
     DirectOrPersistentSolver,
 )
-from pyomo.core.base.block import _BlockData
+from pyomo.core.base.block import BlockData
 from pyomo.core.kernel.block import IBlock
 from pyomo.core.base.suffix import active_import_suffix_generator
 from pyomo.core.kernel.suffix import import_suffix_generator
 from pyomo.common.errors import ApplicationError
 from pyomo.common.collections import Bunch
 
-logger = logging.getLogger('pyomo.solvers')
+logger = logging.getLogger("pyomo.solvers")
 
 
 class DirectSolver(DirectOrPersistentSolver):
@@ -71,6 +71,7 @@ class DirectSolver(DirectOrPersistentSolver):
 
     def solve(self, *args, **kwds):
         """Solve the problem"""
+        # Note this does not get called with LegacySolver -- it does its own solve
 
         self.available(exception_flag=True)
         #
@@ -79,8 +80,8 @@ class DirectSolver(DirectOrPersistentSolver):
         #
         _model = None
         for arg in args:
-            if isinstance(arg, (_BlockData, IBlock)):
-                if isinstance(arg, _BlockData):
+            if isinstance(arg, (BlockData, IBlock)):
+                if isinstance(arg, BlockData):
                     if not arg.is_constructed():
                         raise RuntimeError(
                             "Attempting to solve model=%s with unconstructed "
@@ -89,7 +90,7 @@ class DirectSolver(DirectOrPersistentSolver):
 
                 _model = arg
                 # import suffixes must be on the top-level model
-                if isinstance(arg, _BlockData):
+                if isinstance(arg, BlockData):
                     model_suffixes = list(
                         name for (name, comp) in active_import_suffix_generator(arg)
                     )
@@ -103,7 +104,7 @@ class DirectSolver(DirectOrPersistentSolver):
                     )
 
                 if len(model_suffixes) > 0:
-                    kwds_suffixes = kwds.setdefault('suffixes', [])
+                    kwds_suffixes = kwds.setdefault("suffixes", [])
                     for name in model_suffixes:
                         if name not in kwds_suffixes:
                             kwds_suffixes.append(name)
@@ -119,9 +120,9 @@ class DirectSolver(DirectOrPersistentSolver):
 
         self.options = Bunch()
         self.options.update(orig_options)
-        self.options.update(kwds.pop('options', {}))
+        self.options.update(kwds.pop("options", {}))
         self.options.update(
-            self._options_string_to_dict(kwds.pop('options_string', ''))
+            self._options_string_to_dict(kwds.pop("options_string", ""))
         )
         try:
             # we're good to go.
@@ -140,9 +141,9 @@ class DirectSolver(DirectOrPersistentSolver):
                 self._initialize_callbacks(_model)
 
             _status = self._apply_solver()
-            if hasattr(self, '_transformation_data'):
+            if hasattr(self, "_transformation_data"):
                 del self._transformation_data
-            if not hasattr(_status, 'rc'):
+            if not hasattr(_status, "rc"):
                 logger.warning(
                     "Solver (%s) did not return a solver status code.\n"
                     "This is indicative of an internal solver plugin error.\n"
@@ -155,7 +156,7 @@ class DirectSolver(DirectOrPersistentSolver):
                 )
                 if self._tee:
                     logger.error("See the solver log above for diagnostic information.")
-                elif hasattr(_status, 'log') and _status.log:
+                elif hasattr(_status, "log") and _status.log:
                     logger.error("Solver log:\n" + str(_status.log))
                 raise ApplicationError("Solver (%s) did not exit normally" % self.name)
             solve_completion_time = time.time()

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -23,7 +23,9 @@ import abc
 
 from pyomo.common.deprecation import relocated_module_attribute
 from pyomo.common.dependencies import attempt_import, numpy as np, numpy_available
-from pyomo.common.tee import redirect_fd, TeeStream
+from pyomo.common.tee import capture_output
+from pyomo.common.modeling import unique_component_name
+from pyomo.core.base.objective import Objective
 
 # Because pynumero.interfaces requires numpy, we will leverage deferred
 # imports here so that the solver can be registered even when numpy is
@@ -63,7 +65,7 @@ relocated_module_attribute(
 from pyomo.common.config import ConfigBlock, ConfigValue
 from pyomo.common.timing import TicTocTimer
 from pyomo.core.base import Block, Objective, minimize
-from pyomo.opt import SolverStatus, SolverResults, TerminationCondition, ProblemSense
+from pyomo.opt import SolverStatus, SolverResults, TerminationCondition
 from pyomo.opt.results.solution import Solution
 
 logger = logging.getLogger(__name__)
@@ -226,23 +228,8 @@ class CyIpoptSolver(object):
         for k, v in self._options.items():
             add_option(k, v)
 
-        # We preemptively set up the TeeStream, even if we aren't
-        # going to use it: the implementation is such that the
-        # context manager does nothing (i.e., doesn't start up any
-        # processing threads) until after a client accesses
-        # STDOUT/STDERR
-        with TeeStream(sys.stdout) as _teeStream:
-            if tee:
-                try:
-                    fd = sys.stdout.fileno()
-                except (io.UnsupportedOperation, AttributeError):
-                    # If sys,stdout doesn't have a valid fileno,
-                    # then create one using the TeeStream
-                    fd = _teeStream.STDOUT.fileno()
-            else:
-                fd = None
-            with redirect_fd(fd=1, output=fd, synchronize=False):
-                x, info = cyipopt_solver.solve(xstart)
+        with capture_output(sys.stdout if tee else None, capture_fd=True):
+            x, info = cyipopt_solver.solve(xstart)
 
         return x, info
 
@@ -317,7 +304,13 @@ class PyomoCyIpoptSolver(object):
         return True
 
     def version(self):
-        return tuple(int(_) for _ in cyipopt.__version__.split("."))
+        def _int(x):
+            try:
+                return int(x)
+            except:
+                return x
+
+        return tuple(_int(_) for _ in cyipopt_interface.cyipopt.__version__.split("."))
 
     def solve(self, model, **kwds):
         config = self.config(kwds, preserve_implicit=True)
@@ -332,11 +325,26 @@ class PyomoCyIpoptSolver(object):
         grey_box_blocks = list(
             model.component_data_objects(egb.ExternalGreyBoxBlock, active=True)
         )
-        if grey_box_blocks:
-            # nlp = pyomo_nlp.PyomoGreyBoxNLP(model)
-            nlp = pyomo_grey_box.PyomoNLPWithGreyBoxBlocks(model)
-        else:
-            nlp = pyomo_nlp.PyomoNLP(model)
+        # if there is no objective, add one temporarily so we can construct an NLP
+        objectives = list(model.component_data_objects(Objective, active=True))
+        n_obj = len(objectives)
+        for gbb in grey_box_blocks:
+            if gbb.get_external_model().has_objective():
+                n_obj += 1
+        if n_obj == 0:
+            objname = unique_component_name(model, "_obj")
+            objective = model.add_component(objname, Objective(expr=0.0))
+        try:
+            if grey_box_blocks:
+                # nlp = pyomo_nlp.PyomoGreyBoxNLP(model)
+                nlp = pyomo_grey_box.PyomoNLPWithGreyBoxBlocks(model)
+            else:
+                nlp = pyomo_nlp.PyomoNLP(model)
+        finally:
+            # We only need the objective to construct the NLP, so we delete
+            # it from the model ASAP
+            if n_obj == 0:
+                model.del_component(objective)
 
         problem = cyipopt_interface.CyIpoptNLP(
             nlp,
@@ -375,23 +383,8 @@ class PyomoCyIpoptSolver(object):
 
         timer = TicTocTimer()
         try:
-            # We preemptively set up the TeeStream, even if we aren't
-            # going to use it: the implementation is such that the
-            # context manager does nothing (i.e., doesn't start up any
-            # processing threads) until after a client accesses
-            # STDOUT/STDERR
-            with TeeStream(sys.stdout) as _teeStream:
-                if config.tee:
-                    try:
-                        fd = sys.stdout.fileno()
-                    except (io.UnsupportedOperation, AttributeError):
-                        # If sys,stdout doesn't have a valid fileno,
-                        # then create one using the TeeStream
-                        fd = _teeStream.STDOUT.fileno()
-                else:
-                    fd = None
-                with redirect_fd(fd=1, output=fd, synchronize=False):
-                    x, info = cyipopt_solver.solve(problem.x_init())
+            with capture_output(sys.stdout if config.tee else None, capture_fd=True):
+                x, info = cyipopt_solver.solve(problem.x_init())
             solverStatus = SolverStatus.ok
         except:
             msg = "Exception encountered during cyipopt solve:"
@@ -428,11 +421,10 @@ class PyomoCyIpoptSolver(object):
 
         results.problem.name = model.name
         obj = next(model.component_data_objects(Objective, active=True))
+        results.problem.sense = obj.sense
         if obj.sense == minimize:
-            results.problem.sense = ProblemSense.minimize
             results.problem.upper_bound = info["obj_val"]
         else:
-            results.problem.sense = ProblemSense.maximize
             results.problem.lower_bound = info["obj_val"]
         results.problem.number_of_objectives = 1
         results.problem.number_of_constraints = ng

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -840,7 +840,7 @@ def makeAnyIndexedDisjunctionOfDisjunctDatas():
     build from DisjunctDatas. Identical mathematically to
     makeDisjunctionOfDisjunctDatas.
 
-    Used to test that the right things happen for a case where soemone
+    Used to test that the right things happen for a case where someone
     implements an algorithm which iteratively generates disjuncts and
     retransforms"""
     m = ConcreteModel()

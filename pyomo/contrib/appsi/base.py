@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -11,6 +11,10 @@
 
 import abc
 import enum
+import os
+import re
+import weakref
+
 from typing import (
     Sequence,
     Dict,
@@ -21,21 +25,22 @@ from typing import (
     Tuple,
     MutableMapping,
 )
-from pyomo.core.base.constraint import _GeneralConstraintData, Constraint
-from pyomo.core.base.sos import _SOSConstraintData, SOSConstraint
-from pyomo.core.base.var import _GeneralVarData, Var
-from pyomo.core.base.param import _ParamData, Param
-from pyomo.core.base.block import _BlockData, Block
-from pyomo.core.base.objective import _GeneralObjectiveData
+
+from pyomo.common.config import ConfigDict, ConfigValue, NonNegativeFloat
+from pyomo.common.errors import ApplicationError
+from pyomo.common.enums import IntEnum
+from pyomo.common.factory import Factory
+from pyomo.common.timing import HierarchicalTimer
+from pyomo.core.base.constraint import ConstraintData, Constraint
+from pyomo.core.base.sos import SOSConstraintData, SOSConstraint
+from pyomo.core.base.var import VarData, Var
+from pyomo.core.base.param import ParamData, Param
+from pyomo.core.base.block import BlockData, Block
+from pyomo.core.base.objective import ObjectiveData
 from pyomo.common.collections import ComponentMap
 from .utils.get_objective import get_objective
 from .utils.collect_vars_and_named_exprs import collect_vars_and_named_exprs
-from pyomo.common.timing import HierarchicalTimer
-from pyomo.common.config import ConfigDict, ConfigValue, NonNegativeFloat
-from pyomo.common.errors import ApplicationError
 from pyomo.opt.base import SolverFactory as LegacySolverFactory
-from pyomo.common.factory import Factory
-import os
 from pyomo.opt.results.results_ import SolverResults as LegacySolverResults
 from pyomo.opt.results.solution import (
     Solution as LegacySolution,
@@ -47,7 +52,6 @@ from pyomo.opt.results.solver import (
 )
 from pyomo.core.kernel.objective import minimize
 from pyomo.core.base import SymbolMap
-import weakref
 from .cmodel import cmodel, cmodel_available
 from pyomo.core.staleflag import StaleFlagManager
 from pyomo.core.expr.numvalue import NumericConstant
@@ -97,6 +101,9 @@ class TerminationCondition(enum.Enum):
 
 class SolverConfig(ConfigDict):
     """
+    Common configuration options for all APPSI solver interfaces
+
+
     Attributes
     ----------
     time_limit: float
@@ -132,12 +139,14 @@ class SolverConfig(ConfigDict):
         )
 
         self.declare('time_limit', ConfigValue(domain=NonNegativeFloat))
+        self.declare('warmstart', ConfigValue(domain=bool))
         self.declare('stream_solver', ConfigValue(domain=bool))
         self.declare('load_solution', ConfigValue(domain=bool))
         self.declare('symbolic_solver_labels', ConfigValue(domain=bool))
         self.declare('report_timing', ConfigValue(domain=bool))
 
         self.time_limit: Optional[float] = None
+        self.warmstart: bool = False
         self.stream_solver: bool = False
         self.load_solution: bool = True
         self.symbolic_solver_labels: bool = False
@@ -146,6 +155,8 @@ class SolverConfig(ConfigDict):
 
 class MIPSolverConfig(SolverConfig):
     """
+    Configuration options common to all MIP solvers
+
     Attributes
     ----------
     mip_gap: float
@@ -179,9 +190,7 @@ class MIPSolverConfig(SolverConfig):
 
 
 class SolutionLoaderBase(abc.ABC):
-    def load_vars(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> NoReturn:
+    def load_vars(self, vars_to_load: Optional[Sequence[VarData]] = None) -> NoReturn:
         """
         Load the solution of the primal variables into the value attribute of the variables.
 
@@ -197,8 +206,8 @@ class SolutionLoaderBase(abc.ABC):
 
     @abc.abstractmethod
     def get_primals(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         """
         Returns a ComponentMap mapping variable to var value.
 
@@ -216,8 +225,8 @@ class SolutionLoaderBase(abc.ABC):
         pass
 
     def get_duals(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         """
         Returns a dictionary mapping constraint to dual value.
 
@@ -235,8 +244,8 @@ class SolutionLoaderBase(abc.ABC):
         raise NotImplementedError(f'{type(self)} does not support the get_duals method')
 
     def get_slacks(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         """
         Returns a dictionary mapping constraint to slack.
 
@@ -256,8 +265,8 @@ class SolutionLoaderBase(abc.ABC):
         )
 
     def get_reduced_costs(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         """
         Returns a ComponentMap mapping variable to reduced cost.
 
@@ -303,8 +312,8 @@ class SolutionLoader(SolutionLoaderBase):
         self._reduced_costs = reduced_costs
 
     def get_primals(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         if self._primals is None:
             raise RuntimeError(
                 'Solution loader does not currently have a valid solution. Please '
@@ -319,8 +328,8 @@ class SolutionLoader(SolutionLoaderBase):
             return primals
 
     def get_duals(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         if self._duals is None:
             raise RuntimeError(
                 'Solution loader does not currently have valid duals. Please '
@@ -336,8 +345,8 @@ class SolutionLoader(SolutionLoaderBase):
         return duals
 
     def get_slacks(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         if self._slacks is None:
             raise RuntimeError(
                 'Solution loader does not currently have valid slacks. Please '
@@ -353,8 +362,8 @@ class SolutionLoader(SolutionLoaderBase):
         return slacks
 
     def get_reduced_costs(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         if self._reduced_costs is None:
             raise RuntimeError(
                 'Solution loader does not currently have valid reduced costs. Please '
@@ -372,6 +381,8 @@ class SolutionLoader(SolutionLoaderBase):
 
 class Results(object):
     """
+    Base class for all APPSI solver results
+
     Attributes
     ----------
     termination_condition: TerminationCondition
@@ -387,13 +398,15 @@ class Results(object):
         For solvers that do not provide an objective bound, this should be -inf
         (minimization) or inf (maximization)
 
+    Example
+    -------
     Here is an example workflow:
 
-        >>> import pyomo.environ as pe
+        >>> import pyomo.environ as pyo
         >>> from pyomo.contrib import appsi
-        >>> m = pe.ConcreteModel()
-        >>> m.x = pe.Var()
-        >>> m.obj = pe.Objective(expr=m.x**2)
+        >>> m = pyo.ConcreteModel()
+        >>> m.x = pyo.Var()
+        >>> m.obj = pyo.Objective(expr=m.x**2)
         >>> opt = appsi.solvers.Ipopt()
         >>> opt.config.load_solution = False
         >>> results = opt.solve(m) #doctest:+SKIP
@@ -429,6 +442,8 @@ class Results(object):
 
 class UpdateConfig(ConfigDict):
     """
+    Config options common to all persistent solvers
+
     Attributes
     ----------
     check_for_new_or_removed_constraints: bool
@@ -596,7 +611,7 @@ class UpdateConfig(ConfigDict):
 
 
 class Solver(abc.ABC):
-    class Availability(enum.IntEnum):
+    class Availability(IntEnum):
         NotFound = 0
         BadVersion = -1
         BadLicense = -2
@@ -621,20 +636,20 @@ class Solver(abc.ABC):
             return self.name
 
     @abc.abstractmethod
-    def solve(self, model: _BlockData, timer: HierarchicalTimer = None) -> Results:
+    def solve(self, model: BlockData, timer: HierarchicalTimer = None) -> Results:
         """
         Solve a Pyomo model.
 
         Parameters
         ----------
-        model: _BlockData
+        model: BlockData
             The Pyomo model to be solved
         timer: HierarchicalTimer
             An option timer for reporting timing
 
         Returns
         -------
-        results: Results
+        results: ~pyomo.contrib.appsi.base.Results
             A results object
         """
         pass
@@ -683,7 +698,7 @@ class Solver(abc.ABC):
 
         Returns
         -------
-        SolverConfig
+        ~pyomo.contrib.appsi.base.SolverConfig
             An object for configuring pyomo solve options such as the time limit.
             These options are mostly independent of the solver.
         """
@@ -708,9 +723,7 @@ class PersistentSolver(Solver):
     def is_persistent(self):
         return True
 
-    def load_vars(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> NoReturn:
+    def load_vars(self, vars_to_load: Optional[Sequence[VarData]] = None) -> NoReturn:
         """
         Load the solution of the primal variables into the value attribute of the variables.
 
@@ -726,13 +739,13 @@ class PersistentSolver(Solver):
 
     @abc.abstractmethod
     def get_primals(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         pass
 
     def get_duals(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         """
         Declare sign convention in docstring here.
 
@@ -752,8 +765,8 @@ class PersistentSolver(Solver):
         )
 
     def get_slacks(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         """
         Parameters
         ----------
@@ -771,8 +784,8 @@ class PersistentSolver(Solver):
         )
 
     def get_reduced_costs(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         """
         Parameters
         ----------
@@ -799,43 +812,43 @@ class PersistentSolver(Solver):
         pass
 
     @abc.abstractmethod
-    def add_variables(self, variables: List[_GeneralVarData]):
+    def add_variables(self, variables: List[VarData]):
         pass
 
     @abc.abstractmethod
-    def add_params(self, params: List[_ParamData]):
+    def add_params(self, params: List[ParamData]):
         pass
 
     @abc.abstractmethod
-    def add_constraints(self, cons: List[_GeneralConstraintData]):
+    def add_constraints(self, cons: List[ConstraintData]):
         pass
 
     @abc.abstractmethod
-    def add_block(self, block: _BlockData):
+    def add_block(self, block: BlockData):
         pass
 
     @abc.abstractmethod
-    def remove_variables(self, variables: List[_GeneralVarData]):
+    def remove_variables(self, variables: List[VarData]):
         pass
 
     @abc.abstractmethod
-    def remove_params(self, params: List[_ParamData]):
+    def remove_params(self, params: List[ParamData]):
         pass
 
     @abc.abstractmethod
-    def remove_constraints(self, cons: List[_GeneralConstraintData]):
+    def remove_constraints(self, cons: List[ConstraintData]):
         pass
 
     @abc.abstractmethod
-    def remove_block(self, block: _BlockData):
+    def remove_block(self, block: BlockData):
         pass
 
     @abc.abstractmethod
-    def set_objective(self, obj: _GeneralObjectiveData):
+    def set_objective(self, obj: ObjectiveData):
         pass
 
     @abc.abstractmethod
-    def update_variables(self, variables: List[_GeneralVarData]):
+    def update_variables(self, variables: List[VarData]):
         pass
 
     @abc.abstractmethod
@@ -857,20 +870,20 @@ class PersistentSolutionLoader(SolutionLoaderBase):
         return self._solver.get_primals(vars_to_load=vars_to_load)
 
     def get_duals(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         self._assert_solution_still_valid()
         return self._solver.get_duals(cons_to_load=cons_to_load)
 
     def get_slacks(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         self._assert_solution_still_valid()
         return self._solver.get_slacks(cons_to_load=cons_to_load)
 
     def get_reduced_costs(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         self._assert_solution_still_valid()
         return self._solver.get_reduced_costs(vars_to_load=vars_to_load)
 
@@ -954,10 +967,10 @@ class PersistentBase(abc.ABC):
             self.set_objective(None)
 
     @abc.abstractmethod
-    def _add_variables(self, variables: List[_GeneralVarData]):
+    def _add_variables(self, variables: List[VarData]):
         pass
 
-    def add_variables(self, variables: List[_GeneralVarData]):
+    def add_variables(self, variables: List[VarData]):
         for v in variables:
             if id(v) in self._referenced_variables:
                 raise ValueError(
@@ -975,19 +988,19 @@ class PersistentBase(abc.ABC):
         self._add_variables(variables)
 
     @abc.abstractmethod
-    def _add_params(self, params: List[_ParamData]):
+    def _add_params(self, params: List[ParamData]):
         pass
 
-    def add_params(self, params: List[_ParamData]):
+    def add_params(self, params: List[ParamData]):
         for p in params:
             self._params[id(p)] = p
         self._add_params(params)
 
     @abc.abstractmethod
-    def _add_constraints(self, cons: List[_GeneralConstraintData]):
+    def _add_constraints(self, cons: List[ConstraintData]):
         pass
 
-    def _check_for_new_vars(self, variables: List[_GeneralVarData]):
+    def _check_for_new_vars(self, variables: List[VarData]):
         new_vars = dict()
         for v in variables:
             v_id = id(v)
@@ -995,7 +1008,7 @@ class PersistentBase(abc.ABC):
                 new_vars[v_id] = v
         self.add_variables(list(new_vars.values()))
 
-    def _check_to_remove_vars(self, variables: List[_GeneralVarData]):
+    def _check_to_remove_vars(self, variables: List[VarData]):
         vars_to_remove = dict()
         for v in variables:
             v_id = id(v)
@@ -1004,14 +1017,14 @@ class PersistentBase(abc.ABC):
                 vars_to_remove[v_id] = v
         self.remove_variables(list(vars_to_remove.values()))
 
-    def add_constraints(self, cons: List[_GeneralConstraintData]):
+    def add_constraints(self, cons: List[ConstraintData]):
         all_fixed_vars = dict()
         for con in cons:
             if con in self._named_expressions:
                 raise ValueError(
                     'constraint {name} has already been added'.format(name=con.name)
                 )
-            self._active_constraints[con] = (con.lower, con.body, con.upper)
+            self._active_constraints[con] = con.expr
             if self.use_extensions and cmodel_available:
                 tmp = cmodel.prep_for_repn(con.body, self._expr_types)
             else:
@@ -1034,10 +1047,10 @@ class PersistentBase(abc.ABC):
             v.fix()
 
     @abc.abstractmethod
-    def _add_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def _add_sos_constraints(self, cons: List[SOSConstraintData]):
         pass
 
-    def add_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def add_sos_constraints(self, cons: List[SOSConstraintData]):
         for con in cons:
             if con in self._vars_referenced_by_con:
                 raise ValueError(
@@ -1054,10 +1067,10 @@ class PersistentBase(abc.ABC):
         self._add_sos_constraints(cons)
 
     @abc.abstractmethod
-    def _set_objective(self, obj: _GeneralObjectiveData):
+    def _set_objective(self, obj: ObjectiveData):
         pass
 
-    def set_objective(self, obj: _GeneralObjectiveData):
+    def set_objective(self, obj: ObjectiveData):
         if self._objective is not None:
             for v in self._vars_referenced_by_obj:
                 self._referenced_variables[id(v)][2] = None
@@ -1132,10 +1145,10 @@ class PersistentBase(abc.ABC):
             self.set_objective(obj)
 
     @abc.abstractmethod
-    def _remove_constraints(self, cons: List[_GeneralConstraintData]):
+    def _remove_constraints(self, cons: List[ConstraintData]):
         pass
 
-    def remove_constraints(self, cons: List[_GeneralConstraintData]):
+    def remove_constraints(self, cons: List[ConstraintData]):
         self._remove_constraints(cons)
         for con in cons:
             if con not in self._named_expressions:
@@ -1154,10 +1167,10 @@ class PersistentBase(abc.ABC):
             del self._vars_referenced_by_con[con]
 
     @abc.abstractmethod
-    def _remove_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def _remove_sos_constraints(self, cons: List[SOSConstraintData]):
         pass
 
-    def remove_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def remove_sos_constraints(self, cons: List[SOSConstraintData]):
         self._remove_sos_constraints(cons)
         for con in cons:
             if con not in self._vars_referenced_by_con:
@@ -1174,10 +1187,10 @@ class PersistentBase(abc.ABC):
             del self._vars_referenced_by_con[con]
 
     @abc.abstractmethod
-    def _remove_variables(self, variables: List[_GeneralVarData]):
+    def _remove_variables(self, variables: List[VarData]):
         pass
 
-    def remove_variables(self, variables: List[_GeneralVarData]):
+    def remove_variables(self, variables: List[VarData]):
         self._remove_variables(variables)
         for v in variables:
             v_id = id(v)
@@ -1198,10 +1211,10 @@ class PersistentBase(abc.ABC):
             del self._vars[v_id]
 
     @abc.abstractmethod
-    def _remove_params(self, params: List[_ParamData]):
+    def _remove_params(self, params: List[ParamData]):
         pass
 
-    def remove_params(self, params: List[_ParamData]):
+    def remove_params(self, params: List[ParamData]):
         self._remove_params(params)
         for p in params:
             del self._params[id(p)]
@@ -1246,10 +1259,10 @@ class PersistentBase(abc.ABC):
         )
 
     @abc.abstractmethod
-    def _update_variables(self, variables: List[_GeneralVarData]):
+    def _update_variables(self, variables: List[VarData]):
         pass
 
-    def update_variables(self, variables: List[_GeneralVarData]):
+    def update_variables(self, variables: List[VarData]):
         for v in variables:
             self._vars[id(v)] = (
                 v,
@@ -1334,12 +1347,12 @@ class PersistentBase(abc.ABC):
             for c in self._vars_referenced_by_con.keys():
                 if c not in current_cons_dict and c not in current_sos_dict:
                     if (c.ctype is Constraint) or (
-                        c.ctype is None and isinstance(c, _GeneralConstraintData)
+                        c.ctype is None and isinstance(c, ConstraintData)
                     ):
                         old_cons.append(c)
                     else:
                         assert (c.ctype is SOSConstraint) or (
-                            c.ctype is None and isinstance(c, _SOSConstraintData)
+                            c.ctype is None and isinstance(c, SOSConstraintData)
                         )
                         old_sos.append(c)
         self.remove_constraints(old_cons)
@@ -1367,40 +1380,13 @@ class PersistentBase(abc.ABC):
         cons_to_remove_and_add = dict()
         need_to_set_objective = False
         if config.update_constraints:
-            cons_to_update = list()
-            sos_to_update = list()
             for c in current_cons_dict.keys():
-                if c not in new_cons_set:
-                    cons_to_update.append(c)
+                if c not in new_cons_set and c.expr is not self._active_constraints[c]:
+                    cons_to_remove_and_add[c] = None
+            sos_to_update = []
             for c in current_sos_dict.keys():
                 if c not in new_sos_set:
                     sos_to_update.append(c)
-            for c in cons_to_update:
-                lower, body, upper = self._active_constraints[c]
-                new_lower, new_body, new_upper = c.lower, c.body, c.upper
-                if new_body is not body:
-                    cons_to_remove_and_add[c] = None
-                    continue
-                if new_lower is not lower:
-                    if (
-                        type(new_lower) is NumericConstant
-                        and type(lower) is NumericConstant
-                        and new_lower.value == lower.value
-                    ):
-                        pass
-                    else:
-                        cons_to_remove_and_add[c] = None
-                        continue
-                if new_upper is not upper:
-                    if (
-                        type(new_upper) is NumericConstant
-                        and type(upper) is NumericConstant
-                        and new_upper.value == upper.value
-                    ):
-                        pass
-                    else:
-                        cons_to_remove_and_add[c] = None
-                        continue
             self.remove_sos_constraints(sos_to_update)
             self.add_sos_constraints(sos_to_update)
         timer.stop('cons')
@@ -1529,7 +1515,7 @@ legacy_solution_status_map = {
 class LegacySolverInterface(object):
     def solve(
         self,
-        model: _BlockData,
+        model: BlockData,
         tee: bool = False,
         load_solutions: bool = True,
         logfile: Optional[str] = None,
@@ -1541,6 +1527,7 @@ class LegacySolverInterface(object):
         options: Optional[Dict] = None,
         keepfiles: bool = False,
         symbolic_solver_labels: bool = False,
+        warmstart: bool = False,
     ):
         original_config = self.config
         self.config = self.config()
@@ -1548,6 +1535,7 @@ class LegacySolverInterface(object):
         self.config.load_solution = load_solutions
         self.config.symbolic_solver_labels = symbolic_solver_labels
         self.config.time_limit = timelimit
+        self.config.warmstart = warmstart
         self.config.report_timing = report_timing
         if solver_io is not None:
             raise NotImplementedError('Still working on this')
@@ -1665,7 +1653,7 @@ class LegacySolverInterface(object):
 
     @property
     def options(self):
-        for solver_name in ['gurobi', 'ipopt', 'cplex', 'cbc', 'highs']:
+        for solver_name in ['gurobi', 'ipopt', 'cplex', 'cbc', 'highs', 'maingo']:
             if hasattr(self, solver_name + '_options'):
                 return getattr(self, solver_name + '_options')
         raise NotImplementedError('Could not find the correct options')
@@ -1673,7 +1661,7 @@ class LegacySolverInterface(object):
     @options.setter
     def options(self, val):
         found = False
-        for solver_name in ['gurobi', 'ipopt', 'cplex', 'cbc', 'highs']:
+        for solver_name in ['gurobi', 'ipopt', 'cplex', 'cbc', 'highs', 'maingo']:
             if hasattr(self, solver_name + '_options'):
                 setattr(self, solver_name + '_options', val)
                 found = True

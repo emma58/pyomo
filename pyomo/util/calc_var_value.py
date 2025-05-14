@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -12,7 +12,7 @@
 from pyomo.common.errors import IterationLimitError
 from pyomo.common.numeric_types import native_numeric_types, native_complex_types, value
 from pyomo.core.expr.calculus.derivatives import differentiate
-from pyomo.core.base.constraint import Constraint, _ConstraintData
+from pyomo.core.base.constraint import Constraint
 
 import logging
 
@@ -53,9 +53,9 @@ def calculate_variable_from_constraint(
 
     Parameters:
     -----------
-    variable: :py:class:`_VarData`
+    variable: :py:class:`VarData`
         The variable to solve for
-    constraint: :py:class:`_ConstraintData` or relational expression or `tuple`
+    constraint: :py:class:`ConstraintData` or relational expression or `tuple`
         The equality constraint to use to solve for the variable value.
         May be a `ConstraintData` object or any valid argument for
         ``Constraint(expr=<>)`` (i.e., a relational expression or 2- or
@@ -81,9 +81,16 @@ def calculate_variable_from_constraint(
 
     """
     # Leverage all the Constraint logic to process the incoming tuple/expression
-    if not isinstance(constraint, _ConstraintData):
+    if not getattr(constraint, 'ctype', None) is Constraint:
         constraint = Constraint(expr=constraint, name=type(constraint).__name__)
         constraint.construct()
+
+    if constraint.is_indexed():
+        raise ValueError(
+            'calculate_variable_from_constraint(): constraint must be a '
+            'scalar constraint or a single ConstraintData.  Received '
+            f'{constraint.__class__.__name__} ("{constraint.name}")'
+        )
 
     body = constraint.body
     lower = constraint.lb
@@ -169,7 +176,10 @@ def calculate_variable_from_constraint(
         intercept = (residual_1 - upper) - slope * x1
         if slope:
             variable.set_value(-intercept / slope, skip_validation=True)
-            body_val = value(body, exception=False)
+            try:
+                body_val = value(body, exception=False)
+            except OverflowError:
+                body_val = None
             if body_val.__class__ not in _invalid_types and abs(body_val - upper) < eps:
                 # Re-set the variable value to trigger any warnings WRT
                 # the final variable state
@@ -270,18 +280,25 @@ def calculate_variable_from_constraint(
             while alpha > alpha_min:
                 # check if the value at xkp1 has sufficient reduction in
                 # the residual
-                fkp1 = value(expr, exception=False)
-                # HACK for Python3 support, pending resolution of #879
-                # Issue #879 also pertains to other checks for "complex"
-                # in this method.
-                if fkp1.__class__ in _invalid_types:
-                    # We cannot perform computations on complex numbers
-                    fkp1 = None
-                if fkp1 is not None and fkp1**2 < c1 * fk**2:
-                    # found an alpha value with sufficient reduction
-                    # continue to the next step
-                    fk = fkp1
-                    break
+                try:
+                    fkp1 = value(expr, exception=False)
+                    # HACK for Python3 support, pending resolution of #879
+                    # Issue #879 also pertains to other checks for "complex"
+                    # in this method.
+                    if fkp1.__class__ in _invalid_types:
+                        # We cannot perform computations on complex numbers
+                        fkp1 = None
+                    if fkp1 is not None and fkp1**2 < c1 * fk**2:
+                        # found an alpha value with sufficient reduction
+                        # continue to the next step
+                        fk = fkp1
+                        break
+                except OverflowError:
+                    # Encountered an overflow, either from evaluating
+                    # this point in the line search (to get fkp1) or
+                    # from squaring fkp1.  (The example from #3540
+                    # actually triggers both).  Reject this alpha value.
+                    pass
                 alpha /= 2.0
                 xkp1 = xk + alpha * pk
                 variable.set_value(xkp1, skip_validation=True)

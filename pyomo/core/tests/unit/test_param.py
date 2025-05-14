@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -65,8 +65,8 @@ from pyomo.environ import (
 from pyomo.common.errors import PyomoException
 from pyomo.common.log import LoggingIntercept
 from pyomo.common.tempfiles import TempfileManager
-from pyomo.core.base.param import _ParamData
-from pyomo.core.base.set import _SetData
+from pyomo.core.base.param import ParamData
+from pyomo.core.base.set import SetData
 from pyomo.core.base.units_container import units, pint_available, UnitsError
 
 from io import StringIO
@@ -181,7 +181,7 @@ class ParamTester(object):
         idx = sorted(keys)[0]
         self.assertEqual(value(self.instance.A[idx]), self.data[idx])
         if self.instance.A.mutable:
-            self.assertTrue(isinstance(self.instance.A[idx], _ParamData))
+            self.assertTrue(isinstance(self.instance.A[idx], ParamData))
         else:
             self.assertEqual(type(self.instance.A[idx]), float)
 
@@ -190,7 +190,7 @@ class ParamTester(object):
             if not self.instance.A.mutable:
                 self.fail("Expected setitem[%s] to fail for immutable Params" % (idx,))
             self.assertEqual(value(self.instance.A[idx]), 4.3)
-            self.assertTrue(isinstance(self.instance.A[idx], _ParamData))
+            self.assertTrue(isinstance(self.instance.A[idx], ParamData))
         except TypeError:
             # immutable Params should raise a TypeError exception
             if self.instance.A.mutable:
@@ -249,7 +249,7 @@ class ParamTester(object):
 
         self.assertEqual(value(self.instance.A[idx]), self.instance.A._default_val)
         if self.instance.A.mutable:
-            self.assertIsInstance(self.instance.A[idx], _ParamData)
+            self.assertIsInstance(self.instance.A[idx], ParamData)
         else:
             self.assertEqual(
                 type(self.instance.A[idx]), type(value(self.instance.A._default_val))
@@ -260,7 +260,7 @@ class ParamTester(object):
             if not self.instance.A.mutable:
                 self.fail("Expected setitem[%s] to fail for immutable Params" % (idx,))
             self.assertEqual(self.instance.A[idx].value, 4.3)
-            self.assertIsInstance(self.instance.A[idx], _ParamData)
+            self.assertIsInstance(self.instance.A[idx], ParamData)
         except TypeError:
             # immutable Params should raise a TypeError exception
             if self.instance.A.mutable:
@@ -1487,7 +1487,7 @@ q : Size=0, Index=None, Domain=Any, Default=None, Mutable=False
         m.I = Set(initialize=[1, 2, 3])
         param_vals = {1: 1, 2: 1, 3: -1}
         m.p = Param(m.I, initialize=param_vals, domain={-1, 1})
-        self.assertIsInstance(m.p.domain, _SetData)
+        self.assertIsInstance(m.p.domain, SetData)
 
     @unittest.skipUnless(pint_available, "units test requires pint module")
     def test_set_value_units(self):
@@ -1560,6 +1560,88 @@ q : Size=0, Index=None, Domain=Any, Default=None, Mutable=False
         self.assertEqual(m.x_p.bounds, (0, 10))
         m.p = 20
         self.assertEqual(m.x_p.bounds, (0, 20))
+
+    def test_nonfinite_pprint(self):
+        m = ConcreteModel()
+
+        # Test from #3379
+        m.p = Param(Any, default=1)
+        self.assertEqual(m.p['foo'], 1)
+        OUT = StringIO()
+        m.p.pprint(OUT)
+        self.assertEqual(
+            OUT.getvalue(),
+            "p : Size=inf, Index=Any, Domain=Any, Default=1, Mutable=False\n"
+            "    Key : Value\n",
+        )
+
+        # Other useful checks
+        m.q = Param(Any, default=1, initialize={1: 2, 'a': 3, 'bb': 4})
+        OUT = StringIO()
+        m.q.pprint(OUT)
+        self.assertEqual(
+            OUT.getvalue(),
+            "q : Size=inf, Index=Any, Domain=Any, Default=1, Mutable=False\n"
+            "    Key : Value\n"
+            "      1 :     2\n"
+            "      a :     3\n"
+            "     bb :     4\n",
+        )
+
+        m.r = Param(Any, initialize={1: 2, 'a': 3, 'bb': 4})
+        OUT = StringIO()
+        m.r.pprint(OUT)
+        self.assertEqual(
+            OUT.getvalue(),
+            "r : Size=3, Index=Any, Domain=Any, Default=None, Mutable=False\n"
+            "    Key : Value\n"
+            "      1 :     2\n"
+            "      a :     3\n"
+            "     bb :     4\n",
+        )
+
+        # Other useful (mutable) checks
+        m.q = Param(Any, default=1, mutable=True, initialize={1: 2, 'a': 3, 'bb': 4})
+        OUT = StringIO()
+        m.q.pprint(OUT)
+        self.assertEqual(
+            OUT.getvalue(),
+            "q : Size=inf, Index=Any, Domain=Any, Default=1, Mutable=True\n"
+            "    Key : Value\n"
+            "      1 :     2\n"
+            "      a :     3\n"
+            "     bb :     4\n",
+        )
+
+        m.r = Param(Any, mutable=True, initialize={1: 2, 'a': 3, 'bb': 4})
+        OUT = StringIO()
+        m.r.pprint(OUT)
+        self.assertEqual(
+            OUT.getvalue(),
+            "r : Size=3, Index=Any, Domain=Any, Default=None, Mutable=True\n"
+            "    Key : Value\n"
+            "      1 :     2\n"
+            "      a :     3\n"
+            "     bb :     4\n",
+        )
+
+    def test_invalid_exception_argument(self):
+        m = ConcreteModel()
+        m.p = Param(initialize=7, mutable=True)
+        m.indexed = Param([1, 2], initialize={1: 3, 2: 4}, mutable=True)
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Param 'p' was called with a non-bool argument for 'exception': "
+            r"p \+ 2",
+        ):
+            m.p(m.p + 2)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Param 'indexed\[1\]' was called with a non-bool argument for "
+            r"'exception': 3.2",
+        ):
+            m.indexed[1](3.2)
 
 
 def createNonIndexedParamMethod(func, init_xy, new_xy, tol=1e-10):

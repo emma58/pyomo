@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -11,6 +11,7 @@
 
 import abc
 import logging
+import numpy as np
 from scipy.sparse import coo_matrix
 from pyomo.common.dependencies import numpy as np
 
@@ -18,7 +19,7 @@ from pyomo.common.deprecation import RenamedClass
 from pyomo.common.log import is_debug_set
 from pyomo.common.timing import ConstructionTimer
 from pyomo.core.base import Var, Set, Constraint, value
-from pyomo.core.base.block import _BlockData, Block, declare_custom_block
+from pyomo.core.base.block import BlockData, Block, declare_custom_block
 from pyomo.core.base.global_set import UnindexedComponent_index
 from pyomo.core.base.initializer import Initializer
 from pyomo.core.base.set import UnindexedComponent_set
@@ -44,6 +45,10 @@ external models) with a Pyomo model.
 Note: To solve a Pyomo model that contains these external models
       we have a specialized interface built on PyNumero that provides
       an interface to the CyIpopt solver.
+
+constraints: c(x) = 0
+outputs: y = c(x)
+
 
 To use this interface:
    * Create a class that is derived from ExternalGreyBoxModel and
@@ -125,6 +130,9 @@ class ExternalGreyBoxModel(object):
         function that computes the vector of outputs at the values for
         the input variables. This method must return
         H_o^k = sum_i (y_o^k)_i * grad^2_{uu} w_o(u^k)
+
+    def evaluate_hessian_objective(self):
+        Compute the hessian of the objective
 
     Examples that show Hessian support are also found in:
     pyomo/contrib/pynumero/examples/external_grey_box/react-example/
@@ -315,8 +323,31 @@ class ExternalGreyBoxModel(object):
     # def evaluate_hessian_outputs(self):
     #
 
+    # Support for objectives
+    def has_objective(self):
+        return False
 
-class ExternalGreyBoxBlockData(_BlockData):
+    def evaluate_objective(self) -> float:
+        """
+        Compute the objective from the  values set in
+        input_values
+        """
+        raise NotImplementedError(
+            'evaluate_objective called but not implemented in the derived class.'
+        )
+
+    def evaluate_grad_objective(self, out=None):
+        """
+        Compute the gradient of the objective from the
+        values set in input_values
+        """
+        raise NotImplementedError(
+            'evaluate_grad_objective called but not '
+            'implemented in the derived class.'
+        )
+
+
+class ExternalGreyBoxBlockData(BlockData):
     def set_external_model(self, external_grey_box_model, inputs=None, outputs=None):
         """
         Parameters
@@ -424,7 +455,7 @@ class ScalarExternalGreyBoxBlock(ExternalGreyBoxBlockData, ExternalGreyBoxBlock)
     def __init__(self, *args, **kwds):
         ExternalGreyBoxBlockData.__init__(self, component=self)
         ExternalGreyBoxBlock.__init__(self, *args, **kwds)
-        # The above inherit from Block and _BlockData, so it's not until here
+        # The above inherit from Block and BlockData, so it's not until here
         # that we know it's scalar. So we set the index accordingly.
         self._index = UnindexedComponent_index
 

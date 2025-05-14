@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,10 +9,16 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-from pyomo.common.dependencies import dill_available
-import pyomo.common.unittest as unittest
-from pyomo.common.log import LoggingIntercept
 import logging
+import sys
+import random
+from io import StringIO
+
+import pyomo.common.unittest as unittest
+
+from pyomo.common.dependencies import dill_available
+from pyomo.common.log import LoggingIntercept
+from pyomo.common.fileutils import this_file_dir
 
 from pyomo.environ import (
     TransformationFactory,
@@ -32,7 +38,6 @@ from pyomo.environ import (
     Param,
     Objective,
     TerminationCondition,
-    Reference,
 )
 from pyomo.core.expr.compare import (
     assertExpressionsEqual,
@@ -47,14 +52,8 @@ from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 import pyomo.gdp.tests.models as models
 import pyomo.gdp.tests.common_tests as ct
 
-import random
-from io import StringIO
-import os
-from os.path import abspath, dirname, join
 
-
-currdir = dirname(abspath(__file__))
-from filecmp import cmp
+currdir = this_file_dir()
 
 EPS = TransformationFactory('gdp.hull').CONFIG.EPS
 linear_solvers = ct.linear_solvers
@@ -530,14 +529,18 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
             mappings[disjBlock[i].disaggregatedVars.x] = disjBlock[i].x_bounds
             if i == 1:  # this disjunct has x, w, and no y
                 mappings[disjBlock[i].disaggregatedVars.w] = disjBlock[i].w_bounds
-                mappings[transBlock._disaggregatedVars[0]] = Reference(
-                    transBlock._boundsConstraints[0, ...]
-                )
+                mappings[transBlock._disaggregatedVars[0]] = {
+                    key: val
+                    for key, val in transBlock._boundsConstraints.items()
+                    if key[0] == 0
+                }
             elif i == 0:  # this disjunct has x, y, and no w
                 mappings[disjBlock[i].disaggregatedVars.y] = disjBlock[i].y_bounds
-                mappings[transBlock._disaggregatedVars[1]] = Reference(
-                    transBlock._boundsConstraints[1, ...]
-                )
+                mappings[transBlock._disaggregatedVars[1]] = {
+                    key: val
+                    for key, val in transBlock._boundsConstraints.items()
+                    if key[0] == 1
+                }
             for var, cons in mappings.items():
                 returned_cons = hull.get_var_bounds_constraint(var)
                 # This sometimes refers a reference to the right part of a
@@ -545,6 +548,8 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
                 # themselves might not be the same object. The ConstraintDatas
                 # are though:
                 for key, constraintData in cons.items():
+                    if type(key) is tuple:
+                        key = key[1]
                     self.assertIs(returned_cons[key], constraintData)
 
     def test_create_using_nonlinear(self):
@@ -897,18 +902,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         hull = TransformationFactory('gdp.hull')
         hull.apply_to(m)
         # can't ask for simpledisj1.c[1]: it wasn't transformed
-        log = StringIO()
-        with LoggingIntercept(log, 'pyomo.gdp', logging.ERROR):
-            self.assertRaisesRegex(
-                KeyError,
-                r".*b.simpledisj1.c\[1\]",
-                hull.get_transformed_constraints,
-                m.b.simpledisj1.c[1],
-            )
-        self.assertRegex(
-            log.getvalue(),
-            r".*Constraint 'b.simpledisj1.c\[1\]' has not been transformed.",
-        )
+        with self.assertRaisesRegex(
+            GDP_Error, r"Constraint 'b.simpledisj1.c\[1\]' has not been transformed."
+        ):
+            hull.get_transformed_constraints(m.b.simpledisj1.c[1])
 
         # this fixes a[2] to 0, so we should get the disggregated var
         transformed = hull.get_transformed_constraints(m.b.simpledisj1.c[2])
@@ -1260,12 +1257,10 @@ class IndexedDisjunction(unittest.TestCase, CommonTests):
 
         orig = model.component("_pyomo_gdp_hull_reformulation")
         self.assertIsInstance(
-            model.disjunctionList[1].algebraic_constraint,
-            constraint._GeneralConstraintData,
+            model.disjunctionList[1].algebraic_constraint, constraint.ConstraintData
         )
         self.assertIsInstance(
-            model.disjunctionList[0].algebraic_constraint,
-            constraint._GeneralConstraintData,
+            model.disjunctionList[0].algebraic_constraint, constraint.ConstraintData
         )
         self.assertFalse(model.disjunctionList[1].active)
         self.assertFalse(model.disjunctionList[0].active)
@@ -2314,8 +2309,7 @@ class TestErrors(unittest.TestCase):
         with LoggingIntercept(log, 'pyomo.gdp.hull', logging.ERROR):
             self.assertRaisesRegex(
                 KeyError,
-                r".*_pyomo_gdp_hull_reformulation.relaxedDisjuncts\[1\]."
-                r"disaggregatedVars.w",
+                r".*disjunction",
                 hull.get_disaggregation_constraint,
                 m.d[1].transformation_block.disaggregatedVars.w,
                 m.disjunction,
@@ -2880,7 +2874,15 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
 
     @unittest.skipIf(not dill_available, "Dill is not available")
     def test_dill_pickle(self):
-        ct.check_transformed_model_pickles_with_dill(self, 'hull')
+        try:
+            # As of Nov 2024, this test needs a larger recursion limit
+            # due to the various references among the modeling objects
+            # 1385 is sufficient locally, but not always on GHA.
+            rl = sys.getrecursionlimit()
+            sys.setrecursionlimit(max(1500, rl))
+            ct.check_transformed_model_pickles_with_dill(self, 'hull')
+        finally:
+            sys.setrecursionlimit(rl)
 
 
 @unittest.skipUnless(gurobi_available, "Gurobi is not available")

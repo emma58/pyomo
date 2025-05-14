@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -13,6 +13,8 @@ from pyomo.core.expr.logical_expr import BooleanExpression
 
 
 class PrecedenceExpression(BooleanExpression):
+    PRECEDENCE = None
+
     def nargs(self):
         return 3
 
@@ -21,13 +23,13 @@ class PrecedenceExpression(BooleanExpression):
         return self._args_[2]
 
     def _to_string_impl(self, values, relation):
-        delay = int(values[2])
-        if delay == 0:
+        delay = values[2]
+        if delay == '0':
             first = values[0]
-        elif delay > 0:
-            first = "%s + %s" % (values[0], delay)
+        elif delay[0] in '-+':
+            first = "%s %s %s" % (values[0], delay[0], delay[1:])
         else:
-            first = "%s - %s" % (values[0], abs(delay))
+            first = "%s + %s" % (values[0], delay)
         return "%s %s %s" % (first, relation, values[1])
 
 

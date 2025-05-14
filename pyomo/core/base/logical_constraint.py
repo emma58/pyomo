@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -20,6 +20,7 @@ from pyomo.common.log import is_debug_set
 from pyomo.common.modeling import NOTSET
 from pyomo.common.timing import ConstructionTimer
 
+from pyomo.core.expr.expr_common import _type_check_exception_arg
 from pyomo.core.expr.boolean_value import as_boolean, BooleanConstant
 from pyomo.core.expr.numvalue import native_types, native_logical_types
 from pyomo.core.base.component import ActiveComponentData, ModelComponentFactory
@@ -42,79 +43,29 @@ forgetting to include the "return" statement at the end of your rule.
 """
 
 
-class _LogicalConstraintData(ActiveComponentData):
-    """
-    This class defines the data for a single logical constraint.
-
-    It functions as a pure interface.
-
-    Constructor arguments:
-        component       The LogicalConstraint object that owns this data.
-
-    Public class attributes:
-        active          A boolean that is true if this statement is
-                            active in the model.
-        body            The Pyomo logical expression for this statement
-
-    Private class attributes:
-        _component      The statement component.
-        _active         A boolean that indicates whether this data is active
-    """
-
-    __slots__ = ()
-
-    def __init__(self, component=None):
-        #
-        # These lines represent in-lining of the
-        # following constructors:
-        #   - ActiveComponentData
-        #   - ComponentData
-        self._component = weakref_ref(component) if (component is not None) else None
-        self._index = NOTSET
-        self._active = True
-
-    #
-    # Interface
-    #
-    def __call__(self, exception=True):
-        """Compute the value of the body of this logical constraint."""
-        if self.body is None:
-            return None
-        return self.body(exception=exception)
-
-    #
-    # Abstract Interface
-    #
-    @property
-    def expr(self):
-        """Get the expression on this logical constraint."""
-        raise NotImplementedError
-
-    def set_value(self, expr):
-        """Set the expression on this logical constraint."""
-        raise NotImplementedError
-
-    def get_value(self):
-        """Get the expression on this logical constraint."""
-        raise NotImplementedError
-
-
-class _GeneralLogicalConstraintData(_LogicalConstraintData):
+class LogicalConstraintData(ActiveComponentData):
     """
     This class defines the data for a single general logical constraint.
 
     Constructor arguments:
-        component       The LogicalStatement object that owns this data.
-        expr            The Pyomo expression stored in this logical constraint.
+        component
+            The LogicalStatement object that owns this data.
+        expr
+            The Pyomo expression stored in this logical constraint.
 
     Public class attributes:
-        active          A boolean that is true if this logical constraint is
-                            active in the model.
-        expr            The Pyomo expression for this logical constraint
+        active
+            A boolean that is true if this logical constraint is
+            active in the model.
+        expr
+            The Pyomo expression for this logical constraint
 
     Private class attributes:
-        _component      The logical constraint component.
-        _active         A boolean that indicates whether this data is active
+        _component
+            The logical constraint component.
+        _active
+            A boolean that indicates whether this data is active
+
     """
 
     __slots__ = ('_expr',)
@@ -123,7 +74,7 @@ class _GeneralLogicalConstraintData(_LogicalConstraintData):
         #
         # These lines represent in-lining of the
         # following constructors:
-        #   - _LogicalConstraintData,
+        #   - LogicalConstraintData,
         #   - ActiveComponentData
         #   - ComponentData
         self._component = weakref_ref(component) if (component is not None) else None
@@ -133,6 +84,13 @@ class _GeneralLogicalConstraintData(_LogicalConstraintData):
         self._expr = None
         if expr is not None:
             self.set_value(expr)
+
+    def __call__(self, exception=NOTSET):
+        """Compute the value of the body of this logical constraint."""
+        exception = _type_check_exception_arg(self, exception)
+        if self.body is None:
+            return None
+        return self.body(exception=exception)
 
     #
     # Abstract Interface
@@ -171,6 +129,16 @@ class _GeneralLogicalConstraintData(_LogicalConstraintData):
     def get_value(self):
         """Get the expression on this logical constraint."""
         return self._expr
+
+
+class _LogicalConstraintData(metaclass=RenamedClass):
+    __renamed__new_class__ = LogicalConstraintData
+    __renamed__version__ = '6.7.2'
+
+
+class _GeneralLogicalConstraintData(metaclass=RenamedClass):
+    __renamed__new_class__ = LogicalConstraintData
+    __renamed__version__ = '6.7.2'
 
 
 @ModelComponentFactory.register("General logical constraints.")
@@ -215,7 +183,7 @@ class LogicalConstraint(ActiveIndexedComponent):
             The class type for the derived subclass
     """
 
-    _ComponentDataClass = _GeneralLogicalConstraintData
+    _ComponentDataClass = LogicalConstraintData
 
     class Infeasible(object):
         pass
@@ -373,7 +341,7 @@ class LogicalConstraint(ActiveIndexedComponent):
 
     #
     # Checks flags like Constraint.Skip, etc. before actually creating a
-    # constraint object. Returns the _ConstraintData object when it should be
+    # constraint object. Returns the ConstraintData object when it should be
     #  added to the _data dict; otherwise, None is returned or an exception
     # is raised.
     #
@@ -409,14 +377,14 @@ class LogicalConstraint(ActiveIndexedComponent):
         return expr
 
 
-class ScalarLogicalConstraint(_GeneralLogicalConstraintData, LogicalConstraint):
+class ScalarLogicalConstraint(LogicalConstraintData, LogicalConstraint):
     """
     ScalarLogicalConstraint is the implementation representing a single,
     non-indexed logical constraint.
     """
 
     def __init__(self, *args, **kwds):
-        _GeneralLogicalConstraintData.__init__(self, component=self, expr=None)
+        LogicalConstraintData.__init__(self, component=self, expr=None)
         LogicalConstraint.__init__(self, *args, **kwds)
         self._index = UnindexedComponent_index
 
@@ -436,7 +404,7 @@ class ScalarLogicalConstraint(_GeneralLogicalConstraintData, LogicalConstraint):
                     "an expression. There is currently "
                     "nothing to access." % self.name
                 )
-            return _GeneralLogicalConstraintData.body.fget(self)
+            return LogicalConstraintData.body.fget(self)
         raise ValueError(
             "Accessing the body of logical constraint '%s' "
             "before the LogicalConstraint has been constructed (there "
@@ -450,7 +418,7 @@ class ScalarLogicalConstraint(_GeneralLogicalConstraintData, LogicalConstraint):
     # currently in place). So during initialization only, we will
     # treat them as "indexed" objects where things like
     # True are managed. But after that they will behave
-    # like _LogicalConstraintData objects where set_value expects
+    # like LogicalConstraintData objects where set_value expects
     # a valid expression or None.
     #
 

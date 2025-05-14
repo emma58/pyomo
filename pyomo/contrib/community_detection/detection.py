@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -31,7 +31,7 @@ from pyomo.core import (
     Objective,
     ConstraintList,
 )
-from pyomo.core.base.objective import _GeneralObjectiveData
+from pyomo.core.base.objective import ObjectiveData
 from pyomo.core.expr.visitor import replace_expressions, identify_variables
 from pyomo.contrib.community_detection.community_graph import generate_model_graph
 from pyomo.common.dependencies import networkx as nx
@@ -580,7 +580,7 @@ class CommunityMap(object):
                 pos = nx.spring_layout(model_graph)
 
         # Define color_map
-        color_map = plt.cm.get_cmap('viridis', len(numbered_community_map))
+        color_map = plt.get_cmap('viridis', len(numbered_community_map))
 
         # Create the figure and draw the graph
         fig = plt.figure()
@@ -616,9 +616,7 @@ class CommunityMap(object):
         subtitle_font_size = 11
         plt.title(subtitle_naming_dict[type_of_graph], fontsize=subtitle_font_size)
 
-        if filename is None:
-            plt.show()
-        else:
+        if filename is not None:
             plt.savefig(filename)
             plt.close()
 
@@ -750,7 +748,7 @@ class CommunityMap(object):
                 # Check to see whether 'stored_constraint' is actually an objective (since constraints and objectives
                 # grouped together)
                 if self.with_objective and isinstance(
-                    stored_constraint, (_GeneralObjectiveData, Objective)
+                    stored_constraint, (ObjectiveData, Objective)
                 ):
                     # If the constraint is actually an objective, we add it to the block as an objective
                     new_objective = Objective(

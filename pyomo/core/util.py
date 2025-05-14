@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,7 +18,7 @@ from pyomo.core.expr.numvalue import native_numeric_types
 from pyomo.core.expr.numeric_expr import mutable_expression, NPV_SumExpression
 from pyomo.core.base.var import Var
 from pyomo.core.base.expression import Expression
-from pyomo.core.base.component import _ComponentBase
+from pyomo.core.base.component import ComponentBase
 import logging
 
 logger = logging.getLogger(__name__)
@@ -221,10 +221,12 @@ def sequence(*args):
 
     Return a generator that containing an arithmetic
     progression of integers.
-       sequence(i, j) returns [i, i+1, i+2, ..., j];
-       start defaults to 1.
-       step specifies the increment (or decrement)
-    For example, sequence(4) returns [1, 2, 3, 4].
+
+       - ``sequence(i, j)`` returns ``[i, i+1, i+2, ..., j]``;
+       - start defaults to 1.
+       - step specifies the increment (or decrement)
+
+    For example, ``sequence(4)`` returns ``[1, 2, 3, 4]``.
     """
     if len(args) == 0:
         raise ValueError('sequence expected at least 1 arguments, got 0')
@@ -238,12 +240,12 @@ def sequence(*args):
 
 
 def target_list(x):
-    if isinstance(x, _ComponentBase):
+    if isinstance(x, ComponentBase):
         return [x]
     elif hasattr(x, '__iter__'):
         ans = []
         for i in x:
-            if isinstance(i, _ComponentBase):
+            if isinstance(i, ComponentBase):
                 ans.append(i)
             else:
                 raise ValueError(

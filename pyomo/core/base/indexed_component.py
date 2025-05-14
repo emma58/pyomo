@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,7 +18,7 @@ import pyomo.core.expr as EXPR
 import pyomo.core.base as BASE
 from pyomo.core.base.indexed_component_slice import IndexedComponent_slice
 from pyomo.core.base.initializer import Initializer
-from pyomo.core.base.component import Component, ActiveComponent
+from pyomo.core.base.component import Component, ActiveComponent, ComponentData
 from pyomo.core.base.config import PyomoOptions
 from pyomo.core.base.enums import SortComponents
 from pyomo.core.base.global_set import UnindexedComponent_set
@@ -63,6 +63,8 @@ def normalize_index(x):
         # new object)
         x = tuple(x)
     else:
+        # Note: new Sequence types will be caught below and added to the
+        # sequence_types set
         x = (x,)
 
     x_len = len(x)
@@ -338,11 +340,11 @@ class IndexedComponent(Component):
         _new = self.__class__.__new__(self.__class__)
         _ans = memo.setdefault(id(self), _new)
         if _ans is _new:
-            component_list.append(self)
+            component_list.append((self, _new))
             # For indexed components, we will pre-emptively clone all
             # component data objects as well (as those are the objects
             # that will be referenced by things like expressions).  It
-            # is important to only clone "normal" ComponentData obects:
+            # is important to only clone "normal" ComponentData objects:
             # so we will want to skip this for all scalar components
             # (where the _data points back to self) and references
             # (where the data may be stored outside this block tree and
@@ -352,10 +354,12 @@ class IndexedComponent(Component):
                 # for the _data dict, we can effectively "deepcopy" it
                 # right now (almost for free!)
                 _src = self._data
-                memo[id(_src)] = _new._data = _data = _src.__class__()
+                memo[id(_src)] = _new._data = _src.__class__()
+                _setter = _new._data.__setitem__
                 for idx, obj in _src.items():
-                    _data[fast_deepcopy(idx, memo)] = obj._create_objects_for_deepcopy(
-                        memo, component_list
+                    _setter(
+                        fast_deepcopy(idx, memo),
+                        obj._create_objects_for_deepcopy(memo, component_list),
                     )
 
         return _ans
@@ -606,7 +610,7 @@ You can silence this warning by one of three ways:
         """Return a list (index,data) tuples from the dictionary"""
         return self.items()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> ComponentData:
         """
         This method returns the data corresponding to the given index.
         """
@@ -731,7 +735,7 @@ You can silence this warning by one of three ways:
 
         # this supports "del m.x[:,1]" through a simple recursive call
         if index.__class__ is IndexedComponent_slice:
-            # Assert that this slice ws just generated
+            # Assert that this slice was just generated
             assert len(index._call_stack) == 1
             # Make a copy of the slicer items *before* we start
             # iterating over it (since we will be removing items!).
@@ -747,7 +751,7 @@ You can silence this warning by one of three ways:
     def _construct_from_rule_using_setitem(self):
         if self._rule is None:
             return
-        index = None
+        index = None  # set so it is defined for scalars for `except:` below
         rule = self._rule
         block = self.parent_block()
         try:
@@ -1197,7 +1201,7 @@ class IndexedComponent_NDArrayMixin(object):
         if not self.is_indexed():
             ans = _ndarray.NumericNDArray(shape=(1,), dtype=object)
             ans[0] = self
-            return ans
+            return ans.reshape(())
 
         _dim = self.dim()
         if _dim is None:

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,6 +18,7 @@ from pyomo.core.base import Constraint, Var, value, Objective
 from pyomo.opt import ProblemFormat, SolverFactory
 
 import pyomo.common
+from pyomo.common.dependencies import pathlib
 from pyomo.common.collections import Bunch
 from pyomo.common.tee import TeeStream
 
@@ -36,12 +37,11 @@ from pyomo.opt.results import (
     Solution,
     SolutionStatus,
     TerminationCondition,
-    ProblemSense,
 )
 
 from pyomo.common.dependencies import attempt_import
 
-gdxcc, gdxcc_available = attempt_import('gdxcc', defer_check=True)
+gdxcc, gdxcc_available = attempt_import('gdxcc')
 
 logger = logging.getLogger('pyomo.solvers')
 
@@ -198,8 +198,8 @@ class GAMSDirect(_GAMSSolver):
             return _extract_version('')
         from gams import GamsWorkspace
 
-        ws = GamsWorkspace()
-        version = tuple(int(i) for i in ws._version.split('.')[:4])
+        workspace = GamsWorkspace()
+        version = tuple(int(i) for i in workspace._version.split('.')[:4])
         while len(version) < 4:
             version += (0,)
         return version
@@ -209,8 +209,8 @@ class GAMSDirect(_GAMSSolver):
         try:
             from gams import GamsWorkspace, DebugLevel
 
-            ws = GamsWorkspace(debug=DebugLevel.Off, working_directory=tmpdir)
-            t1 = ws.add_job_from_string(self._simple_model(n))
+            workspace = GamsWorkspace(debug=DebugLevel.Off, working_directory=tmpdir)
+            t1 = workspace.add_job_from_string(self._simple_model(n))
             t1.run()
             return True
         except:
@@ -301,7 +301,7 @@ class GAMSDirect(_GAMSSolver):
                 filename=output_file,
                 format=ProblemFormat.gams,
                 _called_by_solver=True,
-                **io_options
+                **io_options,
             )
             symbolMap = getattr(model, "._symbol_maps")[smap_id]
         else:
@@ -330,12 +330,12 @@ class GAMSDirect(_GAMSSolver):
         if tmpdir is not None and os.path.exists(tmpdir):
             newdir = False
 
-        ws = GamsWorkspace(
+        workspace = GamsWorkspace(
             debug=DebugLevel.KeepFiles if keepfiles else DebugLevel.Off,
             working_directory=tmpdir,
         )
 
-        t1 = ws.add_job_from_string(output_file.getvalue())
+        t1 = workspace.add_job_from_string(output_file.getvalue())
 
         try:
             with OutputStream(tee=tee, logfile=logfile) as output_stream:
@@ -349,7 +349,9 @@ class GAMSDirect(_GAMSSolver):
                 # Always name working directory or delete files,
                 # regardless of any errors.
                 if keepfiles:
-                    print("\nGAMS WORKING DIRECTORY: %s\n" % ws.working_directory)
+                    print(
+                        "\nGAMS WORKING DIRECTORY: %s\n" % workspace.working_directory
+                    )
                 elif tmpdir is not None:
                     # Garbage collect all references to t1.out_db
                     # So that .gdx file can be deleted
@@ -359,7 +361,7 @@ class GAMSDirect(_GAMSSolver):
         except:
             # Catch other errors and remove files first
             if keepfiles:
-                print("\nGAMS WORKING DIRECTORY: %s\n" % ws.working_directory)
+                print("\nGAMS WORKING DIRECTORY: %s\n" % workspace.working_directory)
             elif tmpdir is not None:
                 # Garbage collect all references to t1.out_db
                 # So that .gdx file can be deleted
@@ -398,7 +400,9 @@ class GAMSDirect(_GAMSSolver):
         extract_rc = 'rc' in model_suffixes
 
         results = SolverResults()
-        results.problem.name = os.path.join(ws.working_directory, t1.name + '.gms')
+        results.problem.name = os.path.join(
+            workspace.working_directory, t1.name + '.gms'
+        )
         results.problem.lower_bound = t1.out_db["OBJEST"].find_record().value
         results.problem.upper_bound = t1.out_db["OBJEST"].find_record().value
         results.problem.number_of_variables = t1.out_db["NUMVAR"].find_record().value
@@ -418,11 +422,10 @@ class GAMSDirect(_GAMSSolver):
         assert len(obj) == 1, 'Only one objective is allowed.'
         obj = obj[0]
         objctvval = t1.out_db["OBJVAL"].find_record().value
+        results.problem.sense = obj.sense
         if obj.is_minimizing():
-            results.problem.sense = ProblemSense.minimize
             results.problem.upper_bound = objctvval
         else:
-            results.problem.sense = ProblemSense.maximize
             results.problem.lower_bound = objctvval
 
         results.solver.name = "GAMS " + str(self.version())
@@ -587,7 +590,7 @@ class GAMSDirect(_GAMSSolver):
         results.solution.insert(soln)
 
         if keepfiles:
-            print("\nGAMS WORKING DIRECTORY: %s\n" % ws.working_directory)
+            print("\nGAMS WORKING DIRECTORY: %s\n" % workspace.working_directory)
         elif tmpdir is not None:
             # Garbage collect all references to t1.out_db
             # So that .gdx file can be deleted
@@ -737,6 +740,32 @@ class GAMSShell(_GAMSSolver):
             return sys.float_info.epsilon
         return value
 
+    def _rewrite_path_win8p3(self, path):
+        """
+        Return the 8.3 short path on Windows; unchanged elsewhere.
+
+        This change is in response to Pyomo/pyomo#3579 which reported
+        that GAMS (direct) fails on Windows if there is a space in
+        the path. This utility converts paths to their 8.3 short-path version
+        (which never have spaces).
+        """
+        if not sys.platform.startswith("win"):
+            return str(path)
+
+        import ctypes, ctypes.wintypes as wt
+
+        GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
+        GetShortPathNameW.argtypes = [wt.LPCWSTR, wt.LPWSTR, wt.DWORD]
+
+        # the file must exist, or Windows will not create a short name
+        pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(path).touch(exist_ok=True)
+
+        buf = ctypes.create_unicode_buffer(260)
+        if GetShortPathNameW(str(path), buf, 260):
+            return buf.value
+        return str(path)
+
     def solve(self, *args, **kwds):
         """
         Solve a model via the GAMS executable.
@@ -843,7 +872,7 @@ class GAMSShell(_GAMSSolver):
                 filename=output_filename,
                 format=ProblemFormat.gams,
                 _called_by_solver=True,
-                **io_options
+                **io_options,
             )
             symbolMap = getattr(model, "._symbol_maps")[smap_id]
         else:
@@ -879,7 +908,7 @@ class GAMSShell(_GAMSSolver):
         elif tee and logfile:
             command.append("lo=4")
         if logfile:
-            command.append("lf=" + str(logfile))
+            command.append(f"lf={self._rewrite_path_win8p3(logfile)}")
 
         try:
             ostreams = [StringIO()]
@@ -980,11 +1009,10 @@ class GAMSShell(_GAMSSolver):
         assert len(obj) == 1, 'Only one objective is allowed.'
         obj = obj[0]
         objctvval = stat_vars["OBJVAL"]
+        results.problem.sense = obj.sense
         if obj.is_minimizing():
-            results.problem.sense = ProblemSense.minimize
             results.problem.upper_bound = objctvval
         else:
-            results.problem.sense = ProblemSense.maximize
             results.problem.lower_bound = objctvval
 
         results.solver.name = "GAMS " + str(self.version())

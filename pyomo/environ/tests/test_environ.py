@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -137,9 +137,11 @@ class TestPyomoEnviron(unittest.TestCase):
             'ast',  # Imported on Windows
             'backports_abc',  # Imported by cython on Linux
             'base64',  # Imported on Windows
+            'bisect',  # Imported by dae, dataportal, contrib/mpc
             'cPickle',
             'csv',
             'ctypes',  # mandatory import in core/base/external.py; TODO: fix this
+            'datetime',  # imported by contrib.solver
             'decimal',
             'gc',  # Imported on MacOS, Windows; Linux in 3.10
             'glob',

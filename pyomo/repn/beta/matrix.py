@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -16,6 +16,8 @@ from weakref import ref as weakref_ref
 
 from pyomo.common.log import is_debug_set
 from pyomo.common.numeric_types import value
+from pyomo.common.modeling import NOTSET
+from pyomo.core.expr.expr_common import _type_check_exception_arg
 from pyomo.core.expr.numvalue import is_fixed, ZeroConstant
 from pyomo.core.base.set_types import Any
 from pyomo.core.base import SortComponents, Var
@@ -24,7 +26,7 @@ from pyomo.core.base.constraint import (
     Constraint,
     IndexedConstraint,
     ScalarConstraint,
-    _ConstraintData,
+    ConstraintData,
 )
 from pyomo.core.expr.numvalue import native_numeric_types
 from pyomo.repn import generate_standard_repn
@@ -247,7 +249,7 @@ def compile_block_linear_constraints(
         constraint_containers_removed += 1
     for constraint, index in constraint_data_to_remove:
         # Note that this del is not needed: assigning Constraint.Skip
-        # above removes the _ConstraintData from the _data dict.
+        # above removes the ConstraintData from the _data dict.
         # del constraint[index]
         constraints_removed += 1
     for block, constraint in constraint_containers_to_remove:
@@ -348,12 +350,12 @@ def compile_block_linear_constraints(
     )
 
 
-# class _LinearConstraintData(_ConstraintData,LinearCanonicalRepn):
+# class _LinearConstraintData(ConstraintData,LinearCanonicalRepn):
 #
 # This change breaks this class, but it's unclear whether this
 # is being used...
 #
-class _LinearConstraintData(_ConstraintData):
+class _LinearConstraintData(ConstraintData):
     """
     This class defines the data for a single linear constraint
         in canonical form.
@@ -393,7 +395,7 @@ class _LinearConstraintData(_ConstraintData):
         #
         # These lines represent in-lining of the
         # following constructors:
-        #   - _ConstraintData,
+        #   - ConstraintData,
         #   - ActiveComponentData
         #   - ComponentData
         self._component = weakref_ref(component) if (component is not None) else None
@@ -442,7 +444,7 @@ class _LinearMatrixConstraintData(_LinearConstraintData):
         # These lines represent in-lining of the
         # following constructors:
         #   - _LinearConstraintData
-        #   - _ConstraintData,
+        #   - ConstraintData,
         #   - ActiveComponentData
         #   - ComponentData
         self._component = weakref_ref(component) if (component is not None) else None
@@ -468,10 +470,11 @@ class _LinearMatrixConstraintData(_LinearConstraintData):
     # possible
     #
 
-    def __call__(self, exception=True):
+    def __call__(self, exception=NOTSET):
         """
         Compute the value of the body of this constraint.
         """
+        exception = _type_check_exception_arg(self, exception)
         comp = self.parent_component()
         index = self.index()
         prows = comp._prows
@@ -584,8 +587,13 @@ class _LinearMatrixConstraintData(_LinearConstraintData):
         return sum(terms)
 
     #
-    # Abstract Interface (_ConstraintData)
+    # Abstract Interface (ConstraintData)
     #
+
+    def to_bounded_expression(self, evaluate_bounds=False):
+        """Access this constraint as a single expression."""
+        # Note that the bounds are always going to be floats...
+        return self.lower, self.body, self.upper
 
     @property
     def body(self):

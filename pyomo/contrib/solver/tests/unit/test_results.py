@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -12,19 +12,18 @@
 from io import StringIO
 from typing import Sequence, Dict, Optional, Mapping, MutableMapping
 
-
-from pyomo.common import unittest
-from pyomo.common.config import ConfigDict
-from pyomo.core.base.constraint import _GeneralConstraintData
-from pyomo.core.base.var import _GeneralVarData
-from pyomo.common.collections import ComponentMap
-from pyomo.contrib.solver import results
-from pyomo.contrib.solver import solution
 import pyomo.environ as pyo
+from pyomo.common.config import ConfigDict
+from pyomo.core.base.constraint import ConstraintData
+from pyomo.core.base.var import VarData
+from pyomo.common.collections import ComponentMap
+from pyomo.contrib.solver.common import results
+from pyomo.contrib.solver.common import solution_loader
 from pyomo.core.base.var import Var
+from pyomo.common import unittest
 
 
-class SolutionLoaderExample(solution.SolutionLoaderBase):
+class SolutionLoaderExample(solution_loader.SolutionLoaderBase):
     """
     This is an example instantiation of a SolutionLoader that is used for
     testing generated results.
@@ -51,8 +50,8 @@ class SolutionLoaderExample(solution.SolutionLoaderBase):
         self._reduced_costs = reduced_costs
 
     def get_primals(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         if self._primals is None:
             raise RuntimeError(
                 'Solution loader does not currently have a valid solution. Please '
@@ -67,8 +66,8 @@ class SolutionLoaderExample(solution.SolutionLoaderBase):
             return primals
 
     def get_duals(
-        self, cons_to_load: Optional[Sequence[_GeneralConstraintData]] = None
-    ) -> Dict[_GeneralConstraintData, float]:
+        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
+    ) -> Dict[ConstraintData, float]:
         if self._duals is None:
             raise RuntimeError(
                 'Solution loader does not currently have valid duals. Please '
@@ -84,8 +83,8 @@ class SolutionLoaderExample(solution.SolutionLoaderBase):
         return duals
 
     def get_reduced_costs(
-        self, vars_to_load: Optional[Sequence[_GeneralVarData]] = None
-    ) -> Mapping[_GeneralVarData, float]:
+        self, vars_to_load: Optional[Sequence[VarData]] = None
+    ) -> Mapping[VarData, float]:
         if self._reduced_costs is None:
             raise RuntimeError(
                 'Solution loader does not currently have valid reduced costs. Please '
@@ -167,7 +166,7 @@ class TestResults(unittest.TestCase):
             'termination_condition',
             'timing_info',
             'solver_log',
-            'solver_configuration',
+            'solver_config',
         }
         actual_declared = res._declared
         self.assertEqual(expected_declared, actual_declared)
@@ -193,8 +192,7 @@ class TestResults(unittest.TestCase):
         res = results.Results()
         stream = StringIO()
         res.display(ostream=stream)
-        expected_print = """solution_loader: None
-termination_condition: TerminationCondition.unknown
+        expected_print = """termination_condition: TerminationCondition.unknown
 solution_status: SolutionStatus.noSolution
 incumbent_objective: None
 objective_bound: None

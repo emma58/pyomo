@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -29,7 +29,8 @@ from pyomo.environ import (
     value,
     sum_product,
 )
-from pyomo.core.base.expression import _GeneralExpressionData
+from pyomo.core.base.expression import ExpressionData
+from pyomo.core.base.objective import ObjectiveData
 from pyomo.core.expr.compare import compare_expressions, assertExpressionsEqual
 from pyomo.common.tee import capture_output
 
@@ -290,6 +291,36 @@ class TestExpressionData(unittest.TestCase):
         self.assertEqual(inst.obj.expr(), 3.0)
         self.assertEqual(id(inst.obj.expr.arg(1)), id(inst.ec))
 
+    def test_create_node_with_local_data(self):
+        m = ConcreteModel()
+        m.x = Var()
+
+        m.e = Expression(expr=m.x)
+        ee = m.e.create_node_with_local_data([5])
+        self.assertIsNot(m.e, ee)
+        self.assertIs(type(ee), ExpressionData)
+        self.assertEqual(ee._args_, [5])
+
+        m.f = Expression([0], rule=lambda m, i: m.x)
+        ff = m.f[0].create_node_with_local_data([5])
+        self.assertIsNot(m.f, ff)
+        self.assertIsNot(m.f[0], ff)
+        self.assertIs(type(ff), ExpressionData)
+        self.assertEqual(ff._args_, [5])
+
+        m.g = Objective(expr=m.x)
+        gg = m.g.create_node_with_local_data([5])
+        self.assertIsNot(m.g, gg)
+        self.assertIs(type(gg), ObjectiveData)
+        self.assertEqual(gg._args_, [5])
+
+        m.h = Objective([0], rule=lambda m, i: m.x)
+        hh = m.h[0].create_node_with_local_data([5])
+        self.assertIsNot(m.h, hh)
+        self.assertIsNot(m.h[0], hh)
+        self.assertIs(type(hh), ObjectiveData)
+        self.assertEqual(hh._args_, [5])
+
 
 class TestExpression(unittest.TestCase):
     def setUp(self):
@@ -515,10 +546,10 @@ E : Size=2
         model.E = Expression(model.idx)
         self.assertEqual(len(model.E), 3)
         expr = model.E[1]
-        self.assertIs(type(expr), _GeneralExpressionData)
+        self.assertIs(type(expr), ExpressionData)
         model.E[1] = None
         self.assertIs(expr, model.E[1])
-        self.assertIs(type(expr), _GeneralExpressionData)
+        self.assertIs(type(expr), ExpressionData)
         self.assertIs(expr.expr, None)
         model.E[1] = 5
         self.assertIs(expr, model.E[1])
@@ -537,7 +568,7 @@ E : Size=2
 
         model.E[1] = None
         expr = model.E[1]
-        self.assertIs(type(expr), _GeneralExpressionData)
+        self.assertIs(type(expr), ExpressionData)
         self.assertIs(expr.expr, None)
         model.E[1] = 5
         self.assertIs(expr, model.E[1])
@@ -738,10 +769,10 @@ E : Size=2
         expr = model.e * model.x**2 + model.E[1]
 
         output = """\
-sum(prod(e{sum(mon(1, x), 2)}, pow(x, 2)), E[1]{sum(pow(x, 2), 1)})
+sum(prod(e{sum(x, 2)}, pow(x, 2)), E[1]{sum(pow(x, 2), 1)})
 e : Size=1, Index=None
     Key  : Expression
-    None : sum(mon(1, x), 2)
+    None : sum(x, 2)
 E : Size=2, Index={1, 2}
     Key : Expression
       1 : sum(pow(x, 2), 1)
@@ -951,12 +982,7 @@ E : Size=2, Index={1, 2}
         assertExpressionsEqual(
             self,
             m.e.expr,
-            EXPR.LinearExpression(
-                [
-                    EXPR.MonomialTermExpression((1, m.x)),
-                    EXPR.MonomialTermExpression((-1, m.y)),
-                ]
-            ),
+            EXPR.LinearExpression([m.x, EXPR.MonomialTermExpression((-1, m.y))]),
         )
         self.assertTrue(compare_expressions(m.e.expr, m.x - m.y))
 

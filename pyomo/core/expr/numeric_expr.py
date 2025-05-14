@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -10,12 +10,11 @@
 #  ___________________________________________________________________________
 
 import collections
-import enum
 import logging
 import math
 import operator
 
-logger = logging.getLogger('pyomo.core')
+logger = logging.getLogger("pyomo.core")
 
 from pyomo.common.dependencies import attempt_import
 from pyomo.common.deprecation import deprecated, relocated_module_attribute
@@ -33,72 +32,83 @@ from pyomo.core.pyomoobject import PyomoObject
 from pyomo.core.expr.expr_common import (
     OperatorAssociativity,
     ExpressionType,
-    _lt,
-    _le,
-    _eq,
+    _unary_op_dispatcher_type_mapping,
+    _binary_op_dispatcher_type_mapping,
+    _invalid,
+    _recast_mutable,
+    NUMERIC_ARG_TYPE as ARG_TYPE,
 )
 
 # Note: pyggyback on expr.base's use of attempt_import(visitor)
 from pyomo.core.expr.base import ExpressionBase, NPV_Mixin, visitor
 
+# Note: There is a circular dependency between relational_expr and this
+# module: relational_expr would like to reuse/build on
+# _categorize_arg_type(), and NumericValue needs to call the relational
+# dispatchers from relational_expr.  Instead of ensuring that one of the
+# modules is fully declared before importing into the other, we will
+# have BOTH modules assume that the other module has NOT been declared.
+import pyomo.core.expr.relational_expr as relational_expr
 
-_ndarray, _ = attempt_import('pyomo.core.expr.ndarray')
+
+_ndarray, _ = attempt_import("pyomo.core.expr.ndarray")
 
 relocated_module_attribute(
-    'is_potentially_variable',
-    'pyomo.core.expr.numvalue.is_potentially_variable',
-    version='6.6.2',
+    "is_potentially_variable",
+    "pyomo.core.expr.numvalue.is_potentially_variable",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'as_numeric',
-    'pyomo.core.expr.numvalue.as_numeric',
-    version='6.6.2',
+    "as_numeric",
+    "pyomo.core.expr.numvalue.as_numeric",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'clone_counter',
-    'pyomo.core.expr.expr_common.clone_counter',
-    version='6.6.2',
+    "clone_counter",
+    "pyomo.core.expr.expr_common.clone_counter",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'evaluate_expression',
-    'pyomo.core.expr.visitor.evaluate_expression',
-    version='6.6.2',
+    "evaluate_expression",
+    "pyomo.core.expr.visitor.evaluate_expression",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'expression_to_string',
-    'pyomo.core.expr.visitor.expression_to_string',
-    version='6.6.2',
+    "expression_to_string",
+    "pyomo.core.expr.visitor.expression_to_string",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'polynomial_degree',
-    'pyomo.core.expr.visitor.polynomial_degree',
-    version='6.6.2',
+    "polynomial_degree",
+    "pyomo.core.expr.visitor.polynomial_degree",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'clone_expression',
-    'pyomo.core.expr.visitor.clone_expression',
-    version='6.6.2',
+    "clone_expression",
+    "pyomo.core.expr.visitor.clone_expression",
+    version="6.6.2",
     f_globals=globals(),
 )
 relocated_module_attribute(
-    'sizeof_expression',
-    'pyomo.core.expr.visitor.sizeof_expression',
-    version='6.6.2',
+    "sizeof_expression",
+    "pyomo.core.expr.visitor.sizeof_expression",
+    version="6.6.2",
+    f_globals=globals(),
+)
+relocated_module_attribute(
+    "register_arg_type",
+    "pyomo.core.expr.expr_common",
+    version="6.9.2",
     f_globals=globals(),
 )
 
 _zero_one_optimizations = {1}
-
-
-# Stub in the dispatchers
-def _generate_relational_expression(etype, lhs, rhs):
-    raise RuntimeError("incomplete import of Pyomo expression system")
 
 
 def enable_expression_optimizations(zero=None, one=None):
@@ -216,14 +226,14 @@ class NumericValue(PyomoObject):
     # This is required because we define __eq__
     __hash__ = None
 
-    def getname(self, fully_qualified=False, name_buffer=None):
+    def getname(self, *args, **kwargs):
         """
         If this is a component, return the component's name on the owning
         block; otherwise return the value converted to a string
         """
         _base = super(NumericValue, self)
-        if hasattr(_base, 'getname'):
-            return _base.getname(fully_qualified, name_buffer)
+        if hasattr(_base, "getname"):
+            return _base.getname(*args, **kwargs)
         else:
             return str(type(self))
 
@@ -254,7 +264,7 @@ class NumericValue(PyomoObject):
     @deprecated(
         "is_relational() is deprecated in favor of "
         "is_expression_type(ExpressionType.RELATIONAL)",
-        version='6.4.3',
+        version="6.4.3",
     )
     def is_relational(self):
         """
@@ -375,7 +385,9 @@ explicitly resolving the numeric value using the Pyomo value() function.
             self < other
             other > self
         """
-        return _generate_relational_expression(_lt, self, other)
+        return relational_expr._lt_dispatcher[self.__class__, other.__class__](
+            self, other
+        )
 
     def __gt__(self, other):
         """
@@ -386,7 +398,9 @@ explicitly resolving the numeric value using the Pyomo value() function.
             self > other
             other < self
         """
-        return _generate_relational_expression(_lt, other, self)
+        return relational_expr._lt_dispatcher[other.__class__, self.__class__](
+            other, self
+        )
 
     def __le__(self, other):
         """
@@ -397,7 +411,9 @@ explicitly resolving the numeric value using the Pyomo value() function.
             self <= other
             other >= self
         """
-        return _generate_relational_expression(_le, self, other)
+        return relational_expr._le_dispatcher[self.__class__, other.__class__](
+            self, other
+        )
 
     def __ge__(self, other):
         """
@@ -408,7 +424,9 @@ explicitly resolving the numeric value using the Pyomo value() function.
             self >= other
             other <= self
         """
-        return _generate_relational_expression(_le, other, self)
+        return relational_expr._le_dispatcher[other.__class__, self.__class__](
+            other, self
+        )
 
     def __eq__(self, other):
         """
@@ -418,7 +436,13 @@ explicitly resolving the numeric value using the Pyomo value() function.
 
             self == other
         """
-        return _generate_relational_expression(_eq, self, other)
+        # Note: While it would appear that keeping the attribute lookup
+        # into the relational_expr module would be a performance hit, we
+        # want that indirection as it allows us to selectively disable
+        # operator overloading for comparisons.
+        return relational_expr._eq_dispatcher[self.__class__, other.__class__](
+            self, other
+        )
 
     def __add__(self, other):
         """
@@ -692,11 +716,12 @@ class NumericExpression(ExpressionBase, NumericValue):
     # Here, we use _args_ to force errors for code that was referencing this
     # data.  There are now accessor methods, so in most cases users
     # and developers should not directly access the _args_ data values.
-    __slots__ = ('_args_',)
+    __slots__ = ("_args_",)
     EXPRESSION_SYSTEM = ExpressionType.NUMERIC
     PRECEDENCE = 0
 
     def __init__(self, args):
+        logger.debug(f"{self.__class__}.__init__: args={args}")
         self._args_ = args
 
     def nargs(self):
@@ -721,10 +746,10 @@ class NumericExpression(ExpressionBase, NumericValue):
 
     @deprecated(
         'The implicit recasting of a "not potentially variable" '
-        'expression node to a potentially variable one is no '
-        'longer supported (this violates that immutability '
-        'promise for Pyomo5 expression trees).',
-        version='6.4.3',
+        "expression node to a potentially variable one is no "
+        "longer supported (this violates the immutability "
+        "promise for Pyomo5 expression trees).",
+        version="6.4.3",
     )
     def create_potentially_variable_object(self):
         """
@@ -745,9 +770,9 @@ class NumericExpression(ExpressionBase, NumericValue):
         """
         if not self.is_potentially_variable():
             logger.error(
-                'recasting a non-potentially variable expression to a '
-                'potentially variable one violates the immutability '
-                'promise for Pyomo expression trees.'
+                "recasting a non-potentially variable expression to a "
+                "potentially variable one violates the immutability "
+                "promise for Pyomo expression trees."
             )
             self.__class__ = self.potentially_variable_base_class()
         return self
@@ -820,7 +845,7 @@ class NegationExpression(NumericExpression):
         return 1
 
     def getname(self, *args, **kwds):
-        return 'neg'
+        return "neg"
 
     def _compute_polynomial_degree(self, result):
         return result[0]
@@ -829,7 +854,7 @@ class NegationExpression(NumericExpression):
         if verbose:
             return f"{self.getname()}({values[0]})"
         tmp = values[0]
-        if tmp[0] == '-':
+        if tmp[0] == "-":
             return tmp[1:].strip()
         # TODO: remove space after negation
         return "- " + tmp
@@ -865,7 +890,7 @@ class ExternalFunctionExpression(NumericExpression):
         fcn: a class that defines this external function
     """
 
-    __slots__ = ('_fcn',)
+    __slots__ = ("_fcn",)
 
     # This operator does not have an infix representation
     PRECEDENCE = None
@@ -952,7 +977,7 @@ class PowExpression(NumericExpression):
         return _l**_r
 
     def getname(self, *args, **kwds):
-        return 'pow'
+        return "pow"
 
     def _to_string(self, values, verbose, smap):
         if verbose:
@@ -983,7 +1008,7 @@ class MaxExpression(NumericExpression):
         return max(result)
 
     def getname(self, *args, **kwds):
-        return 'max'
+        return "max"
 
     def _to_string(self, values, verbose, smap):
         return f"{self.getname()}({', '.join(values)})"
@@ -1012,7 +1037,7 @@ class MinExpression(NumericExpression):
         return min(result)
 
     def getname(self, *args, **kwds):
-        return 'min'
+        return "min"
 
     def _to_string(self, values, verbose, smap):
         return f"{self.getname()}({', '.join(values)})"
@@ -1047,7 +1072,7 @@ class ProductExpression(NumericExpression):
             return a + b
 
     def getname(self, *args, **kwds):
-        return 'prod'
+        return "prod"
 
     def _is_fixed(self, args):
         # Anything times 0 equals 0, so one of the children is
@@ -1086,7 +1111,7 @@ class MonomialTermExpression(ProductExpression):
     __slots__ = ()
 
     def getname(self, *args, **kwds):
-        return 'mon'
+        return "mon"
 
     def create_node_with_local_data(self, args, classtype=None):
         if classtype is None:
@@ -1094,7 +1119,7 @@ class MonomialTermExpression(ProductExpression):
             # types, the simplest / fastest thing to do is just defer to
             # the operator dispatcher.
             return operator.mul(*args)
-        return self.__class__(args)
+        return classtype(args)
 
 
 class DivisionExpression(NumericExpression):
@@ -1113,7 +1138,7 @@ class DivisionExpression(NumericExpression):
         return None
 
     def getname(self, *args, **kwds):
-        return 'div'
+        return "div"
 
     def _to_string(self, values, verbose, smap):
         if verbose:
@@ -1141,11 +1166,12 @@ class SumExpression(NumericExpression):
 
     """
 
-    __slots__ = ('_nargs',)
+    __slots__ = ("_nargs",)
     PRECEDENCE = 6
 
     def __init__(self, args):
         # unlike other expressions, we expect (require) args to be a list
+        logger.debug(f"SumExpression: args={args}")
         if args.__class__ is not list:
             args = list(args)
         self._args_ = args
@@ -1161,7 +1187,7 @@ class SumExpression(NumericExpression):
         return self._args_[: self._nargs]
 
     def getname(self, *args, **kwds):
-        return 'sum'
+        return "sum"
 
     def _trunc_append(self, other):
         _args = self._args_
@@ -1196,7 +1222,7 @@ class SumExpression(NumericExpression):
 
     def _to_string(self, values, verbose, smap):
         if not values:
-            values = ['0']
+            values = ["0"]
         if verbose:
             return f"{self.getname()}({', '.join(values)})"
         term = values[0]
@@ -1210,16 +1236,16 @@ class SumExpression(NumericExpression):
             # a term is enclosed in parens, then it is a nested sum.)
             # if term[0] == '(' and term[-1] == ')' and _balanced_parens(term[1:-1]):
             #     term = term[1:-1]
-            if term[0] in '-+':
-                values[i] = term[0] + ' ' + term[1:].strip()
+            if term[0] in "-+":
+                values[i] = term[0] + " " + term[1:].strip()
             else:
-                values[i] = '+ ' + term.strip()
-        return ' '.join(values)
+                values[i] = "+ " + term.strip()
+        return " ".join(values)
 
     @deprecated(
         "SumExpression.add() is deprecated.  Please use regular Python operators "
         "(infix '+' or inplace '+='.)",
-        version='6.6.0',
+        version="6.6.0",
     )
     def add(self, new_arg):
         self += new_arg
@@ -1234,9 +1260,11 @@ class LinearExpression(SumExpression):
     """An expression object for linear polynomials.
 
     This is a derived :py:class`SumExpression` that guarantees all
-    arguments are either not potentially variable (e.g., native types,
-    Params, or NPV expressions) OR :py:class:`MonomialTermExpression`
-    objects.
+    arguments are one of the following types:
+
+      - not potentially variable (e.g., native types, Params, or NPV expressions)
+      - :py:class:`MonomialTermExpression`
+      - :py:class:`VarData`
 
     Args:
         args (tuple): Children nodes
@@ -1253,7 +1281,7 @@ class LinearExpression(SumExpression):
 
         You can specify `args` OR (`constant`, `linear_coefs`, and
         `linear_vars`).  If `args` is provided, it should be a list that
-        contains only constants, NPV objects/expressions, or
+        contains only constants, NPV objects/expressions, variables, or
         :py:class:`MonomialTermExpression` objects.  Alternatively, you
         can specify the constant, the list of linear_coefs and the list
         of linear_vars separately.  Note that these lists are NOT
@@ -1263,6 +1291,10 @@ class LinearExpression(SumExpression):
         # I am not sure why LinearExpression allows omitting args, but
         # it does.  If they are provided, they should be the (non-zero)
         # constant followed by MonomialTermExpressions.
+        logger.debug(
+            f"LinearExpression: args={args},constant={constant}, linear_coefs={linear_coefs}, "
+            f"linear_vars={linear_vars}"
+        )
         if args is not None:
             if not (constant is None and linear_coefs is None and linear_vars is None):
                 raise ValueError(
@@ -1298,8 +1330,14 @@ class LinearExpression(SumExpression):
             if arg.__class__ is MonomialTermExpression:
                 coef.append(arg._args_[0])
                 var.append(arg._args_[1])
-            else:
+            elif arg.__class__ in native_numeric_types:
                 const += arg
+            elif not arg.is_potentially_variable():
+                const += arg
+            else:
+                assert arg.is_potentially_variable()
+                coef.append(1)
+                var.append(arg)
         LinearExpression._cache = (self, const, coef, var)
 
     @property
@@ -1325,7 +1363,7 @@ class LinearExpression(SumExpression):
             classtype = self.__class__
         if type(args) is not list:
             args = list(args)
-        for i, arg in enumerate(args):
+        for arg in args:
             if arg.__class__ in self._allowable_linear_expr_arg_types:
                 # 99% of the time, the arg type hasn't changed
                 continue
@@ -1336,8 +1374,7 @@ class LinearExpression(SumExpression):
                 # NPV expressions are OK
                 pass
             elif arg.is_variable_type():
-                # vars are OK, but need to be mapped to monomial terms
-                args[i] = MonomialTermExpression((1, arg))
+                # vars are OK
                 continue
             else:
                 # For anything else, convert this to a general sum
@@ -1438,8 +1475,8 @@ class Expr_ifExpression(NumericExpression):
 
     def _to_string(self, values, verbose, smap):
         return (
-            f'{self.getname()}( ( {values[0]} ), then=( {values[1]} ), '
-            f'else=( {values[2]} ) )'
+            f"{self.getname()}( ( {values[0]} ), then=( {values[1]} ), "
+            f"else=( {values[2]} ) )"
         )
 
     def _apply_operation(self, result):
@@ -1461,7 +1498,7 @@ class UnaryFunctionExpression(NumericExpression):
         fcn: The function that is used to evaluate this expression
     """
 
-    __slots__ = ('_fcn', '_name')
+    __slots__ = ("_fcn", "_name")
 
     # This operator does not have an infix representation
     PRECEDENCE = None
@@ -1506,7 +1543,7 @@ class AbsExpression(UnaryFunctionExpression):
     __slots__ = ()
 
     def __init__(self, arg):
-        super(AbsExpression, self).__init__(arg, 'abs', abs)
+        super(AbsExpression, self).__init__(arg, "abs", abs)
 
     def create_node_with_local_data(self, args, classtype=None):
         # Because this class removes arguments from the __init__, we
@@ -1630,21 +1667,6 @@ def _decompose_linear_terms(expr, multiplier=1):
 #
 # -------------------------------------------------------
 
-
-class ARG_TYPE(enum.IntEnum):
-    MUTABLE = -2
-    ASNUMERIC = -1
-    INVALID = 0
-    NATIVE = 1
-    NPV = 2
-    PARAM = 3
-    VAR = 4
-    MONOMIAL = 5
-    LINEAR = 6
-    SUM = 7
-    OTHER = 8
-
-
 _known_arg_types = {}
 
 
@@ -1669,7 +1691,7 @@ def _categorize_arg_type(arg):
         else:
             if is_numeric:
                 ans = None
-            elif hasattr(arg, 'as_numeric'):
+            elif hasattr(arg, "as_numeric"):
                 ans = ARG_TYPE.ASNUMERIC
             else:
                 ans = ARG_TYPE.INVALID
@@ -1708,91 +1730,6 @@ def _categorize_arg_types(*args):
     return tuple(_categorize_arg_type(arg) for arg in args)
 
 
-def _invalid(*args):
-    return NotImplemented
-
-
-def _recast_mutable(expr):
-    expr.make_immutable()
-    if expr._nargs > 1:
-        return expr
-    elif not expr._nargs:
-        return 0
-    else:
-        return expr._args_[0]
-
-
-def _unary_op_dispatcher_type_mapping(dispatcher, updates):
-    #
-    # Special case (wrapping) operators
-    #
-    def _asnumeric(a):
-        a = a.as_numeric()
-        return dispatcher[a.__class__](a)
-
-    def _mutable(a):
-        a = _recast_mutable(a)
-        return dispatcher[a.__class__](a)
-
-    mapping = {
-        ARG_TYPE.ASNUMERIC: _asnumeric,
-        ARG_TYPE.MUTABLE: _mutable,
-        ARG_TYPE.INVALID: _invalid,
-    }
-
-    mapping.update(updates)
-    return mapping
-
-
-def _binary_op_dispatcher_type_mapping(dispatcher, updates):
-    #
-    # Special case (wrapping) operators
-    #
-    def _any_asnumeric(a, b):
-        b = b.as_numeric()
-        return dispatcher[a.__class__, b.__class__](a, b)
-
-    def _asnumeric_any(a, b):
-        a = a.as_numeric()
-        return dispatcher[a.__class__, b.__class__](a, b)
-
-    def _asnumeric_asnumeric(a, b):
-        a = a.as_numeric()
-        b = b.as_numeric()
-        return dispatcher[a.__class__, b.__class__](a, b)
-
-    def _any_mutable(a, b):
-        b = _recast_mutable(b)
-        return dispatcher[a.__class__, b.__class__](a, b)
-
-    def _mutable_any(a, b):
-        a = _recast_mutable(a)
-        return dispatcher[a.__class__, b.__class__](a, b)
-
-    def _mutable_mutable(a, b):
-        if a is b:
-            a = b = _recast_mutable(a)
-        else:
-            a = _recast_mutable(a)
-            b = _recast_mutable(b)
-        return dispatcher[a.__class__, b.__class__](a, b)
-
-    mapping = {}
-    mapping.update({(i, ARG_TYPE.ASNUMERIC): _any_asnumeric for i in ARG_TYPE})
-    mapping.update({(ARG_TYPE.ASNUMERIC, i): _asnumeric_any for i in ARG_TYPE})
-    mapping[ARG_TYPE.ASNUMERIC, ARG_TYPE.ASNUMERIC] = _asnumeric_asnumeric
-
-    mapping.update({(i, ARG_TYPE.MUTABLE): _any_mutable for i in ARG_TYPE})
-    mapping.update({(ARG_TYPE.MUTABLE, i): _mutable_any for i in ARG_TYPE})
-    mapping[ARG_TYPE.MUTABLE, ARG_TYPE.MUTABLE] = _mutable_mutable
-
-    mapping.update({(i, ARG_TYPE.INVALID): _invalid for i in ARG_TYPE})
-    mapping.update({(ARG_TYPE.INVALID, i): _invalid for i in ARG_TYPE})
-
-    mapping.update(updates)
-    return mapping
-
-
 #
 # ADD: NATIVE handlers
 #
@@ -1820,7 +1757,7 @@ def _add_native_param(a, b):
 def _add_native_var(a, b):
     if not a:
         return b
-    return LinearExpression([a, MonomialTermExpression((1, b))])
+    return LinearExpression([a, b])
 
 
 def _add_native_monomial(a, b):
@@ -1871,7 +1808,7 @@ def _add_npv_param(a, b):
 
 
 def _add_npv_var(a, b):
-    return LinearExpression([a, MonomialTermExpression((1, b))])
+    return LinearExpression([a, b])
 
 
 def _add_npv_monomial(a, b):
@@ -1929,7 +1866,7 @@ def _add_param_var(a, b):
         a = a.value
         if not a:
             return b
-    return LinearExpression([a, MonomialTermExpression((1, b))])
+    return LinearExpression([a, b])
 
 
 def _add_param_monomial(a, b):
@@ -1972,11 +1909,11 @@ def _add_param_other(a, b):
 def _add_var_native(a, b):
     if not b:
         return a
-    return LinearExpression([MonomialTermExpression((1, a)), b])
+    return LinearExpression([a, b])
 
 
 def _add_var_npv(a, b):
-    return LinearExpression([MonomialTermExpression((1, a)), b])
+    return LinearExpression([a, b])
 
 
 def _add_var_param(a, b):
@@ -1984,21 +1921,19 @@ def _add_var_param(a, b):
         b = b.value
         if not b:
             return a
-    return LinearExpression([MonomialTermExpression((1, a)), b])
+    return LinearExpression([a, b])
 
 
 def _add_var_var(a, b):
-    return LinearExpression(
-        [MonomialTermExpression((1, a)), MonomialTermExpression((1, b))]
-    )
+    return LinearExpression([a, b])
 
 
 def _add_var_monomial(a, b):
-    return LinearExpression([MonomialTermExpression((1, a)), b])
+    return LinearExpression([a, b])
 
 
 def _add_var_linear(a, b):
-    return b._trunc_append(MonomialTermExpression((1, a)))
+    return b._trunc_append(a)
 
 
 def _add_var_sum(a, b):
@@ -2033,7 +1968,7 @@ def _add_monomial_param(a, b):
 
 
 def _add_monomial_var(a, b):
-    return LinearExpression([a, MonomialTermExpression((1, b))])
+    return LinearExpression([a, b])
 
 
 def _add_monomial_monomial(a, b):
@@ -2076,7 +2011,7 @@ def _add_linear_param(a, b):
 
 
 def _add_linear_var(a, b):
-    return a._trunc_append(MonomialTermExpression((1, b)))
+    return a._trunc_append(b)
 
 
 def _add_linear_monomial(a, b):
@@ -2283,8 +2218,11 @@ def _iadd_mutablenpvsum_mutable(a, b):
 def _iadd_mutablenpvsum_native(a, b):
     if not b:
         return a
-    a._args_.append(b)
-    a._nargs += 1
+    if a._args_ and a._args_[-1].__class__ in native_numeric_types:
+        a._args_[-1] += b
+    else:
+        a._args_.append(b)
+        a._nargs += 1
     return a
 
 
@@ -2296,9 +2234,7 @@ def _iadd_mutablenpvsum_npv(a, b):
 
 def _iadd_mutablenpvsum_param(a, b):
     if b.is_constant():
-        b = b.value
-        if not b:
-            return a
+        return _iadd_mutablesum_native(a, b.value)
     a._args_.append(b)
     a._nargs += 1
     return a
@@ -2379,8 +2315,11 @@ def _iadd_mutablelinear_mutable(a, b):
 def _iadd_mutablelinear_native(a, b):
     if not b:
         return a
-    a._args_.append(b)
-    a._nargs += 1
+    if a._args_ and a._args_[-1].__class__ in native_numeric_types:
+        a._args_[-1] += b
+    else:
+        a._args_.append(b)
+        a._nargs += 1
     return a
 
 
@@ -2392,16 +2331,14 @@ def _iadd_mutablelinear_npv(a, b):
 
 def _iadd_mutablelinear_param(a, b):
     if b.is_constant():
-        b = b.value
-        if not b:
-            return a
+        return _iadd_mutablesum_native(a, b.value)
     a._args_.append(b)
     a._nargs += 1
     return a
 
 
 def _iadd_mutablelinear_var(a, b):
-    a._args_.append(MonomialTermExpression((1, b)))
+    a._args_.append(b)
     a._nargs += 1
     return a
 
@@ -2478,8 +2415,11 @@ def _iadd_mutablesum_mutable(a, b):
 def _iadd_mutablesum_native(a, b):
     if not b:
         return a
-    a._args_.append(b)
-    a._nargs += 1
+    if a._args_ and a._args_[-1].__class__ in native_numeric_types:
+        a._args_[-1] += b
+    else:
+        a._args_.append(b)
+        a._nargs += 1
     return a
 
 
@@ -2491,9 +2431,7 @@ def _iadd_mutablesum_npv(a, b):
 
 def _iadd_mutablesum_param(a, b):
     if b.is_constant():
-        b = b.value
-        if not b:
-            return a
+        return _iadd_mutablesum_native(a, b.value)
     a._args_.append(b)
     a._nargs += 1
     return a
@@ -3895,79 +3833,79 @@ _fcn_type_handler_mapping = {
 # Python operators.
 #
 def ceil(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'ceil', math.ceil)
+    return _fcn_dispatcher[arg.__class__](arg, "ceil", math.ceil)
 
 
 def floor(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'floor', math.floor)
+    return _fcn_dispatcher[arg.__class__](arg, "floor", math.floor)
 
 
 # e ** x
 def exp(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'exp', math.exp)
+    return _fcn_dispatcher[arg.__class__](arg, "exp", math.exp)
 
 
 def log(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'log', math.log)
+    return _fcn_dispatcher[arg.__class__](arg, "log", math.log)
 
 
 def log10(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'log10', math.log10)
+    return _fcn_dispatcher[arg.__class__](arg, "log10", math.log10)
 
 
 # FIXME: this is nominally the same as x ** 0.5, but follows a different
 # path and produces a different NL file!
 def sqrt(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'sqrt', math.sqrt)
+    return _fcn_dispatcher[arg.__class__](arg, "sqrt", math.sqrt)
     # return _pow_dispatcher[arg.__class__, float](arg, 0.5)
 
 
 def sin(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'sin', math.sin)
+    return _fcn_dispatcher[arg.__class__](arg, "sin", math.sin)
 
 
 def cos(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'cos', math.cos)
+    return _fcn_dispatcher[arg.__class__](arg, "cos", math.cos)
 
 
 def tan(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'tan', math.tan)
+    return _fcn_dispatcher[arg.__class__](arg, "tan", math.tan)
 
 
 def sinh(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'sinh', math.sinh)
+    return _fcn_dispatcher[arg.__class__](arg, "sinh", math.sinh)
 
 
 def cosh(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'cosh', math.cosh)
+    return _fcn_dispatcher[arg.__class__](arg, "cosh", math.cosh)
 
 
 def tanh(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'tanh', math.tanh)
+    return _fcn_dispatcher[arg.__class__](arg, "tanh", math.tanh)
 
 
 def asin(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'asin', math.asin)
+    return _fcn_dispatcher[arg.__class__](arg, "asin", math.asin)
 
 
 def acos(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'acos', math.acos)
+    return _fcn_dispatcher[arg.__class__](arg, "acos", math.acos)
 
 
 def atan(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'atan', math.atan)
+    return _fcn_dispatcher[arg.__class__](arg, "atan", math.atan)
 
 
 def asinh(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'asinh', math.asinh)
+    return _fcn_dispatcher[arg.__class__](arg, "asinh", math.asinh)
 
 
 def acosh(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'acosh', math.acosh)
+    return _fcn_dispatcher[arg.__class__](arg, "acosh", math.acosh)
 
 
 def atanh(arg):
-    return _fcn_dispatcher[arg.__class__](arg, 'atanh', math.atanh)
+    return _fcn_dispatcher[arg.__class__](arg, "atanh", math.atanh)
 
 
 #
@@ -3979,7 +3917,7 @@ def _process_expr_if_arg(arg, kwargs, name):
     alt = kwargs.pop(name, None)
     if alt is not None:
         if arg is not None:
-            raise ValueError(f'Cannot specify both {name}_ and {name}')
+            raise ValueError(f"Cannot specify both {name}_ and {name}")
         arg = alt
     _type = _categorize_arg_type(arg)
     # Note that relational expressions get mapped to INVALID
@@ -3989,7 +3927,7 @@ def _process_expr_if_arg(arg, kwargs, name):
         elif _type is ARG_TYPE.ASNUMERIC:
             arg = arg.as_numeric()
         else:
-            raise DeveloperError('_categorize_arg_type() returned unexpected ARG_TYPE')
+            raise DeveloperError("_categorize_arg_type() returned unexpected ARG_TYPE")
         _type = _categorize_arg_type(arg)
     return arg, _type
 
@@ -4006,14 +3944,14 @@ def Expr_if(IF_=None, THEN_=None, ELSE_=None, **kwargs):
     (the former is historical, and the latter is required to support Cythonization)
     """
     _pv = False
-    ELSE_, _type = _process_expr_if_arg(ELSE_, kwargs, 'ELSE')
+    ELSE_, _type = _process_expr_if_arg(ELSE_, kwargs, "ELSE")
     _pv |= _type >= ARG_TYPE.VAR or _type == ARG_TYPE.INVALID
-    THEN_, _type = _process_expr_if_arg(THEN_, kwargs, 'THEN')
+    THEN_, _type = _process_expr_if_arg(THEN_, kwargs, "THEN")
     _pv |= _type >= ARG_TYPE.VAR or _type == ARG_TYPE.INVALID
-    IF_, _type = _process_expr_if_arg(IF_, kwargs, 'IF')
+    IF_, _type = _process_expr_if_arg(IF_, kwargs, "IF")
     _pv |= _type >= ARG_TYPE.VAR or _type == ARG_TYPE.INVALID
     if kwargs:
-        raise ValueError('Unrecognized arguments: ' + ', '.join(kwargs))
+        raise ValueError("Unrecognized arguments: " + ", ".join(kwargs))
     # Notes:
     # - side effect: IF is the last iteration, so _type == _categorize_arg_type(IF)
     # - we do NO error checking as to the actual arg types.  That is
@@ -4052,9 +3990,9 @@ def _balanced_parens(arg):
     """
     _parenCount = 0
     for c in arg:
-        if c == '(':
+        if c == "(":
             _parenCount += 1
-        elif c == ')':
+        elif c == ")":
             _parenCount -= 1
             if _parenCount < 0:
                 return False

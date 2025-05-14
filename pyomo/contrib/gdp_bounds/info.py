@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -35,10 +35,10 @@ def disjunctive_bound(var, scope):
     """Compute the disjunctive bounds for a variable in a given scope.
 
     Args:
-        var (_VarData): Variable for which to compute bound
+        var (VarData): Variable for which to compute bound
         scope (Component): The scope in which to compute the bound. If not a
-            _DisjunctData, it will walk up the tree and use the scope of the
-            most immediate enclosing _DisjunctData.
+            DisjunctData, it will walk up the tree and use the scope of the
+            most immediate enclosing DisjunctData.
 
     Returns:
         numeric: the tighter of either the disjunctive lower bound, the

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -52,7 +52,7 @@ def _iterable_to_dict(vals, directed, name):
     return vals
 
 
-class _ArcData(ActiveComponentData):
+class ArcData(ActiveComponentData):
     """
     This class defines the data for a single Arc
 
@@ -246,6 +246,11 @@ class _ArcData(ActiveComponentData):
                     )
 
 
+class _ArcData(metaclass=RenamedClass):
+    __renamed__new_class__ = ArcData
+    __renamed__version__ = '6.7.2'
+
+
 @ModelComponentFactory.register("Component used for connecting two Ports.")
 class Arc(ActiveIndexedComponent):
     """
@@ -267,7 +272,7 @@ class Arc(ActiveIndexedComponent):
             or a two-member iterable of ports
     """
 
-    _ComponentDataClass = _ArcData
+    _ComponentDataClass = ArcData
 
     def __new__(cls, *args, **kwds):
         if cls != Arc:
@@ -373,9 +378,9 @@ class Arc(ActiveIndexedComponent):
         )
 
 
-class ScalarArc(_ArcData, Arc):
+class ScalarArc(ArcData, Arc):
     def __init__(self, *args, **kwds):
-        _ArcData.__init__(self, self)
+        ArcData.__init__(self, self)
         Arc.__init__(self, *args, **kwds)
         self.index = UnindexedComponent_index
 

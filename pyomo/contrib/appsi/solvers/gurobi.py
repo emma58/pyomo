@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -23,10 +23,10 @@ from pyomo.common.shutdown import python_is_shutting_down
 from pyomo.common.config import ConfigValue, NonNegativeInt
 from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.base import SymbolMap, NumericLabeler, TextLabeler
-from pyomo.core.base.var import Var, _GeneralVarData
-from pyomo.core.base.constraint import _GeneralConstraintData
-from pyomo.core.base.sos import _SOSConstraintData
-from pyomo.core.base.param import _ParamData
+from pyomo.core.base.var import Var, VarData
+from pyomo.core.base.constraint import ConstraintData
+from pyomo.core.base.sos import SOSConstraintData
+from pyomo.core.base.param import ParamData
 from pyomo.core.expr.numvalue import value, is_constant, is_fixed, native_numeric_types
 from pyomo.repn import generate_standard_repn
 from pyomo.core.expr.numeric_expr import NPV_MaxExpression, NPV_MinExpression
@@ -367,25 +367,24 @@ class Gurobi(PersistentBase, PersistentSolver):
         if self.config.stream_solver:
             ostreams.append(sys.stdout)
 
-        with TeeStream(*ostreams) as t:
-            with capture_output(output=t.STDOUT, capture_fd=False):
-                config = self.config
-                options = self.gurobi_options
+        with capture_output(output=TeeStream(*ostreams), capture_fd=False):
+            config = self.config
+            options = self.gurobi_options
 
-                self._solver_model.setParam('LogToConsole', 1)
-                self._solver_model.setParam('LogFile', config.logfile)
+            self._solver_model.setParam('LogToConsole', 1)
+            self._solver_model.setParam('LogFile', config.logfile)
 
-                if config.time_limit is not None:
-                    self._solver_model.setParam('TimeLimit', config.time_limit)
-                if config.mip_gap is not None:
-                    self._solver_model.setParam('MIPGap', config.mip_gap)
+            if config.time_limit is not None:
+                self._solver_model.setParam('TimeLimit', config.time_limit)
+            if config.mip_gap is not None:
+                self._solver_model.setParam('MIPGap', config.mip_gap)
 
-                for key, option in options.items():
-                    self._solver_model.setParam(key, option)
+            for key, option in options.items():
+                self._solver_model.setParam(key, option)
 
-                timer.start('optimize')
-                self._solver_model.optimize(self._callback)
-                timer.stop('optimize')
+            timer.start('optimize')
+            self._solver_model.optimize(self._callback)
+            timer.stop('optimize')
 
         self._needs_updated = False
         return self._postsolve(timer)
@@ -458,7 +457,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         return lb, ub, vtype
 
-    def _add_variables(self, variables: List[_GeneralVarData]):
+    def _add_variables(self, variables: List[VarData]):
         var_names = list()
         vtypes = list()
         lbs = list()
@@ -489,7 +488,7 @@ class Gurobi(PersistentBase, PersistentSolver):
         self._vars_added_since_update.update(variables)
         self._needs_updated = True
 
-    def _add_params(self, params: List[_ParamData]):
+    def _add_params(self, params: List[ParamData]):
         pass
 
     def _reinit(self):
@@ -579,7 +578,7 @@ class Gurobi(PersistentBase, PersistentSolver):
             mutable_quadratic_coefficients,
         )
 
-    def _add_constraints(self, cons: List[_GeneralConstraintData]):
+    def _add_constraints(self, cons: List[ConstraintData]):
         for con in cons:
             conname = self._symbol_map.getSymbol(con, self._labeler)
             (
@@ -709,7 +708,7 @@ class Gurobi(PersistentBase, PersistentSolver):
         self._constraints_added_since_update.update(cons)
         self._needs_updated = True
 
-    def _add_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def _add_sos_constraints(self, cons: List[SOSConstraintData]):
         for con in cons:
             conname = self._symbol_map.getSymbol(con, self._labeler)
             level = con.level
@@ -735,7 +734,7 @@ class Gurobi(PersistentBase, PersistentSolver):
         self._constraints_added_since_update.update(cons)
         self._needs_updated = True
 
-    def _remove_constraints(self, cons: List[_GeneralConstraintData]):
+    def _remove_constraints(self, cons: List[ConstraintData]):
         for con in cons:
             if con in self._constraints_added_since_update:
                 self._update_gurobi_model()
@@ -749,7 +748,7 @@ class Gurobi(PersistentBase, PersistentSolver):
             self._mutable_quadratic_helpers.pop(con, None)
         self._needs_updated = True
 
-    def _remove_sos_constraints(self, cons: List[_SOSConstraintData]):
+    def _remove_sos_constraints(self, cons: List[SOSConstraintData]):
         for con in cons:
             if con in self._constraints_added_since_update:
                 self._update_gurobi_model()
@@ -759,7 +758,7 @@ class Gurobi(PersistentBase, PersistentSolver):
             del self._pyomo_sos_to_solver_sos_map[con]
         self._needs_updated = True
 
-    def _remove_variables(self, variables: List[_GeneralVarData]):
+    def _remove_variables(self, variables: List[VarData]):
         for var in variables:
             v_id = id(var)
             if var in self._vars_added_since_update:
@@ -771,10 +770,10 @@ class Gurobi(PersistentBase, PersistentSolver):
             self._mutable_bounds.pop(v_id, None)
         self._needs_updated = True
 
-    def _remove_params(self, params: List[_ParamData]):
+    def _remove_params(self, params: List[ParamData]):
         pass
 
-    def _update_variables(self, variables: List[_GeneralVarData]):
+    def _update_variables(self, variables: List[VarData]):
         for var in variables:
             var_id = id(var)
             if var_id not in self._pyomo_var_to_solver_var_map:
@@ -1195,7 +1194,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        con: pyomo.core.base.constraint._GeneralConstraintData
+        con: pyomo.core.base.constraint.ConstraintData
             The pyomo constraint for which the corresponding gurobi constraint attribute
             should be modified.
         attr: str
@@ -1221,7 +1220,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        var: pyomo.core.base.var._GeneralVarData
+        var: pyomo.core.base.var.VarData
             The pyomo var for which the corresponding gurobi var attribute
             should be modified.
         attr: str
@@ -1256,7 +1255,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        var: pyomo.core.base.var._GeneralVarData
+        var: pyomo.core.base.var.VarData
             The pyomo var for which the corresponding gurobi var attribute
             should be retrieved.
         attr: str
@@ -1272,7 +1271,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        con: pyomo.core.base.constraint._GeneralConstraintData
+        con: pyomo.core.base.constraint.ConstraintData
             The pyomo constraint for which the corresponding gurobi constraint attribute
             should be retrieved.
         attr: str
@@ -1288,7 +1287,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        con: pyomo.core.base.sos._SOSConstraintData
+        con: pyomo.core.base.sos.SOSConstraintData
             The pyomo SOS constraint for which the corresponding gurobi SOS constraint attribute
             should be retrieved.
         attr: str
@@ -1304,7 +1303,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        con: pyomo.core.base.constraint._GeneralConstraintData
+        con: pyomo.core.base.constraint.ConstraintData
             The pyomo constraint for which the corresponding gurobi constraint attribute
             should be retrieved.
         attr: str
@@ -1378,15 +1377,15 @@ class Gurobi(PersistentBase, PersistentSolver):
             as an MILP using extended cutting planes in callbacks.
 
                 >>> from gurobipy import GRB # doctest:+SKIP
-                >>> import pyomo.environ as pe
+                >>> import pyomo.environ as pyo
                 >>> from pyomo.core.expr.taylor_series import taylor_series_expansion
                 >>> from pyomo.contrib import appsi
                 >>>
-                >>> m = pe.ConcreteModel()
-                >>> m.x = pe.Var(bounds=(0, 4))
-                >>> m.y = pe.Var(within=pe.Integers, bounds=(0, None))
-                >>> m.obj = pe.Objective(expr=2*m.x + m.y)
-                >>> m.cons = pe.ConstraintList()  # for the cutting planes
+                >>> m = pyo.ConcreteModel()
+                >>> m.x = pyo.Var(bounds=(0, 4))
+                >>> m.y = pyo.Var(within=pyo.Integers, bounds=(0, None))
+                >>> m.obj = pyo.Objective(expr=2*m.x + m.y)
+                >>> m.cons = pyo.ConstraintList()  # for the cutting planes
                 >>>
                 >>> def _add_cut(xval):
                 ...     # a function to generate the cut
@@ -1425,7 +1424,7 @@ class Gurobi(PersistentBase, PersistentSolver):
 
         Parameters
         ----------
-        con: pyomo.core.base.constraint._GeneralConstraintData
+        con: pyomo.core.base.constraint.ConstraintData
             The cut to add
         """
         if not con.active:
@@ -1510,7 +1509,7 @@ class Gurobi(PersistentBase, PersistentSolver):
         """
         Parameters
         ----------
-        con: pyomo.core.base.constraint._GeneralConstraintData
+        con: pyomo.core.base.constraint.ConstraintData
             The lazy constraint to add
         """
         if not con.active:

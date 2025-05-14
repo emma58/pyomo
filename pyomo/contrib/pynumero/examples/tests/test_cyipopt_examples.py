@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -10,14 +10,16 @@
 #  ___________________________________________________________________________
 
 import os.path
+from io import StringIO
+import logging
+
 from pyomo.common.fileutils import this_file_dir, import_file
+from pyomo.common.tempfiles import TempfileManager
 import pyomo.common.unittest as unittest
 import pyomo.environ as pyo
 from pyomo.common.dependencies import attempt_import
 from pyomo.common.log import LoggingIntercept
 from pyomo.opt import TerminationCondition
-from io import StringIO
-import logging
 
 from pyomo.contrib.pynumero.dependencies import (
     numpy as np,
@@ -35,7 +37,7 @@ pandas, pandas_available = attempt_import(
     'One of the tests below requires a recent version of pandas for'
     ' comparing with a tolerance.',
     minimum_version='1.1.0',
-    defer_check=False,
+    defer_import=False,
 )
 
 from pyomo.contrib.pynumero.asl import AmplInterface
@@ -44,10 +46,12 @@ if not AmplInterface.available():
     raise unittest.SkipTest("Pynumero needs the ASL extension to run CyIpopt tests")
 
 import pyomo.contrib.pynumero.algorithms.solvers.cyipopt_solver as cyipopt_solver
+from pyomo.contrib.pynumero.interfaces.cyipopt_interface import cyipopt_available
 
-if not cyipopt_solver.cyipopt_available:
+if not cyipopt_available:
     raise unittest.SkipTest("PyNumero needs CyIpopt installed to run CyIpopt tests")
 import cyipopt as cyipopt_core
+
 
 example_dir = os.path.join(this_file_dir(), '..')
 
@@ -85,30 +89,34 @@ class TestExamples(unittest.TestCase):
                 'maximize_cb_ratio_residuals.py',
             )
         )
-        aoptions = {
-            'nlp_scaling_method': 'user-scaling',
-            'output_file': '_cyipopt-external-greybox-react-scaling.log',
-            'file_print_level': 10,
-        }
-        m = ex.maximize_cb_ratio_residuals_with_output_scaling(
-            additional_options=aoptions
-        )
-        self.assertAlmostEqual(pyo.value(m.reactor.inputs['sv']), 1.26541996, places=3)
-        self.assertAlmostEqual(
-            pyo.value(m.reactor.inputs['cb']), 1071.7410089, places=2
-        )
-        self.assertAlmostEqual(
-            pyo.value(m.reactor.outputs['cb_ratio']), 0.15190409266, places=3
-        )
 
-        with open('_cyipopt-external-greybox-react-scaling.log', 'r') as fd:
-            solver_trace = fd.read()
-        os.remove('_cyipopt-external-greybox-react-scaling.log')
+        with TempfileManager.new_context() as temp:
+            logfile = temp.create_tempfile(
+                '_cyipopt-external-greybox-react-scaling.log'
+            )
+            aoptions = {
+                'nlp_scaling_method': 'user-scaling',
+                'output_file': logfile,
+                'file_print_level': 10,
+            }
+            m = ex.maximize_cb_ratio_residuals_with_output_scaling(
+                additional_options=aoptions
+            )
+            self.assertAlmostEqual(
+                pyo.value(m.reactor.inputs['sv']), 1.26541996, places=3
+            )
+            self.assertAlmostEqual(
+                pyo.value(m.reactor.inputs['cb']), 1071.7410089, places=2
+            )
+            self.assertAlmostEqual(
+                pyo.value(m.reactor.outputs['cb_ratio']), 0.15190409266, places=3
+            )
+
+            with open(logfile, 'r') as fd:
+                solver_trace = fd.read()
 
         self.assertIn('nlp_scaling_method = user-scaling', solver_trace)
-        self.assertIn(
-            'output_file = _cyipopt-external-greybox-react-scaling.log', solver_trace
-        )
+        self.assertIn(f'output_file = {logfile}', solver_trace)
         self.assertIn('objective scaling factor = 1', solver_trace)
         self.assertIn('x scaling provided', solver_trace)
         self.assertIn('c scaling provided', solver_trace)
@@ -266,6 +274,11 @@ class TestExamples(unittest.TestCase):
         s = df['ca_bal']
         self.assertAlmostEqual(s.iloc[6], 0, places=3)
 
+    @unittest.skipIf(
+        cyipopt_solver.PyomoCyIpoptSolver().version() == (1, 4, 0),
+        "Terminating Ipopt through a user callback is broken in CyIpopt 1.4.0 "
+        "(see mechmotum/cyipopt#249)",
+    )
     def test_cyipopt_callback_halt(self):
         ex = import_file(
             os.path.join(example_dir, 'callback', 'cyipopt_callback_halt.py')

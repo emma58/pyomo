@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -28,12 +28,10 @@ __author__ = "John Eslick"
 import os
 import logging
 
-_log = logging.getLogger(__name__)
-
-import pyomo.contrib.viewer.qt as myqt
+from pyomo.common.fileutils import this_file_dir
+from pyomo.common.flags import building_documentation
 from pyomo.contrib.viewer.report import value_no_exception, get_residual
-
-from pyomo.core.base.param import _ParamData
+from pyomo.core.base.param import ParamData
 from pyomo.environ import (
     Block,
     BooleanVar,
@@ -44,19 +42,34 @@ from pyomo.environ import (
     value,
     units,
 )
-from pyomo.common.fileutils import this_file_dir
 
-mypath = this_file_dir()
-try:
-    _ModelBrowserUI, _ModelBrowser = myqt.uic.loadUiType(
-        os.path.join(mypath, "model_browser.ui")
-    )
-except:
-    # This lets the file still be imported, but you won't be able to use it
-    class _ModelBrowserUI(object):
-        pass
+import pyomo.contrib.viewer.qt as myqt
 
-    class _ModelBrowser(object):
+_log = logging.getLogger(__name__)
+
+
+# This lets the file be imported when the Qt UI is not available (or
+# when building docs), but you won't be able to use it
+class _ModelBrowserUI(object):
+    pass
+
+
+class _ModelBrowser(object):
+    pass
+
+
+# Note that the classes loaded here have signatures that are not
+# parsable by Sphinx, so we won't attempt to import them if we are
+# building the API documentation.
+if not building_documentation():
+    import sys
+
+    mypath = this_file_dir()
+    try:
+        _ModelBrowserUI, _ModelBrowser = myqt.uic.loadUiType(
+            os.path.join(mypath, "model_browser.ui")
+        )
+    except:
         pass
 
 
@@ -243,7 +256,7 @@ class ComponentDataItem(object):
             return None
 
     def _get_value_callback(self):
-        if isinstance(self.data, _ParamData):
+        if isinstance(self.data, ParamData):
             v = value_no_exception(self.data, div0="divide_by_0")
             # Check the param value for numpy float and int, sometimes numpy
             # values can sneak in especially if you set parameters from data
@@ -295,7 +308,7 @@ class ComponentDataItem(object):
     def _get_units_callback(self):
         if isinstance(self.data, (Var, Var._ComponentDataClass)):
             return str(units.get_units(self.data))
-        if isinstance(self.data, (Param, _ParamData)):
+        if isinstance(self.data, (Param, ParamData)):
             return str(units.get_units(self.data))
         return self._cache_units
 
@@ -320,7 +333,7 @@ class ComponentDataItem(object):
                     o.value = val
             except:
                 return
-        elif isinstance(self.data, _ParamData):
+        elif isinstance(self.data, ParamData):
             if not self.data.parent_component().mutable:
                 return
             try:

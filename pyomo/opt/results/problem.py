@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -9,22 +9,17 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
-import enum
+from pyomo.common.enums import ExtendedEnumType, IntEnum, ObjectiveSense
 from pyomo.opt.results.container import MapContainer
 
 
-class ProblemSense(str, enum.Enum):
-    unknown = 'unknown'
-    minimize = 'minimize'
-    maximize = 'maximize'
+class ProblemSense(IntEnum, metaclass=ExtendedEnumType):
+    __base_enum__ = ObjectiveSense
 
-    # Overloading __str__ is needed to match the behavior of the old
-    # pyutilib.enum class (removed June 2020). There are spots in the
-    # code base that expect the string representation for items in the
-    # enum to not include the class name. New uses of enum shouldn't
-    # need to do this.
+    unknown = 0
+
     def __str__(self):
-        return self.value
+        return self.name
 
 
 class ProblemInformation(MapContainer):

@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -16,19 +16,28 @@
 # because we may support an explicit matrix representation for models.
 #
 
+from pyomo.common.deprecation import deprecated
 from pyomo.core.base import Objective, Constraint
 import array
 
 
+@deprecated(
+    "to_standard_form() is deprecated.  "
+    "Please use WriterFactory('compile_standard_form')",
+    version='6.7.3',
+    remove_in='6.8.0',
+)
 def to_standard_form(self):
-    """
+    r"""
     Produces a standard-form representation of the model. Returns
     the coefficient matrix (A), the cost vector (c), and the
     constraint vector (b), where the 'standard form' problem is
 
-    min/max c'x
-    s.t.    Ax = b
-            x >= 0
+    .. math::
+
+        \min/\max\ & c'x \\
+        s.t.\      &  Ax = b \\
+                   & x >= 0
 
     All three returned values are instances of the array.array
     class, and store Python floats (C doubles).
@@ -55,8 +64,8 @@ def to_standard_form(self):
     # N.B. Structure hierarchy:
     #
     # active_components: {class: {attr_name: object}}
-    # object -> Constraint: ._data: {ndx: _ConstraintData}
-    # _ConstraintData: .lower, .body, .upper
+    # object -> Constraint: ._data: {ndx: ConstraintData}
+    # ConstraintData: .lower, .body, .upper
     #
     # So, altogether, we access a lower bound via
     #

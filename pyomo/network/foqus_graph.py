@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -268,7 +268,7 @@ class FOQUSGraph(object):
         """
         This is an algorithm for finding strongly connected components (SCCs)
         in a graph. It is based on Tarjan. 1972 Depth-First Search and Linear
-        Graph Algorithms, SIAM J. Comput. v1 no. 2 1972
+        Graph Algorithms, SIAM J. Computing 1(2) 1972
 
         Returns
         -------
@@ -358,9 +358,9 @@ class FOQUSGraph(object):
         done = False
         for i in range(len(sccNodes)):
             for j in range(len(sccNodes)):
-                for ine in ie[i]:
-                    for oute in oe[j]:
-                        if ine == oute:
+                for in_e in ie[i]:
+                    for out_e in oe[j]:
+                        if in_e == out_e:
                             adj[j].append(i)
                             adjR[i].append(j)
                             done = True
@@ -775,7 +775,7 @@ class FOQUSGraph(object):
         """
         This function finds all the cycles in a directed graph.
         The algorithm is based on Tarjan 1973 Enumeration of the
-        elementary circuits of a directed graph, SIAM J. Comput. v3 n2 1973.
+        elementary circuits of a directed graph, SIAM J. Computing 3(2) 1973.
 
         Returns
         -------

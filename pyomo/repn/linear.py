@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -31,8 +31,8 @@ from pyomo.core.expr.numeric_expr import (
     MonomialTermExpression,
     LinearExpression,
     SumExpression,
-    NPV_SumExpression,
     ExternalFunctionExpression,
+    mutable_expression,
 )
 from pyomo.core.expr.relational_expr import (
     EqualityExpression,
@@ -47,9 +47,14 @@ from pyomo.repn.util import (
     BeforeChildDispatcher,
     ExitNodeDispatcher,
     ExprType,
+    FileDeterminism,
+    FileDeterminism_to_SortComponents,
     InvalidNumber,
+    OrderedVarRecorder,
+    VarRecorder,
     apply_node_operation,
     complex_number_error,
+    initialize_exit_node_dispatcher,
     nan,
     sum_like_expression_types,
 )
@@ -59,6 +64,10 @@ logger = logging.getLogger(__name__)
 _CONSTANT = ExprType.CONSTANT
 _LINEAR = ExprType.LINEAR
 _GENERAL = ExprType.GENERAL
+
+
+def _inv2str(val):
+    return f"{val._str() if hasattr(val, '_str') else val}"
 
 
 def _merge_dict(dest_dict, mult, src_dict):
@@ -80,6 +89,7 @@ class LinearRepn(object):
     __slots__ = ("multiplier", "constant", "linear", "nonlinear")
 
     def __init__(self):
+        logger.debug(f"(LinearRepn) {self.__class__.__qualname__}: __init__")
         self.multiplier = 1
         self.constant = 0
         self.linear = {}
@@ -120,22 +130,18 @@ class LinearRepn(object):
             ans = 0
         if self.linear:
             var_map = visitor.var_map
-            if len(self.linear) == 1:
-                vid, coef = next(iter(self.linear.items()))
-                if coef == 1:
-                    ans += var_map[vid]
-                elif coef:
-                    ans += MonomialTermExpression((coef, var_map[vid]))
-                else:
-                    pass
-            else:
-                ans += LinearExpression(
-                    [
-                        MonomialTermExpression((coef, var_map[vid]))
-                        for vid, coef in self.linear.items()
-                        if coef
-                    ]
-                )
+            with mutable_expression() as e:
+                for vid, coef in self.linear.items():
+                    try:
+                        if coef:
+                            e += coef * var_map[vid]
+                    except Exception:
+                        logger.exception(f"vid={vid}, coef={coef}, var_map={var_map}")
+                        raise
+            if e.nargs() > 1:
+                ans += e
+            elif e.nargs() == 1:
+                ans += e.arg(0)
         if self.constant:
             ans += self.constant
         if self.multiplier != 1:
@@ -191,8 +197,6 @@ def to_expression(visitor, arg):
         return arg[1].to_expression(visitor)
 
 
-_exit_node_handlers = {}
-
 #
 # NEGATION handlers
 #
@@ -207,32 +211,26 @@ def _handle_negation_ANY(visitor, node, arg):
     return arg
 
 
-_exit_node_handlers[NegationExpression] = {
-    (_CONSTANT,): _handle_negation_constant,
-    (_LINEAR,): _handle_negation_ANY,
-    (_GENERAL,): _handle_negation_ANY,
-}
-
 #
 # PRODUCT handlers
 #
 
 
 def _handle_product_constant_constant(visitor, node, arg1, arg2):
-    _, arg1 = arg1
-    _, arg2 = arg2
-    ans = arg1 * arg2
+    ans = arg1[1] * arg2[1]
     if ans != ans:
-        if not arg1 or not arg2:
+        if not arg1[1] or not arg2[1]:
+            a = _inv2str(arg1[1])
+            b = _inv2str(arg2[1])
             deprecation_warning(
-                f"Encountered {str(arg1)}*{str(arg2)} in expression tree.  "
+                f"Encountered {a}*{b} in expression tree.  "
                 "Mapping the NaN result to 0 for compatibility "
                 "with the lp_v1 writer.  In the future, this NaN "
                 "will be preserved/emitted to comply with IEEE-754.",
-                version='6.6.0',
+                version="6.6.0",
             )
-            return _, 0
-    return _, arg1 * arg2
+            return _CONSTANT, 0
+    return _CONSTANT, ans
 
 
 def _handle_product_constant_ANY(visitor, node, arg1, arg2):
@@ -283,19 +281,6 @@ def _handle_product_nonlinear(visitor, node, arg1, arg2):
     return _GENERAL, ans
 
 
-_exit_node_handlers[ProductExpression] = {
-    (_CONSTANT, _CONSTANT): _handle_product_constant_constant,
-    (_CONSTANT, _LINEAR): _handle_product_constant_ANY,
-    (_CONSTANT, _GENERAL): _handle_product_constant_ANY,
-    (_LINEAR, _CONSTANT): _handle_product_ANY_constant,
-    (_LINEAR, _LINEAR): _handle_product_nonlinear,
-    (_LINEAR, _GENERAL): _handle_product_nonlinear,
-    (_GENERAL, _CONSTANT): _handle_product_ANY_constant,
-    (_GENERAL, _LINEAR): _handle_product_nonlinear,
-    (_GENERAL, _GENERAL): _handle_product_nonlinear,
-}
-_exit_node_handlers[MonomialTermExpression] = _exit_node_handlers[ProductExpression]
-
 #
 # DIVISION handlers
 #
@@ -306,7 +291,7 @@ def _handle_division_constant_constant(visitor, node, arg1, arg2):
 
 
 def _handle_division_ANY_constant(visitor, node, arg1, arg2):
-    arg1[1].multiplier /= arg2[1]
+    arg1[1].multiplier = apply_node_operation(node, (arg1[1].multiplier, arg2[1]))
     return arg1
 
 
@@ -316,25 +301,12 @@ def _handle_division_nonlinear(visitor, node, arg1, arg2):
     return _GENERAL, ans
 
 
-_exit_node_handlers[DivisionExpression] = {
-    (_CONSTANT, _CONSTANT): _handle_division_constant_constant,
-    (_CONSTANT, _LINEAR): _handle_division_nonlinear,
-    (_CONSTANT, _GENERAL): _handle_division_nonlinear,
-    (_LINEAR, _CONSTANT): _handle_division_ANY_constant,
-    (_LINEAR, _LINEAR): _handle_division_nonlinear,
-    (_LINEAR, _GENERAL): _handle_division_nonlinear,
-    (_GENERAL, _CONSTANT): _handle_division_ANY_constant,
-    (_GENERAL, _LINEAR): _handle_division_nonlinear,
-    (_GENERAL, _GENERAL): _handle_division_nonlinear,
-}
-
 #
 # EXPONENTIATION handlers
 #
 
 
-def _handle_pow_constant_constant(visitor, node, *args):
-    arg1, arg2 = args
+def _handle_pow_constant_constant(visitor, node, arg1, arg2):
     ans = apply_node_operation(node, (arg1[1], arg2[1]))
     if ans.__class__ in native_complex_types:
         ans = complex_number_error(ans, visitor, node)
@@ -343,7 +315,9 @@ def _handle_pow_constant_constant(visitor, node, *args):
 
 def _handle_pow_ANY_constant(visitor, node, arg1, arg2):
     _, exp = arg2
+    logger.debug(f"exp={exp}")
     if exp == 1:
+        logger.debug(f"returning {arg1}")
         return arg1
     elif exp > 1 and exp <= visitor.max_exponential_expansion and int(exp) == exp:
         _type, _arg = arg1
@@ -365,18 +339,6 @@ def _handle_pow_nonlinear(visitor, node, arg1, arg2):
     return _GENERAL, ans
 
 
-_exit_node_handlers[PowExpression] = {
-    (_CONSTANT, _CONSTANT): _handle_pow_constant_constant,
-    (_CONSTANT, _LINEAR): _handle_pow_nonlinear,
-    (_CONSTANT, _GENERAL): _handle_pow_nonlinear,
-    (_LINEAR, _CONSTANT): _handle_pow_ANY_constant,
-    (_LINEAR, _LINEAR): _handle_pow_nonlinear,
-    (_LINEAR, _GENERAL): _handle_pow_nonlinear,
-    (_GENERAL, _CONSTANT): _handle_pow_ANY_constant,
-    (_GENERAL, _LINEAR): _handle_pow_nonlinear,
-    (_GENERAL, _GENERAL): _handle_pow_nonlinear,
-}
-
 #
 # ABS and UNARY handlers
 #
@@ -396,13 +358,6 @@ def _handle_unary_nonlinear(visitor, node, arg):
     return _GENERAL, ans
 
 
-_exit_node_handlers[UnaryFunctionExpression] = {
-    (_CONSTANT,): _handle_unary_constant,
-    (_LINEAR,): _handle_unary_nonlinear,
-    (_GENERAL,): _handle_unary_nonlinear,
-}
-_exit_node_handlers[AbsExpression] = _exit_node_handlers[UnaryFunctionExpression]
-
 #
 # NAMED EXPRESSION handlers
 #
@@ -420,12 +375,6 @@ def _handle_named_ANY(visitor, node, arg1):
     _type, arg1 = arg1
     return _type, arg1.duplicate()
 
-
-_exit_node_handlers[Expression] = {
-    (_CONSTANT,): _handle_named_constant,
-    (_LINEAR,): _handle_named_ANY,
-    (_GENERAL,): _handle_named_ANY,
-}
 
 #
 # EXPR_IF handlers
@@ -457,16 +406,6 @@ def _handle_expr_if_nonlinear(visitor, node, arg1, arg2, arg3):
     return _GENERAL, ans
 
 
-_exit_node_handlers[Expr_ifExpression] = {
-    (i, j, k): _handle_expr_if_nonlinear
-    for i in (_LINEAR, _GENERAL)
-    for j in (_CONSTANT, _LINEAR, _GENERAL)
-    for k in (_CONSTANT, _LINEAR, _GENERAL)
-}
-for j in (_CONSTANT, _LINEAR, _GENERAL):
-    for k in (_CONSTANT, _LINEAR, _GENERAL):
-        _exit_node_handlers[Expr_ifExpression][_CONSTANT, j, k] = _handle_expr_if_const
-
 #
 # Relational expression handlers
 #
@@ -494,14 +433,6 @@ def _handle_equality_general(visitor, node, arg1, arg2):
     return _GENERAL, ans
 
 
-_exit_node_handlers[EqualityExpression] = {
-    (i, j): _handle_equality_general
-    for i in (_CONSTANT, _LINEAR, _GENERAL)
-    for j in (_CONSTANT, _LINEAR, _GENERAL)
-}
-_exit_node_handlers[EqualityExpression][_CONSTANT, _CONSTANT] = _handle_equality_const
-
-
 def _handle_inequality_const(visitor, node, arg1, arg2):
     # It is exceptionally likely that if we get here, one of the
     # arguments is an InvalidNumber
@@ -522,16 +453,6 @@ def _handle_inequality_general(visitor, node, arg1, arg2):
         (to_expression(visitor, arg1), to_expression(visitor, arg2)), node.strict
     )
     return _GENERAL, ans
-
-
-_exit_node_handlers[InequalityExpression] = {
-    (i, j): _handle_inequality_general
-    for i in (_CONSTANT, _LINEAR, _GENERAL)
-    for j in (_CONSTANT, _LINEAR, _GENERAL)
-}
-_exit_node_handlers[InequalityExpression][
-    _CONSTANT, _CONSTANT
-] = _handle_inequality_const
 
 
 def _handle_ranged_const(visitor, node, arg1, arg2, arg3):
@@ -561,15 +482,62 @@ def _handle_ranged_general(visitor, node, arg1, arg2, arg3):
     return _GENERAL, ans
 
 
-_exit_node_handlers[RangedExpression] = {
-    (i, j, k): _handle_ranged_general
-    for i in (_CONSTANT, _LINEAR, _GENERAL)
-    for j in (_CONSTANT, _LINEAR, _GENERAL)
-    for k in (_CONSTANT, _LINEAR, _GENERAL)
-}
-_exit_node_handlers[RangedExpression][
-    _CONSTANT, _CONSTANT, _CONSTANT
-] = _handle_ranged_const
+def define_exit_node_handlers(_exit_node_handlers=None):
+    if _exit_node_handlers is None:
+        _exit_node_handlers = {}
+    _exit_node_handlers[NegationExpression] = {
+        None: _handle_negation_ANY,
+        (_CONSTANT,): _handle_negation_constant,
+    }
+    _exit_node_handlers[ProductExpression] = {
+        None: _handle_product_nonlinear,
+        (_CONSTANT, _CONSTANT): _handle_product_constant_constant,
+        (_CONSTANT, _LINEAR): _handle_product_constant_ANY,
+        (_CONSTANT, _GENERAL): _handle_product_constant_ANY,
+        (_LINEAR, _CONSTANT): _handle_product_ANY_constant,
+        (_GENERAL, _CONSTANT): _handle_product_ANY_constant,
+    }
+    _exit_node_handlers[MonomialTermExpression] = _exit_node_handlers[ProductExpression]
+    _exit_node_handlers[DivisionExpression] = {
+        None: _handle_division_nonlinear,
+        (_CONSTANT, _CONSTANT): _handle_division_constant_constant,
+        (_LINEAR, _CONSTANT): _handle_division_ANY_constant,
+        (_GENERAL, _CONSTANT): _handle_division_ANY_constant,
+    }
+    _exit_node_handlers[PowExpression] = {
+        None: _handle_pow_nonlinear,
+        (_CONSTANT, _CONSTANT): _handle_pow_constant_constant,
+        (_LINEAR, _CONSTANT): _handle_pow_ANY_constant,
+        (_GENERAL, _CONSTANT): _handle_pow_ANY_constant,
+    }
+    _exit_node_handlers[UnaryFunctionExpression] = {
+        None: _handle_unary_nonlinear,
+        (_CONSTANT,): _handle_unary_constant,
+    }
+    _exit_node_handlers[AbsExpression] = _exit_node_handlers[UnaryFunctionExpression]
+    _exit_node_handlers[Expression] = {
+        None: _handle_named_ANY,
+        (_CONSTANT,): _handle_named_constant,
+    }
+    _exit_node_handlers[Expr_ifExpression] = {None: _handle_expr_if_nonlinear}
+    for j in (_CONSTANT, _LINEAR, _GENERAL):
+        for k in (_CONSTANT, _LINEAR, _GENERAL):
+            _exit_node_handlers[Expr_ifExpression][
+                _CONSTANT, j, k
+            ] = _handle_expr_if_const
+    _exit_node_handlers[EqualityExpression] = {
+        None: _handle_equality_general,
+        (_CONSTANT, _CONSTANT): _handle_equality_const,
+    }
+    _exit_node_handlers[InequalityExpression] = {
+        None: _handle_inequality_general,
+        (_CONSTANT, _CONSTANT): _handle_inequality_const,
+    }
+    _exit_node_handlers[RangedExpression] = {
+        None: _handle_ranged_general,
+        (_CONSTANT, _CONSTANT, _CONSTANT): _handle_ranged_const,
+    }
+    return _exit_node_handlers
 
 
 class LinearBeforeChildDispatcher(BeforeChildDispatcher):
@@ -583,37 +551,14 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
         self[SumExpression] = self._before_general_expression
 
     @staticmethod
-    def _record_var(visitor, var):
-        # We always add all indices to the var_map at once so that
-        # we can honor deterministic ordering of unordered sets
-        # (because the user could have iterated over an unordered
-        # set when constructing an expression, thereby altering the
-        # order in which we would see the variables)
-        vm = visitor.var_map
-        vo = visitor.var_order
-        l = len(vo)
-        try:
-            _iter = var.parent_component().values(visitor.sorter)
-        except AttributeError:
-            # Note that this only works for the AML, as kernel does not
-            # provide a parent_component()
-            _iter = (var,)
-        for v in _iter:
-            if v.fixed:
-                continue
-            vid = id(v)
-            vm[vid] = v
-            vo[vid] = l
-            l += 1
-
-    @staticmethod
     def _before_var(visitor, child):
         _id = id(child)
         if _id not in visitor.var_map:
             if child.fixed:
                 return False, (_CONSTANT, visitor.check_constant(child.value, child))
-            LinearBeforeChildDispatcher._record_var(visitor, child)
+            visitor.var_recorder.add(child)
         ans = visitor.Result()
+        logger.debug(f"setting linear[{child}] linear[{_id}] = 1")
         ans.linear[_id] = 1
         return False, (_LINEAR, ans)
 
@@ -641,7 +586,7 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
                     _CONSTANT,
                     arg1 * visitor.check_constant(arg2.value, arg2),
                 )
-            LinearBeforeChildDispatcher._record_var(visitor, arg2)
+            visitor.var_recorder.add(arg2)
 
         # Trap multiplication by 0 and nan.
         if not arg1:
@@ -649,11 +594,11 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
                 arg2 = visitor.check_constant(arg2.value, arg2)
                 if arg2 != arg2:
                     deprecation_warning(
-                        f"Encountered {arg1}*{str(arg2.value)} in expression "
+                        f"Encountered {arg1}*{_inv2str(arg2)} in expression "
                         "tree.  Mapping the NaN result to 0 for compatibility "
                         "with the lp_v1 writer.  In the future, this NaN "
                         "will be preserved/emitted to comply with IEEE-754.",
-                        version='6.6.0',
+                        version="6.6.0",
                     )
             return False, (_CONSTANT, arg1)
 
@@ -663,8 +608,8 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
 
     @staticmethod
     def _before_linear(visitor, child):
+
         var_map = visitor.var_map
-        var_order = visitor.var_order
         ans = visitor.Result()
         const = 0
         linear = ans.linear
@@ -683,11 +628,11 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
                         arg2 = visitor.check_constant(arg2.value, arg2)
                         if arg2 != arg2:
                             deprecation_warning(
-                                f"Encountered {arg1}*{str(arg2.value)} in expression "
+                                f"Encountered {arg1}*{_inv2str(arg2)} in expression "
                                 "tree.  Mapping the NaN result to 0 for compatibility "
                                 "with the lp_v1 writer.  In the future, this NaN "
                                 "will be preserved/emitted to comply with IEEE-754.",
-                                version='6.6.0',
+                                version="6.6.0",
                             )
                     continue
 
@@ -696,7 +641,7 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
                     if arg2.fixed:
                         const += arg1 * visitor.check_constant(arg2.value, arg2)
                         continue
-                    LinearBeforeChildDispatcher._record_var(visitor, arg2)
+                    visitor.var_recorder.add(arg2)
                     linear[_id] = arg1
                 elif _id in linear:
                     linear[_id] += arg1
@@ -704,6 +649,18 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
                     linear[_id] = arg1
             elif arg.__class__ in native_numeric_types:
                 const += arg
+            elif arg.is_variable_type():
+                _id = id(arg)
+                if _id not in var_map:
+                    if arg.fixed:
+                        const += visitor.check_constant(arg.value, arg)
+                        continue
+                    visitor.var_recorder.add(arg)
+                    linear[_id] = 1
+                elif _id in linear:
+                    linear[_id] += 1
+                else:
+                    linear[_id] = 1
             else:
                 try:
                     const += visitor.check_constant(visitor.evaluate(arg), arg)
@@ -740,35 +697,44 @@ class LinearBeforeChildDispatcher(BeforeChildDispatcher):
         return False, (_GENERAL, ans)
 
 
-_before_child_dispatcher = LinearBeforeChildDispatcher()
-
-
-#
-# Initialize the _exit_node_dispatcher
-#
-def _initialize_exit_node_dispatcher(exit_handlers):
-    exit_dispatcher = {}
-    for cls, handlers in exit_handlers.items():
-        for args, fcn in handlers.items():
-            exit_dispatcher[(cls, *args)] = fcn
-    return exit_dispatcher
-
-
 class LinearRepnVisitor(StreamBasedExpressionVisitor):
     Result = LinearRepn
-    exit_node_handlers = _exit_node_handlers
+    before_child_dispatcher = LinearBeforeChildDispatcher()
     exit_node_dispatcher = ExitNodeDispatcher(
-        _initialize_exit_node_dispatcher(_exit_node_handlers)
+        initialize_exit_node_dispatcher(define_exit_node_handlers())
     )
     expand_nonlinear_products = False
     max_exponential_expansion = 1
 
-    def __init__(self, subexpression_cache, var_map, var_order, sorter):
+    def __init__(
+        self,
+        subexpression_cache,
+        var_map=None,
+        var_order=None,
+        sorter=None,
+        var_recorder=None,
+    ):
+        logger.debug(f"(LinearRepnVisitor) {self.__class__}: __init__")
         super().__init__()
         self.subexpression_cache = subexpression_cache
-        self.var_map = var_map
-        self.var_order = var_order
-        self.sorter = sorter
+        if any(_ is not None for _ in (var_map, var_order, sorter)):
+            if var_recorder is not None:
+                raise ValueError(
+                    "LinearRepnVisitor: cannot specify any of var_map, "
+                    "var_order, or sorter with var_recorder"
+                )
+            deprecation_warning(
+                "var_map, var_order, and sorter are deprecated arguments to "
+                "LinearRepnVisitor().  Please pass the VarRecorder object directly.",
+                version="6.8.1",
+            )
+            var_recorder = OrderedVarRecorder(var_map, var_order, sorter)
+        if var_recorder is None:
+            var_recorder = VarRecorder(
+                {}, FileDeterminism_to_SortComponents(FileDeterminism.ORDERED)
+            )
+        self.var_recorder = var_recorder
+        self.var_map = var_recorder.var_map
         self._eval_expr_visitor = _EvaluationVisitor(True)
         self.evaluate = self._eval_expr_visitor.dfs_postorder_stack
 
@@ -805,13 +771,16 @@ class LinearRepnVisitor(StreamBasedExpressionVisitor):
         return ans
 
     def initializeWalker(self, expr):
+        logger.debug(f"{self.__class__.__name__}.initializeWalker({expr})")
         walk, result = self.beforeChild(None, expr, 0)
+        logger.debug(f"  walk, result = {walk, result}")
         if not walk:
             return False, self.finalizeResult(result)
         return True, expr
 
     def beforeChild(self, node, child, child_idx):
-        return _before_child_dispatcher[child.__class__](self, child)
+        logger.debug(f"before_child: {child}:{child_idx}  {type(child)}")
+        return self.before_child_dispatcher[child.__class__](self, child)
 
     def enterNode(self, node):
         # SumExpression are potentially large nary operators.  Directly
@@ -822,16 +791,22 @@ class LinearRepnVisitor(StreamBasedExpressionVisitor):
             return node.args, []
 
     def exitNode(self, node, data):
+
         if data.__class__ is self.Result:
             return data.walker_exitNode()
         #
         # General expressions...
         #
+        logger.debug(
+            f"exit lookup: {node.__class__.__name__}, {[i.name for i in map(itemgetter(0), data)]}"
+        )
+
         return self.exit_node_dispatcher[(node.__class__, *map(itemgetter(0), data))](
             self, node, *data
         )
 
     def finalizeResult(self, result):
+
         ans = result[1]
         if ans.__class__ is self.Result:
             mult = ans.multiplier
@@ -849,11 +824,11 @@ class LinearRepnVisitor(StreamBasedExpressionVisitor):
                     c != c for c in ans.linear.values()
                 ):
                     deprecation_warning(
-                        f"Encountered {str(mult)}*nan in expression tree.  "
+                        f"Encountered {mult}*nan in expression tree.  "
                         "Mapping the NaN result to 0 for compatibility "
                         "with the lp_v1 writer.  In the future, this NaN "
                         "will be preserved/emitted to comply with IEEE-754.",
-                        version='6.6.0',
+                        version="6.6.0",
                     )
                 return self.Result()
             else:

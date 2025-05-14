@@ -1,7 +1,7 @@
 #  ___________________________________________________________________________
 #
 #  Pyomo: Python Optimization Modeling Objects
-#  Copyright (c) 2008-2024
+#  Copyright (c) 2008-2025
 #  National Technology and Engineering Solutions of Sandia, LLC
 #  Under the terms of Contract DE-NA0003525 with National Technology and
 #  Engineering Solutions of Sandia, LLC, the U.S. Government retains certain
@@ -18,18 +18,18 @@ Mixed-Integer Models for Non-separable Piecewise Linear Optimization:
 Unifying framework and Extensions (Vielma, Nemhauser 2008).
 
 TODO: Add regression tests for the following completed tasks
-*) user not providing floats can be an major issue for BIGM's and MC
-*) Other TODO's
-*) nonconvex/nonconcave functions - BIGM_SOS1, BIGM_SOS2 ***** possible edge case bug
+  - user not providing floats can be an major issue for BIGM's and MC
+  - nonconvex/nonconcave functions - BIGM_SOS1, BIGM_SOS2 ***** possible edge case bug
 
 Possible Extensions
-*) Consider another piecewise rep ("SOS2_MANUAL"?) where we manually implement
-   extra constraints to define an SOS2 set, this would be compatible with GLPK,
-   http://winglpk.sourceforge.net/media/glpk-sos2_02.pdf
-*) double check that LOG and DLOG reps really do require (2^n)+1 points, or can
-   we just add integer cuts (or something more intelligent) in order to handle
-   piecewise functions without 2^n polytopes
-*) piecewise for functions of the form y = f(x1,x2,...)
+  - Consider another piecewise rep ("SOS2_MANUAL"?) where we manually implement
+    extra constraints to define an SOS2 set, this would be compatible with GLPK,
+    http://winglpk.sourceforge.net/media/glpk-sos2_02.pdf
+  - double check that LOG and DLOG reps really do require (2^n)+1 points, or can
+    we just add integer cuts (or something more intelligent) in order to handle
+    piecewise functions without 2^n polytopes
+  - piecewise for functions of the form y = f(x1,x2,...)
+
 """
 
 import logging
@@ -40,14 +40,14 @@ import types
 import enum
 
 from pyomo.common.log import is_debug_set
-from pyomo.common.deprecation import deprecation_warning
+from pyomo.common.deprecation import RenamedClass, deprecation_warning
 from pyomo.common.numeric_types import value
 from pyomo.common.timing import ConstructionTimer
-from pyomo.core.base.block import Block, _BlockData
+from pyomo.core.base.block import Block, BlockData
 from pyomo.core.base.component import ModelComponentFactory
 from pyomo.core.base.constraint import Constraint, ConstraintList
 from pyomo.core.base.sos import SOSConstraint
-from pyomo.core.base.var import Var, _VarData, IndexedVar
+from pyomo.core.base.var import Var, VarData, IndexedVar
 from pyomo.core.base.set_types import PositiveReals, NonNegativeReals, Binary
 from pyomo.core.base.util import flatten_tuple
 
@@ -214,14 +214,14 @@ def _characterize_function(name, tol, f_rule, model, points, *index):
     return 0, values, False
 
 
-class _PiecewiseData(_BlockData):
+class PiecewiseData(BlockData):
     """
     This class defines the base class for all linearization
     and piecewise constraint generators..
     """
 
     def __init__(self, parent):
-        _BlockData.__init__(self, parent)
+        BlockData.__init__(self, parent)
         self._constructed = True
         self._bound_type = None
         self._domain_pts = None
@@ -270,6 +270,11 @@ class _PiecewiseData(_BlockData):
             "point range is [%s,%s]."
             % (x, self.name, min(self._domain_pts), max(self._domain_pts))
         )
+
+
+class _PiecewiseData(metaclass=RenamedClass):
+    __renamed__new_class__ = PiecewiseData
+    __renamed__version__ = '6.7.2'
 
 
 class _SimpleSinglePiecewise(object):
@@ -1018,114 +1023,129 @@ class _BIGMPiecewise(object):
     "Constraints that contain piecewise linear expressions."
 )
 class Piecewise(Block):
+    r"""Adds piecewise constraints to a Pyomo model for functions of the
+    form, y = f(x).
+
+    Examples
+    --------
+
+    .. code::
+
+        model.const = Piecewise(index_1,...,index_n,yvar,xvar,**Keywords)
+        model.const = Piecewise(yvar,xvar,**Keywords)
+
+    Parameters
+    ----------
+    pw_pts : dict
+        A dictionary of lists (keys are index set) or a single list (for
+        the non-indexed case or when an identical set of breakpoints is
+        used across all indices) defining the set of domain breakpoints
+        for the piecewise linear function. **ALWAYS REQUIRED**
+
+    pw_repn : str
+
+        Indicates the type of piecewise representation to use. This can
+        have a major impact on solver performance.  Choices: (Default
+        'SOS2')
+
+           - ``SOS2``: +
+               Standard representation using sos2 constraints
+           - ``BIGM_BIN``:
+               BigM constraints with binary variables.  Theoretically
+               tightest M values are automatically determined.
+           - ``BIGM_SOS1``:
+               BigM constraints with sos1 variables.  Theoretically
+               tightest M values are automatically determined.
+           - ``DCC``: \*+
+               Disaggregated convex combination model
+           - ``DLOG``: \*+
+               Logarithmic disaggregated convex combination model
+           - ``CC``: \*+
+               Convex combination model
+           - ``LOG``: \*+
+               Logarithmic branching convex combination
+           - ``MC``: \*
+               Multiple choice model
+           - ``INC``: \*+
+               Incremental (delta) method
+
+        .. note::
+
+            \+\: Supports step functions
+
+            \*\: From "Mixed-Integer Models for Non-separable Piecewise Linear
+            Optimization: Unifying framework and Extensions" (Vielma,
+            Nemhauser 2008)
+
+        .. seealso::
+            Refer to the optional 'force_pw' keyword.
+
+    pw_constr_type : str
+        Indicates the bound type of the piecewise function. Choices:
+
+           - ``UB`` - y variable is bounded above by piecewise function
+           - ``LB`` - y variable is bounded below by piecewise function
+           - ``EQ`` - y variable is equal to the piecewise function
+
+    f_rule : f(model,i,j,...,x), {}, [], ()
+        An object that returns a numeric value that is the range value
+        corresponding to each piecewise domain point. For functions, the
+        first argument must be a Pyomo model. The last argument is the
+        domain value at which the function evaluates (Not a Pyomo
+        Var). Intermediate arguments are the corresponding indices of
+        the Piecewise component (if any).  Otherwise, the object can be
+        a dictionary of lists/tuples (with keys the same as the indexing
+        set) or a singe list/tuple (when no indexing set is used or when
+        all indices use an identical piecewise function).  Examples:
+
+        .. code:: python
+
+            # A function which changes with index
+            def f(model,j,x):
+                if (j == 2):
+                    return x**2 + 1.0
+                else:
+                    return x**2 + 5.0
+
+            # A nonlinear function
+            f = lambda model, x: return exp(x) + value(model.p)
+            # (where model.p is a Pyomo Param)
+
+            # A step function
+            f = [0,0,1,1,2,2]
+
+    force_pw : bool
+        Using the given function rule and pw_pts, a check for
+        convexity/concavity is implemented. If (1) the function is
+        convex and the piecewise constraints are lower bounds or if (2)
+        the function is concave and the piecewise constraints are upper
+        bounds then the piecewise constraints will be substituted for
+        linear constraints. Setting 'force_pw=True' will force the use
+        of the original piecewise constraints even when one of these two
+        cases applies.
+
+    warning_tol : float, default=1e-8
+        To aid in debugging, a warning is printed when consecutive
+        slopes of piecewise segments are within <warning_tol> of each
+        other.
+
+    warn_domain_coverage : bool, default=True
+        Print a warning when the feasible region of the domain variable
+        is not completely covered by the piecewise breakpoints.
+
+    unbounded_domain_var : bool, default=False
+        Allow an unbounded or partially bounded Pyomo Var to be used as
+        the domain variable.
+
+        .. note::
+            This does not imply unbounded piecewise segments will be
+            constructed. The outermost piecewise breakpoints will bound
+            the domain variable at each index. However, the Var
+            attributes .lb and .ub will not be modified.
+
     """
-        Adds piecewise constraints to a Pyomo model for functions of the
-        form, y = f(x).
 
-        Usage:
-                model.const = Piecewise(index_1,...,index_n,yvar,xvar,**Keywords)
-                model.const = Piecewise(yvar,xvar,**Keywords)
-
-        Keywords:
-
-    -pw_pts={},[],()
-              A dictionary of lists (keys are index set) or a single list
-              (for the non-indexed case or when an identical set of
-              breakpoints is used across all indices) defining the set of
-              domain breakpoints for the piecewise linear
-              function. **ALWAYS REQUIRED**
-
-    -pw_repn=''
-              Indicates the type of piecewise representation to use. This
-              can have a major impact on solver performance.
-              Choices: (Default 'SOS2')
-
-                 ~ + 'SOS2'      - Standard representation using sos2 constraints
-                 ~   'BIGM_BIN'  - BigM constraints with binary variables.
-                                   Theoretically tightest M values are automatically
-                                   determined.
-                 ~   'BIGM_SOS1' - BigM constraints with sos1 variables.
-                                   Theoretically tightest M values are automatically
-                                   determined.
-                 ~*+ 'DCC'       - Disaggregated convex combination model
-                 ~*+ 'DLOG'      - Logarithmic disaggregated convex combination model
-                 ~*+ 'CC'        - Convex combination model
-                 ~*+ 'LOG'       - Logarithmic branching convex combination
-                 ~*  'MC'        - Multiple choice model
-                 ~*+ 'INC'       - Incremental (delta) method
-
-               + Supports step functions
-               * Source: "Mixed-Integer Models for Non-separable Piecewise Linear
-                          Optimization: Unifying framework and Extensions" (Vielma,
-                          Nemhauser 2008)
-               ~ Refer to the optional 'force_pw' keyword.
-
-    -pw_constr_type=''
-              Indicates the bound type of the piecewise function.
-              Choices:
-
-                       'UB' - y variable is bounded above by piecewise function
-                       'LB' - y variable is bounded below by piecewise function
-                       'EQ' - y variable is equal to the piecewise function
-
-    -f_rule=f(model,i,j,...,x), {}, [], ()
-              An object that returns a numeric value that is the range
-              value corresponding to each piecewise domain point. For
-              functions, the first argument must be a Pyomo model. The
-              last argument is the domain value at which the function
-              evaluates (Not a Pyomo Var). Intermediate arguments are the
-              corresponding indices of the Piecewise component (if any).
-              Otherwise, the object can be a dictionary of lists/tuples
-              (with keys the same as the indexing set) or a singe
-              list/tuple (when no indexing set is used or when all indices
-              use an identical piecewise function).
-              Examples:
-
-                       # A function which changes with index
-                       def f(model,j,x):
-                          if (j == 2):
-                             return x**2 + 1.0
-                          else:
-                             return x**2 + 5.0
-
-                       # A nonlinear function
-                       f = lambda model,x: return exp(x) + value(model.p)
-                           (model.p is a Pyomo Param)
-
-                       # A step function
-                       f = [0,0,1,1,2,2]
-
-    -force_pw=True/False
-              Using the given function rule and pw_pts, a check for
-              convexity/concavity is implemented. If (1) the function is
-              convex and the piecewise constraints are lower bounds or if
-              (2) the function is concave and the piecewise constraints
-              are upper bounds then the piecewise constraints will be
-              substituted for linear constraints. Setting 'force_pw=True'
-              will force the use of the original piecewise constraints
-              even when one of these two cases applies.
-
-    -warning_tol=<float>                    Default=1e-8
-              To aid in debugging, a warning is printed when consecutive
-              slopes of piecewise segments are within <warning_tol> of
-              each other.
-
-    -warn_domain_coverage=True/False        Default=True
-              Print a warning when the feasible region of the domain
-              variable is not completely covered by the piecewise
-              breakpoints.
-
-    -unbounded_domain_var=True/False        Default=False
-              Allow an unbounded or partially bounded Pyomo Var to be used
-              as the domain variable.
-              **NOTE: This does not imply unbounded piecewise segments
-                      will be constructed. The outermost piecewise
-                      breakpoints will bound the domain variable at each
-                      index. However, the Var attributes .lb and .ub will
-                      not be modified.
-    """
-
-    _ComponentDataClass = _PiecewiseData
+    _ComponentDataClass = PiecewiseData
 
     def __new__(cls, *args, **kwds):
         if cls != Piecewise:
@@ -1235,7 +1255,7 @@ class Piecewise(Block):
 
         # Check that the variables args are actually Pyomo Vars
         if not (
-            isinstance(self._domain_var, _VarData)
+            isinstance(self._domain_var, VarData)
             or isinstance(self._domain_var, IndexedVar)
         ):
             msg = (
@@ -1244,7 +1264,7 @@ class Piecewise(Block):
             )
             raise TypeError(msg % (repr(self._domain_var),))
         if not (
-            isinstance(self._range_var, _VarData)
+            isinstance(self._range_var, VarData)
             or isinstance(self._range_var, IndexedVar)
         ):
             msg = (
@@ -1354,22 +1374,22 @@ class Piecewise(Block):
         _self_yvar = None
         _self_domain_pts_index = None
         if not _is_indexed:
-            # allows one to mix Var and _VarData as input to
+            # allows one to mix Var and VarData as input to
             # non-indexed Piecewise, index would be None in this case
-            # so for Var elements Var[None] is Var, but _VarData[None] would fail
+            # so for Var elements Var[None] is Var, but VarData[None] would fail
             _self_xvar = self._domain_var
             _self_yvar = self._range_var
             _self_domain_pts_index = self._domain_points[index]
         else:
-            # The following allows one to specify a Var or _VarData
+            # The following allows one to specify a Var or VarData
             # object even with an indexed Piecewise component.
             # The most common situation will most likely be a VarArray,
             # so we try this first.
-            if not isinstance(self._domain_var, _VarData):
+            if not isinstance(self._domain_var, VarData):
                 _self_xvar = self._domain_var[index]
             else:
                 _self_xvar = self._domain_var
-            if not isinstance(self._range_var, _VarData):
+            if not isinstance(self._range_var, VarData):
                 _self_yvar = self._range_var[index]
             else:
                 _self_yvar = self._range_var
@@ -1541,7 +1561,7 @@ class Piecewise(Block):
                     raise ValueError(msg % (self.name, index, self._pw_rep))
 
         if _is_indexed:
-            comp = _PiecewiseData(self)
+            comp = PiecewiseData(self)
         else:
             comp = self
         self._data[index] = comp
@@ -1551,9 +1571,9 @@ class Piecewise(Block):
         comp.build_constraints(func, _self_xvar, _self_yvar)
 
 
-class SimplePiecewise(_PiecewiseData, Piecewise):
+class SimplePiecewise(PiecewiseData, Piecewise):
     def __init__(self, *args, **kwds):
-        _PiecewiseData.__init__(self, self)
+        PiecewiseData.__init__(self, self)
         Piecewise.__init__(self, *args, **kwds)
 
 
