@@ -22,7 +22,7 @@ import datetime
 import io
 from operator import attrgetter, itemgetter
 
-from pyomo.common.dependencies import attempt_import
+from pyomo.common.dependencies import attempt_import, numpy
 from pyomo.common.collections import ComponentMap, ComponentSet
 from pyomo.common.config import ConfigDict, ConfigValue
 from pyomo.common.errors import InvalidValueError
@@ -189,6 +189,11 @@ def _create_grb_var(visitor, pyomo_var, name=""):
 
 
 class GurobiMINLPBeforeChildDispatcher(BeforeChildDispatcher):
+    def __setitem__(self, child_type, cb):
+        if cb is self._before_native_numeric and numpy.__version__[0] == '1':
+            cb = self._numpy1x_before_native_numeric
+        super().__setitem__(child_type, cb)
+
     @staticmethod
     def _before_var(visitor, child):
         if child not in visitor.var_map:
@@ -212,6 +217,12 @@ class GurobiMINLPBeforeChildDispatcher(BeforeChildDispatcher):
             return False, (_type, expr)
         else:
             return True, None
+
+    @staticmethod
+    def _numpy1x_before_native_numeric(visitor, child):
+        if child.__class__.__module__ == 'numpy':
+            child = float(child)
+        return False, (_CONSTANT, child)
 
 
 def _handle_node_with_eval_expr_visitor_invariant(visitor, node, data):
@@ -571,6 +582,7 @@ class GurobiMINLPWriter:
             pyo_obj = []
 
         # write constraints
+        numpy1 = numpy.__version__[0] == '1'
         pyo_cons = []
         grb_cons = []
         for cons in components[Constraint]:
@@ -583,12 +595,21 @@ class GurobiMINLPWriter:
                 expr = aux
             elif expr_type == _CONSTANT:
                 # cast everything to a float in case there are numpy
-                # types because you can't do addConstr(np.True_)
+                # types because you can't do addConstr(np.True_) [under
+                # either NumPy 1.x or 2.x]
                 expr = float(expr)
                 if lb is not None:
                     lb = float(lb)
                 if ub is not None:
                     ub = float(ub)
+            elif numpy1:
+                # There is a bug where Gurobi (12.0.3) cannot handle
+                # expressions where the bound is a numpy 1.x float
+                if lb is not None:
+                    lb = float(lb)
+                if ub is not None:
+                    ub = float(ub)
+
             if cons.equality:
                 grb_cons.append(grb_model.addConstr(lb == expr))
                 pyo_cons.append(cons)
