@@ -1186,7 +1186,6 @@ class GurobiPersistent(
         """
         return self._solver_model.getParamInfo(param)
 
-
     def cbCut(self, con):
         """
         Add a cut within a callback.

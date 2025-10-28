@@ -465,10 +465,11 @@ class GurobiDirect(GurobiSolverMixin, SolverBase, GurobiCallbackMixin):
                 # gurobi_model.update()
 
                 if self._callback is not None:
-                    self._pyomo_var_to_solver_var_map = {id(pv): gv for pv, gv in
-                        zip(repn.columns, x.tolist())
+                    self._pyomo_var_to_solver_var_map = {
+                        id(pv): gv for pv, gv in zip(repn.columns, x.tolist())
                     }
                     from pdb import set_trace
+
                     set_trace()
 
                 timer.stop('transfer_model')
