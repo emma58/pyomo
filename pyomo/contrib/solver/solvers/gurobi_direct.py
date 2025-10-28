@@ -9,6 +9,7 @@
 #  This software is distributed under the 3-clause BSD License.
 #  ___________________________________________________________________________
 
+from collections.abc import Iterable
 import datetime
 import io
 import math
@@ -62,6 +63,122 @@ class GurobiConfigMixin:
                 "will be passed to Gurobi.",
             ),
         )
+
+
+class GurobiCallbackMixin:
+    _callback = None
+    _callback_func = None
+    _model = None
+    _solver_model = None
+
+    def _intermediate_callback(self):
+        def f(gurobi_model, where):
+            self._callback_func(self._model, self, where)
+
+        return f
+
+    def set_callback(self, func=None):
+        """
+        Specify a callback for gurobi to use.
+
+        Parameters
+        ----------
+        func: function
+            The function to call. The function should have three arguments. The first
+            will be the pyomo model being solved. The second will be the Gurobi solver
+            instance. The third will be an enum member of gurobipy.GRB.Callback. This
+            will indicate where in the branch and bound algorithm gurobi is at. For
+            example, suppose we want to solve
+
+            .. math::
+
+                min 2*x + y
+
+                s.t.
+
+                    y >= (x-2)**2
+
+                    0 <= x <= 4
+
+                    y >= 0
+
+                    y integer
+
+            as an MILP using extended cutting planes in callbacks.
+
+                >>> from gurobipy import GRB # doctest:+SKIP
+                >>> import pyomo.environ as pyo
+                >>> from pyomo.core.expr.taylor_series import taylor_series_expansion
+                >>> from pyomo.contrib import appsi
+                >>>
+                >>> m = pyo.ConcreteModel()
+                >>> m.x = pyo.Var(bounds=(0, 4))
+                >>> m.y = pyo.Var(within=pyo.Integers, bounds=(0, None))
+                >>> m.obj = pyo.Objective(expr=2*m.x + m.y)
+                >>> m.cons = pyo.ConstraintList()  # for the cutting planes
+                >>>
+                >>> def _add_cut(xval):
+                ...     # a function to generate the cut
+                ...     m.x.value = xval
+                ...     return m.cons.add(m.y >= taylor_series_expansion((m.x - 2)**2))
+                ...
+                >>> _c = _add_cut(0)  # start with 2 cuts at the bounds of x
+                >>> _c = _add_cut(4)  # this is an arbitrary choice
+                >>>
+                >>> opt = appsi.solvers.Gurobi()
+                >>> opt.config.stream_solver = True
+                >>> opt.set_instance(m) # doctest:+SKIP
+                >>> opt.gurobi_options['PreCrush'] = 1
+                >>> opt.gurobi_options['LazyConstraints'] = 1
+                >>>
+                >>> def my_callback(cb_m, cb_opt, cb_where):
+                ...     if cb_where == GRB.Callback.MIPSOL:
+                ...         cb_opt.cbGetSolution(variables=[m.x, m.y])
+                ...         if m.y.value < (m.x.value - 2)**2 - 1e-6:
+                ...             cb_opt.cbLazy(_add_cut(m.x.value))
+                ...
+                >>> opt.set_callback(my_callback)
+                >>> res = opt.solve(m) # doctest:+SKIP
+
+        """
+        if func is not None:
+            self._callback_func = func
+            self._callback = self._intermediate_callback()
+        else:
+            self._callback = None
+            self._callback_func = None
+
+    def cbGet(self, what):
+        return self._solver_model.cbGet(what)
+
+    def cbGetSolution(self, variables):
+        """
+        Parameters
+        ----------
+        variables: iterable of vars
+        """
+        if not isinstance(variables, Iterable):
+            variables = [variables]
+        gurobi_vars = [self._pyomo_var_to_solver_var_map[id(i)] for i in variables]
+        var_values = self._solver_model.cbGetSolution(gurobi_vars)
+        for i, v in enumerate(variables):
+            v.set_value(var_values[i], skip_validation=True)
+
+    def cbGetNodeRel(self, variables):
+        """
+        Parameters
+        ----------
+        variables: Var or iterable of Var
+        """
+        if not isinstance(variables, Iterable):
+            variables = [variables]
+        gurobi_vars = [self._pyomo_var_to_solver_var_map[id(i)] for i in variables]
+        var_values = self._solver_model.cbGetNodeRel(gurobi_vars)
+        for i, v in enumerate(variables):
+            v.set_value(var_values[i], skip_validation=True)
+
+    def cbUseSolution(self):
+        return self._solver_model.cbUseSolution()
 
 
 class GurobiConfig(BranchAndBoundConfig, GurobiConfigMixin):
@@ -255,7 +372,7 @@ class GurobiSolverMixin:
         return version
 
 
-class GurobiDirect(GurobiSolverMixin, SolverBase):
+class GurobiDirect(GurobiSolverMixin, SolverBase, GurobiCallbackMixin):
     """
     Interface to Gurobi using gurobipy
     """
@@ -328,7 +445,8 @@ class GurobiDirect(GurobiSolverMixin, SolverBase):
             if config.working_dir:
                 os.chdir(config.working_dir)
             with capture_output(TeeStream(*ostreams), capture_fd=False):
-                gurobi_model = gurobipy.Model(env=self.env())
+                self._model = model
+                self._solver_model = gurobi_model = gurobipy.Model(env=self.env())
 
                 timer.start('transfer_model')
                 x = gurobi_model.addMVar(
@@ -345,6 +463,14 @@ class GurobiDirect(GurobiSolverMixin, SolverBase):
                 # Note: calling gurobi_model.update() here is not
                 # necessary (it will happen as part of optimize()):
                 # gurobi_model.update()
+
+                if self._callback is not None:
+                    self._pyomo_var_to_solver_var_map = {id(pv): gv for pv, gv in
+                        zip(repn.columns, x.tolist())
+                    }
+                    from pdb import set_trace
+                    set_trace()
+
                 timer.stop('transfer_model')
 
                 options = config.solver_options
@@ -367,10 +493,13 @@ class GurobiDirect(GurobiSolverMixin, SolverBase):
                     gurobi_model.setParam(key, option)
 
                 timer.start('optimize')
-                gurobi_model.optimize()
+                gurobi_model.optimize(self._callback)
                 timer.stop('optimize')
         finally:
             os.chdir(orig_cwd)
+            self._solver_model = None
+            self._model = None
+            self._pyomo_var_to_solver_var_map = None
 
         res = self._postsolve(
             timer,
