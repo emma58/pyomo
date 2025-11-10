@@ -12,7 +12,6 @@
 from __future__ import annotations
 import logging
 from typing import Dict, List, Optional, Sequence, Mapping
-from collections.abc import Iterable
 
 from pyomo.common.collections import ComponentSet, OrderedSet, ComponentMap
 from pyomo.common.errors import PyomoException
@@ -35,6 +34,7 @@ from .gurobi_direct_base import (
     gurobipy,
     GurobiConfig,
     GurobiDirectSolutionLoaderBase,
+    GurobiCallbackMixin,
 )
 from .gurobi_direct import GurobiDirectSolutionLoader
 from pyomo.contrib.solver.common.util import get_objective
@@ -264,7 +264,8 @@ class GurobiPersistentConfig(GurobiConfig):
         self.auto_updates: bool = self.declare('auto_updates', AutoUpdateConfig())
 
 
-class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer):
+class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer,
+                       GurobiCallbackMixin):
     _minimum_version = (7, 0, 0)
     CONFIG = GurobiPersistentConfig()
 
@@ -284,7 +285,6 @@ class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer):
         self._mutable_quadratic_helpers = {}
         self._mutable_objective = None
         self._needs_updated = True
-        self._callback_func = None
         self._constraints_added_since_update = OrderedSet()
         self._vars_added_since_update = ComponentSet()
         self._last_results_object: Optional[Results] = None
@@ -1092,82 +1092,6 @@ class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer):
         """
         return self._solver_model.getParamInfo(param)
 
-    def _intermediate_callback(self):
-        def f(gurobi_model, where):
-            self._callback_func(self._pyomo_model, self, where)
-
-        return f
-
-    def set_callback(self, func=None):
-        """
-        Specify a callback for gurobi to use.
-
-        Parameters
-        ----------
-        func: function
-            The function to call. The function should have three arguments. The first will be the pyomo model being
-            solved. The second will be the GurobiPersistent instance. The third will be an enum member of
-            gurobipy.GRB.Callback. This will indicate where in the branch and bound algorithm gurobi is at. For
-            example, suppose we want to solve
-
-            .. math::
-
-                min 2*x + y
-
-                s.t.
-
-                    y >= (x-2)**2
-
-                    0 <= x <= 4
-
-                    y >= 0
-
-                    y integer
-
-            as an MILP using extended cutting planes in callbacks.
-
-                >>> from gurobipy import GRB # doctest:+SKIP
-                >>> import pyomo.environ as pyo
-                >>> from pyomo.core.expr.taylor_series import taylor_series_expansion
-                >>> from pyomo.contrib import appsi
-                >>>
-                >>> m = pyo.ConcreteModel()
-                >>> m.x = pyo.Var(bounds=(0, 4))
-                >>> m.y = pyo.Var(within=pyo.Integers, bounds=(0, None))
-                >>> m.obj = pyo.Objective(expr=2*m.x + m.y)
-                >>> m.cons = pyo.ConstraintList()  # for the cutting planes
-                >>>
-                >>> def _add_cut(xval):
-                ...     # a function to generate the cut
-                ...     m.x.value = xval
-                ...     return m.cons.add(m.y >= taylor_series_expansion((m.x - 2)**2))
-                ...
-                >>> _c = _add_cut(0)  # start with 2 cuts at the bounds of x
-                >>> _c = _add_cut(4)  # this is an arbitrary choice
-                >>>
-                >>> opt = appsi.solvers.Gurobi()
-                >>> opt.config.stream_solver = True
-                >>> opt.set_instance(m) # doctest:+SKIP
-                >>> opt.gurobi_options['PreCrush'] = 1
-                >>> opt.gurobi_options['LazyConstraints'] = 1
-                >>>
-                >>> def my_callback(cb_m, cb_opt, cb_where):
-                ...     if cb_where == GRB.Callback.MIPSOL:
-                ...         cb_opt.cbGetSolution(variables=[m.x, m.y])
-                ...         if m.y.value < (m.x.value - 2)**2 - 1e-6:
-                ...             cb_opt.cbLazy(_add_cut(m.x.value))
-                ...
-                >>> opt.set_callback(my_callback)
-                >>> res = opt.solve(m) # doctest:+SKIP
-
-        """
-        if func is not None:
-            self._callback_func = func
-            self._callback = self._intermediate_callback()
-        else:
-            self._callback = None
-            self._callback_func = None
-
     def cbCut(self, con):
         """
         Add a cut within a callback.
@@ -1218,35 +1142,6 @@ class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer):
                 f'Constraint does not have a lower or an upper bound {con} \n'
             )
 
-    def cbGet(self, what):
-        return self._solver_model.cbGet(what)
-
-    def cbGetNodeRel(self, variables):
-        """
-        Parameters
-        ----------
-        variables: Var or iterable of Var
-        """
-        if not isinstance(variables, Iterable):
-            variables = [variables]
-        gurobi_vars = [self._pyomo_var_to_solver_var_map[id(i)] for i in variables]
-        var_values = self._solver_model.cbGetNodeRel(gurobi_vars)
-        for i, v in enumerate(variables):
-            v.set_value(var_values[i], skip_validation=True)
-
-    def cbGetSolution(self, variables):
-        """
-        Parameters
-        ----------
-        variables: iterable of vars
-        """
-        if not isinstance(variables, Iterable):
-            variables = [variables]
-        gurobi_vars = [self._pyomo_var_to_solver_var_map[id(i)] for i in variables]
-        var_values = self._solver_model.cbGetSolution(gurobi_vars)
-        for i, v in enumerate(variables):
-            v.set_value(var_values[i], skip_validation=True)
-
     def cbLazy(self, con):
         """
         Parameters
@@ -1294,15 +1189,6 @@ class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer):
             raise ValueError(
                 f'Constraint does not have a lower or an upper bound {con} \n'
             )
-
-    def cbSetSolution(self, variables, solution):
-        if not isinstance(variables, Iterable):
-            variables = [variables]
-        gurobi_vars = [self._pyomo_var_to_solver_var_map[id(i)] for i in variables]
-        self._solver_model.cbSetSolution(gurobi_vars, solution)
-
-    def cbUseSolution(self):
-        return self._solver_model.cbUseSolution()
 
     def reset(self):
         self._solver_model.reset()
