@@ -276,6 +276,9 @@ class GurobiDirectBase(SolverBase):
         super().__init__(**kwds)
         self._register_env_client()
         self._callback = None
+        self._pyomo_model = None
+        self._solver_model = None
+        self._pyomo_var_to_solver_var_map = None
 
     def __del__(self):
         if not python_is_shutting_down():
@@ -364,6 +367,16 @@ class GurobiDirectBase(SolverBase):
         # generator of tuples (pyomo_var, gurobi_var)
         raise NotImplementedError('should be implemented by derived classes')
 
+    def _store_model_state(self, pyo_model, grb_model):
+        self._pyomo_model = pyo_model
+        self._solver_model = grb_model
+        self._pyomo_var_to_solver_var_map = ComponentMap(self._pyomo_gurobi_var_iter())
+
+    def _clear_model_state(self):
+        self._pyomo_model = None
+        self._solver_model = None
+        self._pyomo_var_to_solver_var_map = None
+
     def _mipstart(self):
         for pyomo_var, gurobi_var in self._pyomo_gurobi_var_iter():
             if pyomo_var.is_integer() and pyomo_var.value is not None:
@@ -399,6 +412,8 @@ class GurobiDirectBase(SolverBase):
                 gurobi_model, solution_loader, has_obj = self._create_solver_model(
                     model
                 )
+                if self._callback is not None:
+                    self._store_model_state(model, gurobi_model)
                 options = config.solver_options
 
                 gurobi_model.setParam('LogToConsole', 1)
@@ -432,6 +447,7 @@ class GurobiDirectBase(SolverBase):
             # otherwise, this would just be self.config = orig_config
             object.__setattr__(self, 'config', orig_config)
             self.config = orig_config
+            self._clear_model_state()
 
         res.solver_log = ostreams[0].getvalue()
         end_timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -533,12 +549,10 @@ class GurobiDirectBase(SolverBase):
 class GurobiCallbackMixin:
     _callback = None
     _callback_func = None
-    _model = None
-    _solver_model = None
-
+    
     def _intermediate_callback(self):
         def f(gurobi_model, where):
-            self._callback_func(self._model, self, where)
+            self._callback_func(self._pyomo_model, self, where)
 
         return f
 
@@ -549,10 +563,11 @@ class GurobiCallbackMixin:
         Parameters
         ----------
         func: function
-            The function to call. The function should have three arguments. The first will be the pyomo model being
-            solved. The second will be the GurobiPersistent instance. The third will be an enum member of
-            gurobipy.GRB.Callback. This will indicate where in the branch and bound algorithm gurobi is at. For
-            example, suppose we want to solve
+            The function to call. The function should have three arguments. The first
+            will be the pyomo model being solved. The second will be the
+            GurobiPersistent instance. The third will be an enum member of
+            gurobipy.GRB.Callback. This will indicate where in the branch and bound
+            algorithm gurobi is at. For example, suppose we want to solve
 
             .. math::
 

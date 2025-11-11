@@ -274,11 +274,9 @@ class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer,
         # we actually want to only grab the license when
         # set_instance is called
         self._release_env_client()
-        self._solver_model = None
         self._pyomo_var_to_solver_var_map = ComponentMap()
         self._pyomo_con_to_solver_con_map = {}
         self._pyomo_sos_to_solver_sos_map = {}
-        self._pyomo_model = None
         self._objective = None
         self._mutable_helpers = {}
         self._mutable_bounds = {}
@@ -339,6 +337,12 @@ class GurobiPersistent(GurobiDirectBase, PersistentSolverBase, Observer,
         res = super().solve(model, **kwds)
         self._needs_updated = False
         return res
+
+    def _store_model_state(self, pyo_model, grb_model):
+        pass
+
+    def _clear_model_state(self):
+        pass
 
     def _process_domain_and_bounds(self, var):
         lb, ub, step = var.domain.get_interval()

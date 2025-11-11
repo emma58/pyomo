@@ -27,6 +27,7 @@ from .gurobi_direct_base import (
     GurobiDirectBase,
     gurobipy,
     GurobiDirectSolutionLoaderBase,
+    GurobiCallbackMixin,
 )
 import logging
 
@@ -48,7 +49,7 @@ class GurobiDirectSolutionLoader(GurobiDirectSolutionLoaderBase):
             self._solver_model = None
 
 
-class GurobiDirect(GurobiDirectBase):
+class GurobiDirect(GurobiDirectBase, GurobiCallbackMixin):
     _minimum_version = (9, 0, 0)
 
     def __init__(self, **kwds):
