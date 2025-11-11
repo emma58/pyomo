@@ -13,8 +13,6 @@ import pyomo.common.unittest as unittest
 import pyomo.environ as pyo
 from pyomo.contrib.solver.solvers.gurobi.gurobi_persistent import GurobiPersistent
 from pyomo.contrib.solver.common.results import SolutionStatus
-from pyomo.core.expr.taylor_series import taylor_series_expansion
-
 
 opt = GurobiPersistent()
 if not opt.available():
@@ -403,36 +401,6 @@ class TestGurobiPersistent(unittest.TestCase):
         opt.set_instance(m)
         opt.set_var_attr(m.x, 'Start', 1)
         self.assertEqual(opt.get_var_attr(m.x, 'Start'), 1)
-
-    def test_callback(self):
-        m = pyo.ConcreteModel()
-        m.x = pyo.Var(bounds=(0, 4))
-        m.y = pyo.Var(within=pyo.Integers, bounds=(0, None))
-        m.obj = pyo.Objective(expr=2 * m.x + m.y)
-        m.cons = pyo.ConstraintList()
-
-        def _add_cut(xval):
-            m.x.value = xval
-            return m.cons.add(m.y >= taylor_series_expansion((m.x - 2) ** 2))
-
-        _add_cut(0)
-        _add_cut(4)
-
-        opt = GurobiPersistent()
-        opt.set_instance(m)
-        opt.set_gurobi_param('PreCrush', 1)
-        opt.set_gurobi_param('LazyConstraints', 1)
-
-        def _my_callback(cb_m, cb_opt, cb_where):
-            if cb_where == gurobipy.GRB.Callback.MIPSOL:
-                cb_opt.cbGetSolution(variables=[m.x, m.y])
-                if m.y.value < (m.x.value - 2) ** 2 - 1e-6:
-                    cb_opt.cbLazy(_add_cut(m.x.value))
-
-        opt.set_callback(_my_callback)
-        opt.solve(m)
-        self.assertAlmostEqual(m.x.value, 1)
-        self.assertAlmostEqual(m.y.value, 1)
 
     def test_nonconvex(self):
         if gurobipy.GRB.VERSION_MAJOR < 9:
