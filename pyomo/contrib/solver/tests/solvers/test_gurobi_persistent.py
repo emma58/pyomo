@@ -11,10 +11,8 @@
 
 import pyomo.common.unittest as unittest
 import pyomo.environ as pyo
-from pyomo.contrib.solver.solvers.gurobi_persistent import GurobiPersistent
+from pyomo.contrib.solver.solvers.gurobi.gurobi_persistent import GurobiPersistent
 from pyomo.contrib.solver.common.results import SolutionStatus
-from pyomo.core.expr.taylor_series import taylor_series_expansion
-
 
 opt = GurobiPersistent()
 if not opt.available():
@@ -404,36 +402,6 @@ class TestGurobiPersistent(unittest.TestCase):
         opt.set_var_attr(m.x, 'Start', 1)
         self.assertEqual(opt.get_var_attr(m.x, 'Start'), 1)
 
-    def test_callback(self):
-        m = pyo.ConcreteModel()
-        m.x = pyo.Var(bounds=(0, 4))
-        m.y = pyo.Var(within=pyo.Integers, bounds=(0, None))
-        m.obj = pyo.Objective(expr=2 * m.x + m.y)
-        m.cons = pyo.ConstraintList()
-
-        def _add_cut(xval):
-            m.x.value = xval
-            return m.cons.add(m.y >= taylor_series_expansion((m.x - 2) ** 2))
-
-        _add_cut(0)
-        _add_cut(4)
-
-        opt = GurobiPersistent()
-        opt.set_instance(m)
-        opt.set_gurobi_param('PreCrush', 1)
-        opt.set_gurobi_param('LazyConstraints', 1)
-
-        def _my_callback(cb_m, cb_opt, cb_where):
-            if cb_where == gurobipy.GRB.Callback.MIPSOL:
-                cb_opt.cbGetSolution(variables=[m.x, m.y])
-                if m.y.value < (m.x.value - 2) ** 2 - 1e-6:
-                    cb_opt.cbLazy(_add_cut(m.x.value))
-
-        opt.set_callback(_my_callback)
-        opt.solve(m)
-        self.assertAlmostEqual(m.x.value, 1)
-        self.assertAlmostEqual(m.y.value, 1)
-
     def test_nonconvex(self):
         if gurobipy.GRB.VERSION_MAJOR < 9:
             raise unittest.SkipTest
@@ -471,11 +439,11 @@ class TestGurobiPersistent(unittest.TestCase):
         res = opt.solve(m)
         num_solutions = opt.get_model_attr('SolCount')
         self.assertEqual(num_solutions, 3)
-        res.solution_loader.load_vars(solution_number=0)
+        res.solution_loader.load_vars(solution_id=0)
         self.assertAlmostEqual(pyo.value(m.obj.expr), 6.431184939357673)
-        res.solution_loader.load_vars(solution_number=1)
+        res.solution_loader.load_vars(solution_id=1)
         self.assertAlmostEqual(pyo.value(m.obj.expr), 6.584793218502477)
-        res.solution_loader.load_vars(solution_number=2)
+        res.solution_loader.load_vars(solution_id=2)
         self.assertAlmostEqual(pyo.value(m.obj.expr), 6.592304628123309)
 
     def test_zero_time_limit(self):
@@ -496,11 +464,9 @@ class TestGurobiPersistent(unittest.TestCase):
             self.assertIsNone(res.incumbent_objective)
 
 
-class TestManualModel(unittest.TestCase):
+class TestManualMode(unittest.TestCase):
     def setUp(self):
         opt = GurobiPersistent()
-        opt.config.auto_updates.check_for_new_or_removed_params = False
-        opt.config.auto_updates.check_for_new_or_removed_vars = False
         opt.config.auto_updates.check_for_new_or_removed_constraints = False
         opt.config.auto_updates.update_parameters = False
         opt.config.auto_updates.update_vars = False
@@ -586,13 +552,6 @@ class TestManualModel(unittest.TestCase):
         self.assertEqual(opt.get_model_attr('NumConstrs'), 1)
         self.assertEqual(opt.get_model_attr('NumQConstrs'), 0)
 
-        m.z = pyo.Var()
-        opt.add_variables([m.z])
-        self.assertEqual(opt.get_model_attr('NumVars'), 3)
-        opt.remove_variables([m.z])
-        del m.z
-        self.assertEqual(opt.get_model_attr('NumVars'), 2)
-
     def test_update1(self):
         m = pyo.ConcreteModel()
         m.x = pyo.Var()
@@ -603,16 +562,13 @@ class TestManualModel(unittest.TestCase):
 
         opt = self.opt
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumQConstrs'), 1)
+        self.assertEqual(opt.get_model_attr('NumQConstrs'), 1)
 
         opt.remove_constraints([m.c1])
-        opt.update()
-        self.assertEqual(opt._solver_model.getAttr('NumQConstrs'), 0)
+        self.assertEqual(opt.get_model_attr('NumQConstrs'), 0)
 
         opt.add_constraints([m.c1])
-        self.assertEqual(opt._solver_model.getAttr('NumQConstrs'), 0)
-        opt.update()
-        self.assertEqual(opt._solver_model.getAttr('NumQConstrs'), 1)
+        self.assertEqual(opt.get_model_attr('NumQConstrs'), 1)
 
     def test_update2(self):
         m = pyo.ConcreteModel()
@@ -625,16 +581,13 @@ class TestManualModel(unittest.TestCase):
         opt = self.opt
         opt.config.symbolic_solver_labels = True
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumConstrs'), 1)
+        self.assertEqual(opt.get_model_attr('NumConstrs'), 1)
 
         opt.remove_constraints([m.c2])
-        opt.update()
-        self.assertEqual(opt._solver_model.getAttr('NumConstrs'), 0)
+        self.assertEqual(opt.get_model_attr('NumConstrs'), 0)
 
         opt.add_constraints([m.c2])
-        self.assertEqual(opt._solver_model.getAttr('NumConstrs'), 0)
-        opt.update()
-        self.assertEqual(opt._solver_model.getAttr('NumConstrs'), 1)
+        self.assertEqual(opt.get_model_attr('NumConstrs'), 1)
 
     def test_update3(self):
         m = pyo.ConcreteModel()
@@ -684,16 +637,13 @@ class TestManualModel(unittest.TestCase):
 
         opt = self.opt
         opt.set_instance(m)
-        self.assertEqual(opt._solver_model.getAttr('NumSOS'), 1)
+        self.assertEqual(opt.get_model_attr('NumSOS'), 1)
 
         opt.remove_sos_constraints([m.c1])
-        opt.update()
-        self.assertEqual(opt._solver_model.getAttr('NumSOS'), 0)
+        self.assertEqual(opt.get_model_attr('NumSOS'), 0)
 
         opt.add_sos_constraints([m.c1])
-        self.assertEqual(opt._solver_model.getAttr('NumSOS'), 0)
-        opt.update()
-        self.assertEqual(opt._solver_model.getAttr('NumSOS'), 1)
+        self.assertEqual(opt.get_model_attr('NumSOS'), 1)
 
     def test_update6(self):
         m = pyo.ConcreteModel()
