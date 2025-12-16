@@ -130,9 +130,8 @@ def _get_uniform_point_grid(bounds, n, func, config):
             nudge = (ub - lb) * 1e-4
             linspaces.append(np.linspace(lb + nudge, ub - nudge, n))
         else:
-            size = min(n, ub - lb + 1)
-            pts = np.linspace(lb, ub, size)
-            linspaces.append(np.array([round(i) for i in pts]))
+            pts = np.linspace(lb, ub, n)
+            linspaces.append(np.array(pts))
     return list(itertools.product(*linspaces))
 
 
@@ -715,7 +714,7 @@ class NonlinearToPWL(Transformation):
 
             def eval_expr(*args):
                 for i, v in enumerate(expr_vars):
-                    v.value = args[i]
+                    v.set_value(args[i], skip_validation=True)
                 return value(subexpr)
 
             pwlf = _get_pwl_function_approximation(
