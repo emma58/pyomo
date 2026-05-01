@@ -26,6 +26,7 @@ from pyomo.core.plugins.transform.hierarchy import Transformation
 from pyomo.common.config import ConfigBlock, ConfigValue, NonNegativeFloat
 from pyomo.common.modeling import unique_component_name
 from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.core.expr.visitor import identify_variables
 from pyomo.common.collections import ComponentMap, ComponentSet
 from pyomo.opt import TerminationCondition
@@ -219,7 +220,9 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                 self.verbose = True
             else:
                 self.verbose = False
-            self.visitor = LinearRepnVisitor({})
+            self.visitor = LinearRepnVisitor(
+                {}, var_recorder=OrderedVarRecorder({}, {}, None)
+            )
             self._apply_to_impl(instance, config)
         finally:
             # restore logging level
