@@ -448,7 +448,8 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     waiting_list.append(cons)
                     if self.verbose:
                         logger.info(
-                            "\t%s <= %s" % (cons['lower'], cons['body'].to_expression(self.visitor))
+                            "\t%s <= %s"
+                            % (cons['lower'], cons['body'].to_expression(self.visitor))
                         )
                     continue
 
@@ -501,7 +502,8 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     if self.verbose:
                         cons = constraints[len(constraints) - 1]
                         logger.info(
-                            "\t%s <= %s" % (cons['lower'], cons['body'].to_expression(self.visitor))
+                            "\t%s <= %s"
+                            % (cons['lower'], cons['body'].to_expression(self.visitor))
                         )
 
             iteration += 1
@@ -568,10 +570,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         for vid, coef in list(body.linear.items()):
             v = self.visitor.var_map[vid]
             new_coef = self._multiply(
-                scalar,
-                coef,
-                self._get_noninteger_coef_error_message,
-                (v.name, coef),
+                scalar, coef, self._get_noninteger_coef_error_message, (v.name, coef)
             )
             body.linear[vid] = new_coef
             cons['map'][v] = new_coef

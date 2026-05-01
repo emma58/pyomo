@@ -711,7 +711,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[2]
         self.assertEqual(value(cons.lower), 0)
         self.assertIsNone(cons.upper)
-        repn = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None)).walk_expression(cons.body)
+        repn = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        ).walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 1)
         self.assertEqual(repn.linear[id(m.y)], 2)
@@ -719,7 +721,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[1]
         self.assertEqual(value(cons.lower), 4)
         self.assertIsNone(cons.upper)
-        repn = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None)).walk_expression(cons.body)
+        repn = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        ).walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 1)
         self.assertEqual(repn.linear[id(m.y)], 3)
@@ -747,7 +751,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         # it. What I care about is that x0 really is gone.
 
         useful = constraints[1]
-        repn = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None)).walk_expression(useful.body)
+        repn = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        ).walk_expression(useful.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)  # this is the real test
         self.assertEqual(useful.lower, 0)
@@ -781,7 +787,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         constraints = first._pyomo_contrib_fme_transformation.projected_constraints
         cons = constraints[1]
         self.assertEqual(cons.lower, 0)
-        repn = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None)).walk_expression(cons.body)
+        repn = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        ).walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 2)  # x is still around
@@ -834,7 +842,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[1]
         self.assertEqual(value(cons.lower), -5)
         self.assertIsNone(cons.upper)
-        repn = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None)).walk_expression(cons.body)
+        repn = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        ).walk_expression(cons.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
         self.assertEqual(repn.linear[id(m.x)], -1)
@@ -897,7 +907,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[1]
         self.assertIsNone(cons.upper)
         self.assertEqual(value(cons.lower), 0)
-        repn = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None)).walk_expression(cons.body)
+        repn = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        ).walk_expression(cons.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 2)
         self.assertEqual(repn.linear[id(m.x)], 1)
