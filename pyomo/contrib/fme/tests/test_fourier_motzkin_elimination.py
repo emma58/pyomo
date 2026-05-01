@@ -33,7 +33,7 @@ from pyomo.core.base import TransformationFactory
 from pyomo.core.expr import log
 from pyomo.core.expr.compare import assertExpressionsEqual
 from pyomo.gdp import Disjunction, Disjunct
-from pyomo.repn.standard_repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
 from pyomo.opt import SolverFactory, check_available_solvers
 import pyomo.contrib.fme.fourier_motzkin_elimination
 
@@ -93,60 +93,45 @@ class TestFourierMotzkinElimination(unittest.TestCase):
     def check_projected_constraints(self, m, indices):
         constraints = m._pyomo_contrib_fme_transformation.projected_constraints
 
+        visitor = LinearRepnVisitor({})
+
         # x - 0.01y <= 1
         cons = constraints[indices[0]]
         self.assertEqual(value(cons.lower), -1)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
-        self.assertTrue(body.is_linear())
-        linear_vars = body.linear_vars
-        coefs = body.linear_coefs
-        self.assertEqual(len(linear_vars), 2)
-        self.assertIs(linear_vars[0], m.x)
-        self.assertEqual(coefs[0], -1)
-        self.assertIs(linear_vars[1], m.y)
-        self.assertEqual(coefs[1], 0.01)
+        body = visitor.walk_expression(cons.body)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(len(body.linear), 2)
+        self.assertEqual(body.linear[id(m.x)], -1)
+        self.assertEqual(body.linear[id(m.y)], 0.01)
 
         # y <= 1000*(1 - u_1)
         cons = constraints[indices[1]]
         self.assertEqual(value(cons.lower), -1000)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
-        linear_vars = body.linear_vars
-        coefs = body.linear_coefs
-        self.assertEqual(len(linear_vars), 2)
-        self.assertIs(linear_vars[0], m.u[1])
-        self.assertEqual(coefs[0], -1000)
-        self.assertIs(linear_vars[1], m.y)
-        self.assertEqual(coefs[1], -1)
+        body = visitor.walk_expression(cons.body)
+        self.assertEqual(len(body.linear), 2)
+        self.assertEqual(body.linear[id(m.u[1])], -1000)
+        self.assertEqual(body.linear[id(m.y)], -1)
 
         # -x + 0.01y + 1 <= 1000*(1 - u_2)
         cons = constraints[indices[2]]
         self.assertEqual(value(cons.lower), -999)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
-        linear_vars = body.linear_vars
-        coefs = body.linear_coefs
-        self.assertEqual(len(linear_vars), 3)
-        self.assertIs(linear_vars[0], m.u[2])
-        self.assertEqual(coefs[0], -1000)
-        self.assertIs(linear_vars[1], m.x)
-        self.assertEqual(coefs[1], 1)
-        self.assertIs(linear_vars[2], m.y)
-        self.assertEqual(coefs[2], -0.01)
+        body = visitor.walk_expression(cons.body)
+        self.assertEqual(len(body.linear), 3)
+        self.assertEqual(body.linear[id(m.u[2])], -1000)
+        self.assertEqual(body.linear[id(m.x)], 1)
+        self.assertEqual(body.linear[id(m.y)], -0.01)
 
         # u_2 + 100u_1 >= 1
         cons = constraints[indices[3]]
         self.assertEqual(value(cons.lower), 1)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
-        linear_vars = body.linear_vars
-        coefs = body.linear_coefs
-        self.assertEqual(len(linear_vars), 2)
-        self.assertIs(linear_vars[1], m.u[2])
-        self.assertEqual(coefs[1], 1)
-        self.assertIs(linear_vars[0], m.u[1])
-        self.assertEqual(coefs[0], 100)
+        body = visitor.walk_expression(cons.body)
+        self.assertEqual(len(body.linear), 2)
+        self.assertEqual(body.linear[id(m.u[2])], 1)
+        self.assertEqual(body.linear[id(m.u[1])], 100)
 
     def test_transformed_constraints_indexed_var_arg(self):
         m = self.makeModel()
@@ -333,161 +318,135 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         self.assertIs(cons.body, m.x)
 
     def check_hull_projected_constraints(self, m, constraints, indices):
+        visitor = LinearRepnVisitor({})
+
         # p[1] >= on.ind_var
         cons = constraints[indices[0]]
         self.assertEqual(cons.lower, 0)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 2)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.on.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], -1)
-        self.assertIs(body.linear_vars[1], m.p[1])
-        self.assertEqual(body.linear_coefs[1], 1)
+        self.assertEqual(len(body.linear), 2)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.on.binary_indicator_var)], -1)
+        self.assertEqual(body.linear[id(m.p[1])], 1)
 
         # p[1] <= 10*on.ind_var + 10*off.ind_var
         # rewritten as: p[1] <= 10*on + 10*(1 - (on + su)) = 10 - 10*su
         cons = constraints[indices[1]]
         self.assertEqual(value(cons.lower), -10)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 2)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[1], m.startup.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], -10)
-        self.assertIs(body.linear_vars[0], m.p[1])
-        self.assertEqual(body.linear_coefs[0], -1)
+        self.assertEqual(len(body.linear), 2)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.startup.binary_indicator_var)], -10)
+        self.assertEqual(body.linear[id(m.p[1])], -1)
 
         # p[1] >= time1_disjuncts[0].ind_var
         cons = constraints[indices[2]]
         self.assertEqual(cons.lower, 0)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 2)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[1], m.time1_disjuncts[0].binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], -1)
-        self.assertIs(body.linear_vars[0], m.p[1])
-        self.assertEqual(body.linear_coefs[0], 1)
+        self.assertEqual(len(body.linear), 2)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.time1_disjuncts[0].binary_indicator_var)], -1)
+        self.assertEqual(body.linear[id(m.p[1])], 1)
 
         # p[1] <= 10*time1_disjuncts[0].ind_var
         cons = constraints[indices[3]]
         self.assertEqual(cons.lower, 0)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 2)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.p[1])
-        self.assertEqual(body.linear_coefs[0], -1)
-        self.assertIs(body.linear_vars[1], m.time1_disjuncts[0].binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], 10)
+        self.assertEqual(len(body.linear), 2)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.p[1])], -1)
+        self.assertEqual(body.linear[id(m.time1_disjuncts[0].binary_indicator_var)], 10)
 
         # p[2] - p[1] <= 3*on.ind_var + 2*startup.ind_var
         cons = constraints[indices[4]]
         self.assertEqual(value(cons.lower), 0)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 4)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.on.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], 3)
-        self.assertIs(body.linear_vars[1], m.p[1])
-        self.assertEqual(body.linear_coefs[1], 1)
-        self.assertIs(body.linear_vars[2], m.p[2])
-        self.assertEqual(body.linear_coefs[2], -1)
-        self.assertIs(body.linear_vars[3], m.startup.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[3], 2)
+        self.assertEqual(len(body.linear), 4)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.on.binary_indicator_var)], 3)
+        self.assertEqual(body.linear[id(m.p[1])], 1)
+        self.assertEqual(body.linear[id(m.p[2])], -1)
+        self.assertEqual(body.linear[id(m.startup.binary_indicator_var)], 2)
 
         # p[2] >= on.ind_var + startup.ind_var
         cons = constraints[indices[5]]
         self.assertEqual(cons.lower, 0)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 3)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.on.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], -1)
-        self.assertIs(body.linear_vars[1], m.p[2])
-        self.assertEqual(body.linear_coefs[1], 1)
-        self.assertIs(body.linear_vars[2], m.startup.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[2], -1)
+        self.assertEqual(len(body.linear), 3)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.on.binary_indicator_var)], -1)
+        self.assertEqual(body.linear[id(m.p[2])], 1)
+        self.assertEqual(body.linear[id(m.startup.binary_indicator_var)], -1)
 
         # p[2] <= 10*on.ind_var + 2*startup.ind_var
         cons = constraints[indices[6]]
         self.assertEqual(cons.lower, 0)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 3)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.on.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], 10)
-        self.assertIs(body.linear_vars[1], m.p[2])
-        self.assertEqual(body.linear_coefs[1], -1)
-        self.assertIs(body.linear_vars[2], m.startup.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[2], 2)
+        self.assertEqual(len(body.linear), 3)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.on.binary_indicator_var)], 10)
+        self.assertEqual(body.linear[id(m.p[2])], -1)
+        self.assertEqual(body.linear[id(m.startup.binary_indicator_var)], 2)
 
         # 1 <= time1_disjuncts[0].ind_var + time1_disjuncts[1].ind_var
         cons = constraints[indices[7]]
         self.assertEqual(cons.lower, 1)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 2)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.time1_disjuncts[0].binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], 1)
-        self.assertIs(body.linear_vars[1], m.time1_disjuncts[1].binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], 1)
+        self.assertEqual(len(body.linear), 2)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.time1_disjuncts[0].binary_indicator_var)], 1)
+        self.assertEqual(body.linear[id(m.time1_disjuncts[1].binary_indicator_var)], 1)
 
         # 1 >= time1_disjuncts[0].ind_var + time_1.disjuncts[1].ind_var
         cons = constraints[indices[8]]
         self.assertEqual(cons.lower, -1)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 2)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.time1_disjuncts[0].binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], -1)
-        self.assertIs(body.linear_vars[1], m.time1_disjuncts[1].binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], -1)
+        self.assertEqual(len(body.linear), 2)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.time1_disjuncts[0].binary_indicator_var)], -1)
+        self.assertEqual(body.linear[id(m.time1_disjuncts[1].binary_indicator_var)], -1)
 
         # 1 <= on.ind_var + startup.ind_var + off.ind_var
         cons = constraints[indices[9]]
         self.assertEqual(cons.lower, 1)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 3)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.off.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], 1)
-        self.assertIs(body.linear_vars[1], m.on.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], 1)
-        self.assertIs(body.linear_vars[2], m.startup.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[2], 1)
+        self.assertEqual(len(body.linear), 3)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.off.binary_indicator_var)], 1)
+        self.assertEqual(body.linear[id(m.on.binary_indicator_var)], 1)
+        self.assertEqual(body.linear[id(m.startup.binary_indicator_var)], 1)
 
         # 1 >= on.ind_var + startup.ind_var + off.ind_var
         cons = constraints[indices[10]]
         self.assertEqual(cons.lower, -1)
         self.assertIsNone(cons.upper)
-        body = generate_standard_repn(cons.body)
+        body = visitor.walk_expression(cons.body)
         self.assertEqual(body.constant, 0)
-        self.assertEqual(len(body.linear_vars), 3)
-        self.assertTrue(body.is_linear())
-        self.assertIs(body.linear_vars[0], m.off.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[0], -1)
-        self.assertIs(body.linear_vars[1], m.on.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[1], -1)
-        self.assertIs(body.linear_vars[2], m.startup.binary_indicator_var)
-        self.assertEqual(body.linear_coefs[2], -1)
+        self.assertEqual(len(body.linear), 3)
+        self.assertIsNone(body.nonlinear)
+        self.assertEqual(body.linear[id(m.off.binary_indicator_var)], -1)
+        self.assertEqual(body.linear[id(m.on.binary_indicator_var)], -1)
+        self.assertEqual(body.linear[id(m.startup.binary_indicator_var)], -1)
 
     def create_hull_model(self):
         m = ConcreteModel()
@@ -751,20 +710,18 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[2]
         self.assertEqual(value(cons.lower), 0)
         self.assertIsNone(cons.upper)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_coefs), 1)
-        self.assertIs(repn.linear_vars[0], m.y)
-        self.assertEqual(repn.linear_coefs[0], 2)
+        repn = LinearRepnVisitor({}).walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 1)
+        self.assertEqual(repn.linear[id(m.y)], 2)
 
         cons = constraints[1]
         self.assertEqual(value(cons.lower), 4)
         self.assertIsNone(cons.upper)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_coefs), 1)
-        self.assertIs(repn.linear_vars[0], m.y)
-        self.assertEqual(repn.linear_coefs[0], 3)
+        repn = LinearRepnVisitor({}).walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 1)
+        self.assertEqual(repn.linear[id(m.y)], 3)
 
     def test_numerical_instability_almost_canceling(self):
         # It's possible that we get almost-but-not-quite zero on the variable
@@ -789,14 +746,12 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         # it. What I care about is that x0 really is gone.
 
         useful = constraints[1]
-        repn = generate_standard_repn(useful.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_coefs), 2)  # this is the real test
+        repn = LinearRepnVisitor({}).walk_expression(useful.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)  # this is the real test
         self.assertEqual(useful.lower, 0)
-        self.assertIs(repn.linear_vars[0], m.x)
-        self.assertAlmostEqual(repn.linear_coefs[0], 0.7451564696962295)
-        self.assertIs(repn.linear_vars[1], m.y)
-        self.assertAlmostEqual(repn.linear_coefs[1], 12.610712377673217)
+        self.assertAlmostEqual(repn.linear[id(m.x)], 0.7451564696962295)
+        self.assertAlmostEqual(repn.linear[id(m.y)], 12.610712377673217)
         self.assertEqual(repn.constant, 0)
         self.assertIsNone(useful.upper)
 
@@ -825,14 +780,12 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         constraints = first._pyomo_contrib_fme_transformation.projected_constraints
         cons = constraints[1]
         self.assertEqual(cons.lower, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = LinearRepnVisitor({}).walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_coefs), 2)  # x is still around
-        self.assertIs(repn.linear_vars[0], first.x)
-        self.assertAlmostEqual(repn.linear_coefs[0], 1.123e-9)
-        self.assertIs(repn.linear_vars[1], first.y)
-        self.assertEqual(repn.linear_coefs[1], 1)
+        self.assertEqual(len(repn.linear), 2)  # x is still around
+        self.assertAlmostEqual(repn.linear[id(first.x)], 1.123e-9)
+        self.assertEqual(repn.linear[id(first.y)], 1)
         self.assertIsNone(cons.upper)
 
         # so just to drive home the point, this results in no constraints:
@@ -880,11 +833,10 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[1]
         self.assertEqual(value(cons.lower), -5)
         self.assertIsNone(cons.upper)
-        repn = generate_standard_repn(cons.body)
+        repn = LinearRepnVisitor({}).walk_expression(cons.body)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 1)
-        self.assertIs(repn.linear_vars[0], m.x)
-        self.assertEqual(repn.linear_coefs[0], -1)
+        self.assertEqual(len(repn.linear), 1)
+        self.assertEqual(repn.linear[id(m.x)], -1)
 
     def test_use_all_var_bounds(self):
         m = self.make_tiny_model_where_bounds_matter()
@@ -944,11 +896,9 @@ class TestFourierMotzkinElimination(unittest.TestCase):
         cons = constraints[1]
         self.assertIsNone(cons.upper)
         self.assertEqual(value(cons.lower), 0)
-        repn = generate_standard_repn(cons.body)
+        repn = LinearRepnVisitor({}).walk_expression(cons.body)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 2)
-        self.assertIs(repn.linear_vars[0], m.x)
-        self.assertEqual(repn.linear_coefs[0], 1)
-        self.assertIs(repn.linear_vars[1], m.y)
-        self.assertEqual(repn.linear_coefs[1], -2)
-        self.assertTrue(repn.is_linear())
+        self.assertEqual(len(repn.linear), 2)
+        self.assertEqual(repn.linear[id(m.x)], 1)
+        self.assertEqual(repn.linear[id(m.y)], -2)
+        self.assertIsNone(repn.nonlinear)
