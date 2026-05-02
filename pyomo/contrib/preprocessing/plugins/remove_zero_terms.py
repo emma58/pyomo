@@ -66,7 +66,9 @@ class RemoveZeroTerms(IsomorphicTransformation):
             # reconstitute the constraint, keeping only nonzero-coefficient terms
             # (LinearRepnVisitor already filters zero coefficients in finalizeResult)
             constr_body = (
-                quicksum(coef * visitor.var_map[vid] for vid, coef in repn.linear.items())
+                quicksum(
+                    coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
+                )
                 + const
             )
             if constr.equality:

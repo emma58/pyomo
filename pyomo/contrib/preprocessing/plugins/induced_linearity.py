@@ -163,9 +163,7 @@ def determine_valid_values(block, discr_var_to_constrs_map, config):
         for constr in constrs:
             repn = visitor.walk_expression(constr.body)
             var_coef = sum(
-                coef
-                for vid, coef in repn.linear.items()
-                if vid == eff_discr_var_id
+                coef for vid, coef in repn.linear.items() if vid == eff_discr_var_id
             )
             const = -(repn.constant - constr.upper) / var_coef
             possible_vals = set((const,))
@@ -255,11 +253,17 @@ def prune_possible_values(block_scope, possible_values, config):
 def _process_bilinear_constraints(block, v1, v2, var_values, bilinear_constrs):
     # TODO check that the appropriate variable bounds exist.
     if not (v2.has_lb() and v2.has_ub()):
-        logger.warning(textwrap.dedent("""\
+        logger.warning(
+            textwrap.dedent(
+                """\
             Attempting to transform bilinear term {v1} * {v2} using effectively
             discrete variable {v1}, but {v2} is missing a lower or upper bound:
             ({v2lb}, {v2ub}).
-            """.format(v1=v1, v2=v2, v2lb=v2.lb, v2ub=v2.ub)).strip())
+            """.format(
+                    v1=v1, v2=v2, v2lb=v2.lb, v2ub=v2.ub
+                )
+            ).strip()
+        )
         return False
     blk = Block()
     unique_name = unique_component_name(
@@ -310,18 +314,13 @@ def _reformulate_case_2(blk, v1, v2, bilinear_constr):
     visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     repn = visitor.walk_expression(bilinear_constr.body)
     v1_id, v2_id = id(v1), id(v2)
-    replace_key = next(
-        key
-        for key in repn.quadratic
-        if set(key) == {v1_id, v2_id}
-    )
+    replace_key = next(key for key in repn.quadratic if set(key) == {v1_id, v2_id})
     replace_coef = repn.quadratic[replace_key]
     bilinear_constr.set_value(
         (
             bilinear_constr.lower,
             sum(coef * visitor.var_map[vid] for vid, coef in repn.linear.items())
-            + replace_coef
-            * sum(val * blk.v_increment[val] for val in blk.valid_values)
+            + replace_coef * sum(val * blk.v_increment[val] for val in blk.valid_values)
             + sum(
                 coef * visitor.var_map[vid1] * visitor.var_map[vid2]
                 for (vid1, vid2), coef in repn.quadratic.items()
@@ -399,7 +398,8 @@ def detect_effectively_discrete_vars(block, equality_tolerance):
             # expressions that we do not need to here.
             continue
         non_discrete_vars = [
-            visitor.var_map[vid] for vid in repn.linear
+            visitor.var_map[vid]
+            for vid in repn.linear
             if visitor.var_map[vid].is_continuous()
         ]
         if len(non_discrete_vars) == 1:

@@ -60,7 +60,9 @@ class TestRemoveZeroTerms(unittest.TestCase):
         # check constraint is unchanged
         self.assertEqual(m.c.lower, 8)
         self.assertIsNone(m.c.upper)
-        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        visitor = QuadraticRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        )
         repn = visitor.walk_expression(m.c.body)
         self.assertIsNotNone(repn.quadratic)
         self.assertEqual(repn.quadratic[(id(m.x), id(m.z))], 1)
