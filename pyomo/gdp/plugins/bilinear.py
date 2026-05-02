@@ -20,7 +20,8 @@ from pyomo.core import (
     Constraint,
 )
 from pyomo.gdp import Disjunct, Disjunction
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.quadratic import QuadraticRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 logger = logging.getLogger('pyomo.gdp')
 
@@ -90,16 +91,17 @@ class Bilinear_Transformation(Transformation):
         return expr
 
     def _replace_bilinear(self, expr, instance):
-        idMap = {}
-        terms = generate_standard_repn(expr, idMap=idMap)
+        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        terms = visitor.walk_expression(expr)
         # Constant
         e = terms.constant
         # Linear terms
-        for var, coef in zip(terms.linear_vars, terms.linear_coefs):
-            e += coef * var
+        for vid, coef in terms.linear.items():
+            e += coef * visitor.var_map[vid]
         # Quadratic terms
-        if len(terms.quadratic_coefs) > 0:
-            for vars_, coef_ in zip(terms.quadratic_vars, terms.quadratic_coefs):
+        if terms.quadratic is not None:
+            for (vid1, vid2), coef_ in terms.quadratic.items():
+                vars_ = (visitor.var_map[vid1], visitor.var_map[vid2])
                 #
                 if vars_[0].is_binary():
                     v = instance.bilinear_data_.cache.get(

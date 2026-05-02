@@ -51,7 +51,6 @@ from pyomo.gdp.transformed_disjunct import _TransformedDisjunct
 from pyomo.gdp.util import is_child_of, _get_constraint_transBlock, _to_dict
 from pyomo.core.util import target_list
 from pyomo.network import Port
-from pyomo.repn import generate_standard_repn
 from weakref import ref as weakref_ref, ReferenceType
 
 logger = logging.getLogger('pyomo.gdp.bigm')

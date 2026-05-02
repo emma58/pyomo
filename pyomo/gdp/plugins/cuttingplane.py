@@ -39,10 +39,9 @@ from pyomo.core import (
     Suffix,
     ComponentMap,
 )
-from pyomo.core.expr import differentiate
+from pyomo.core.expr import differentiate, identify_variables
 from pyomo.common.collections import ComponentSet
 from pyomo.opt import SolverFactory
-from pyomo.repn import generate_standard_repn
 
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.gdp.util import (
@@ -115,8 +114,7 @@ def _precompute_potentially_useful_constraints(transBlock_rHull, disaggregated_v
     ):
         # we don't care about anything that does not involve at least one
         # disaggregated variable.
-        repn = generate_standard_repn(constraint.body)
-        for v in repn.linear_vars + repn.quadratic_vars + repn.nonlinear_vars:
+        for v in identify_variables(constraint.body):
             # ESJ: This is why disaggregated_vars is a ComponentSet
             if v in disaggregated_vars:
                 constraints.append(constraint)

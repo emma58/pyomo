@@ -48,7 +48,8 @@ from pyomo.core import (
 from pyomo.core.base.external import ExternalFunction
 from pyomo.network import Port
 from pyomo.common.collections import ComponentSet
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.quadratic import QuadraticRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 import pyomo.core.expr as EXPR
 from pyomo.opt import SolverFactory
 from pyomo.util.vars_from_expressions import get_vars_from_components
@@ -785,13 +786,14 @@ class PartitionDisjuncts_Transformation(Transformation):
 
         # this is a list which might have two constraints in it if we had
         # both a lower and upper value.
+        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         leq_constraints = self._get_leq_constraints(cons)
         for body, rhs in leq_constraints:
-            repn = generate_standard_repn(body, compute_values=True)
+            repn = visitor.walk_expression(body)
             nonlinear_repn = None
-            if repn.nonlinear_expr is not None:
+            if repn.nonlinear is not None:
                 nonlinear_repn = _generate_additively_separable_repn(
-                    repn.nonlinear_expr
+                    repn.nonlinear
                 )
             split_exprs = []
             split_aux_vars = []
@@ -804,27 +806,30 @@ class PartitionDisjuncts_Transformation(Transformation):
                 # involving the vars in var_list
                 split_exprs.append(0)
                 expr = split_exprs[-1]
-                for i, v in enumerate(repn.linear_vars):
+                for vid, coef in repn.linear.items():
+                    v = visitor.var_map[vid]
                     if v in var_list:
-                        expr += repn.linear_coefs[i] * v
+                        expr += coef * v
                         vars_accounted_for.add(v)
-                for i, (v1, v2) in enumerate(repn.quadratic_vars):
-                    if v1 in var_list:
-                        if v2 not in var_list:
-                            raise GDP_Error(
-                                "Variables '%s' and '%s' are "
-                                "multiplied in Constraint '%s', "
-                                "but they are in different "
-                                "partitions! Please ensure that "
-                                "all the constraints in the "
-                                "disjunction are "
-                                "additively separable with "
-                                "respect to the specified "
-                                "partition." % (v1.name, v2.name, cons.name)
-                            )
-                        expr += repn.quadratic_coefs[i] * v1 * v2
-                        vars_accounted_for.add(v1)
-                        vars_accounted_for.add(v2)
+                if repn.quadratic is not None:
+                    for (vid1, vid2), coef in repn.quadratic.items():
+                        v1, v2 = visitor.var_map[vid1], visitor.var_map[vid2]
+                        if v1 in var_list:
+                            if v2 not in var_list:
+                                raise GDP_Error(
+                                    "Variables '%s' and '%s' are "
+                                    "multiplied in Constraint '%s', "
+                                    "but they are in different "
+                                    "partitions! Please ensure that "
+                                    "all the constraints in the "
+                                    "disjunction are "
+                                    "additively separable with "
+                                    "respect to the specified "
+                                    "partition." % (v1.name, v2.name, cons.name)
+                                )
+                            expr += coef * v1 * v2
+                            vars_accounted_for.add(v1)
+                            vars_accounted_for.add(v2)
                 if nonlinear_repn is not None:
                     for i, expr_var_set in enumerate(nonlinear_repn['nonlinear_vars']):
                         # check if v_list is a subset of var_list. If it is

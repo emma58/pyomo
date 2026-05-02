@@ -53,7 +53,8 @@ from pyomo.gdp.plugins.bigm_mixin import (
 from pyomo.gdp.plugins.gdp_to_mip_transformation import GDP_to_MIP_Transformation
 from pyomo.gdp.util import _to_dict
 from pyomo.opt import SolverFactory, TerminationCondition
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 from weakref import ref as weakref_ref
 
@@ -712,6 +713,7 @@ class MultipleBigMTransformation(GDP_to_MIP_Transformation, _BigM_MixIn):
         lower_bound_constraints_by_var = ComponentMap()
         upper_bound_constraints_by_var = ComponentMap()
         transformed_constraints = set()
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for disj in active_disjuncts:
             for c in disj.component_data_objects(
                 Constraint,
@@ -719,15 +721,16 @@ class MultipleBigMTransformation(GDP_to_MIP_Transformation, _BigM_MixIn):
                 descend_into=Block,
                 sort=SortComponents.deterministic,
             ):
-                repn = generate_standard_repn(c.body)
-                if repn.is_linear() and len(repn.linear_vars) == 1:
+                repn = visitor.walk_expression(c.body)
+                if repn.nonlinear is None and len(repn.linear) == 1:
                     # We can treat this as a bounds constraint
-                    v = repn.linear_vars[0]
+                    vid, coef = next(iter(repn.linear.items()))
+                    v = visitor.var_map[vid]
                     if v not in bounds_cons:
                         bounds_cons[v] = [{}, {}]
                     M = [None, None]
                     if c.lower is not None:
-                        M[0] = (c.lower - repn.constant) / repn.linear_coefs[0]
+                        M[0] = (c.lower - repn.constant) / coef
                         if disj in bounds_cons[v][0]:
                             # this is a redundant bound, we need to keep the
                             # better one
@@ -738,7 +741,7 @@ class MultipleBigMTransformation(GDP_to_MIP_Transformation, _BigM_MixIn):
                         else:
                             lower_bound_constraints_by_var[v] = {(c, disj)}
                     if c.upper is not None:
-                        M[1] = (c.upper - repn.constant) / repn.linear_coefs[0]
+                        M[1] = (c.upper - repn.constant) / coef
                         if disj in bounds_cons[v][1]:
                             # this is a redundant bound, we need to keep the
                             # better one

@@ -24,7 +24,8 @@ from pyomo.core.expr import identify_variables
 from pyomo.core.util import target_list
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.gdp.util import is_child_of, get_gdp_tree
-from pyomo.repn.standard_repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 import logging
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,7 @@ class BoundPretransformation(Transformation):
     def _update_bounds_from_constraints(
         self, disjunct, bound_dict, gdp_forest, is_root=False
     ):
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for constraint in disjunct.component_data_objects(
             Constraint,
             active=True,
@@ -163,13 +165,13 @@ class BoundPretransformation(Transformation):
                 next(var_gen)
             except StopIteration:
                 # There was one but not two: This is what we want.
-                repn = generate_standard_repn(constraint.body)
+                repn = visitor.walk_expression(constraint.body)
                 # If this is a trivial constraint, repn could actually be empty,
                 # so we check that we really do have one linear var now
-                if not repn.is_linear() or len(repn.linear_vars) != 1:
+                if repn.nonlinear is not None or len(repn.linear) != 1:
                     continue
-                v = repn.linear_vars[0]
-                coef = repn.linear_coefs[0]
+                vid, coef = next(iter(repn.linear.items()))
+                v = visitor.var_map[vid]
                 constant = repn.constant
                 lower = (
                     (value(constraint.lower) - constant) / coef
