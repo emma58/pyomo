@@ -21,7 +21,8 @@ from pyomo.core import (
 )
 from pyomo.common.collections import ComponentSet, ComponentMap, Bunch
 from pyomo.core.expr import identify_variables
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 import logging, time
 
 from pyomo.common.dependencies import (
@@ -491,6 +492,7 @@ class SequentialDecomposition(FOQUSGraph):
                     # val are numpy.float64; coerce val back to float
                     evar.fix(float(val))
 
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for con in eblock.component_data_objects(Constraint, active=True):
             # we expect to find equality constraints with one linear variable
             if not con.equality:
@@ -501,8 +503,8 @@ class SequentialDecomposition(FOQUSGraph):
                     "Found inequality constraint '%s'. Please do not modify "
                     "the expanded block." % con.name
                 )
-            repn = generate_standard_repn(con.body)
-            if repn.is_fixed():
+            repn = visitor.walk_expression(con.body)
+            if not repn.linear and repn.nonlinear is None:
                 # the port member's peer was already fixed
                 if abs(value(con.lower) - repn.constant) > eq_tol:
                     raise RuntimeError(
@@ -511,7 +513,7 @@ class SequentialDecomposition(FOQUSGraph):
                         % (src, dest, eq_tol, con.name)
                     )
                 continue
-            if not (repn.is_linear() and len(repn.linear_vars) == 1):
+            if not (repn.nonlinear is None and len(repn.linear) == 1):
                 raise RuntimeError(
                     "Constraint '%s' had more than one free variable when "
                     "trying to pass a value to its destination. Please fix "
@@ -520,8 +522,9 @@ class SequentialDecomposition(FOQUSGraph):
             # fix the value of the single variable to satisfy the constraint
             # con.lower is usually a NumericConstant but call value on it
             # just in case it is something else
-            val = (value(con.lower) - repn.constant) / repn.linear_coefs[0]
-            var = repn.linear_vars[0]
+            vid, coef = next(iter(repn.linear.items()))
+            val = (value(con.lower) - repn.constant) / coef
+            var = visitor.var_map[vid]
             fixed_inputs[dest_unit].add(var)
             # val are numpy.float64; coerce val back to float
             var.fix(float(val))
@@ -543,11 +546,13 @@ class SequentialDecomposition(FOQUSGraph):
                     % (name, port.name, eq_tol)
                 )
         elif member.is_expression_type():
-            repn = generate_standard_repn(member - val)
-            if repn.is_linear() and len(repn.linear_vars) == 1:
+            visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+            repn = visitor.walk_expression(member - val)
+            if repn.nonlinear is None and len(repn.linear) == 1:
                 # fix the value of the single variable
-                fval = (0 - repn.constant) / repn.linear_coefs[0]
-                var = repn.linear_vars[0]
+                vid, coef = next(iter(repn.linear.items()))
+                fval = (0 - repn.constant) / coef
+                var = visitor.var_map[vid]
                 fixed.add(var)
                 # val are numpy.float64; coerce val back to float
                 var.fix(float(fval))
