@@ -220,15 +220,15 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                 self.verbose = True
             else:
                 self.verbose = False
-            self.visitor = LinearRepnVisitor(
+            visitor = LinearRepnVisitor(
                 {}, var_recorder=OrderedVarRecorder({}, {}, None)
             )
-            self._apply_to_impl(instance, config)
+            self._apply_to_impl(instance, config, visitor)
         finally:
             # restore logging level
             logger.setLevel(log_level)
 
-    def _apply_to_impl(self, instance, config):
+    def _apply_to_impl(self, instance, config, visitor):
         vars_to_eliminate = config.vars_to_eliminate
         self.constraint_filter = config.constraint_filtering_callback
         self.do_integer_arithmetic = config.do_integer_arithmetic
@@ -274,7 +274,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
             if obj.ctype in ctypes_not_to_transform:
                 continue
             elif obj.ctype is Constraint:
-                cons_list = self._process_constraint(obj)
+                cons_list = self._process_constraint(obj, visitor)
                 constraints.extend(cons_list)
                 obj.deactivate()  # the truth will be on our transformation block
             else:
@@ -290,7 +290,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
             if obj.lb is not None:
                 constraints.append(
                     {
-                        'body': self.visitor.walk_expression(obj),
+                        'body': visitor.walk_expression(obj),
                         'lower': value(obj.lb),
                         'map': ComponentMap([(obj, 1)]),
                     }
@@ -298,14 +298,14 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
             if obj.ub is not None:
                 constraints.append(
                     {
-                        'body': self.visitor.walk_expression(-obj),
+                        'body': visitor.walk_expression(-obj),
                         'lower': -value(obj.ub),
                         'map': ComponentMap([(obj, -1)]),
                     }
                 )
 
         new_constraints = self._fourier_motzkin_elimination(
-            constraints, vars_to_eliminate
+            constraints, vars_to_eliminate, visitor
         )
 
         # put the new constraints on the transformation block
@@ -318,12 +318,12 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                         "Problem calling constraint filter callback "
                         "on constraint with right-hand side %s and "
                         "body:\n%s"
-                        % (cons['lower'], cons['body'].to_expression(self.visitor))
+                        % (cons['lower'], cons['body'].to_expression(visitor))
                     )
                     raise
                 if not keep:
                     continue
-            lhs = cons['body'].to_expression(self.visitor)
+            lhs = cons['body'].to_expression(visitor)
             lower = cons['lower']
             assert type(lower) is int or type(lower) is float
             if type(lhs >= lower) is bool:
@@ -336,7 +336,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
             else:
                 projected_constraints.add(lhs >= lower)
 
-    def _process_constraint(self, constraint):
+    def _process_constraint(self, constraint, visitor):
         """Transforms a pyomo Constraint object into a list of dictionaries
         representing only >= constraints. That is, if the constraint has both an
         ub and a lb, it is transformed into two constraints. Otherwise it is
@@ -346,7 +346,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         moved to the RHS and we know that the upper bound is None after this).
         """
         body = constraint.body
-        std_repn = self.visitor.walk_expression(body)
+        std_repn = visitor.walk_expression(body)
         # make sure that we store the lower bound's value so that we need not
         # worry again during the transformation
         cons_dict = {'lower': value(constraint.lower), 'body': std_repn}
@@ -358,21 +358,21 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                 # copy the constraint and flip
                 leq_side = {
                     'lower': -upper,
-                    'body': self.visitor.walk_expression(-1.0 * body),
+                    'body': visitor.walk_expression(-1.0 * body),
                 }
-                self._move_constant_and_add_map(leq_side)
+                self._move_constant_and_add_map(leq_side, visitor)
                 constraints_to_add.append(leq_side)
 
             # If it has only an upper bound, we just need to flip it
             else:
                 # just flip the constraint
                 cons_dict['lower'] = -upper
-                cons_dict['body'] = self.visitor.walk_expression(-1.0 * body)
-        self._move_constant_and_add_map(cons_dict)
+                cons_dict['body'] = visitor.walk_expression(-1.0 * body)
+        self._move_constant_and_add_map(cons_dict, visitor)
 
         return constraints_to_add
 
-    def _move_constant_and_add_map(self, cons_dict):
+    def _move_constant_and_add_map(self, cons_dict, visitor):
         """Takes constraint in dictionary form already in >= form,
         and moves the constant to the RHS
         """
@@ -387,11 +387,11 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         # coefficient here so that we never have to worry about it again during
         # the transformation.
         cons_dict['map'] = ComponentMap(
-            (self.visitor.var_map[vid], value(coef))
+            (visitor.var_map[vid], value(coef))
             for vid, coef in body.linear.items()
         )
 
-    def _fourier_motzkin_elimination(self, constraints, vars_to_eliminate):
+    def _fourier_motzkin_elimination(self, constraints, vars_to_eliminate, visitor):
         """Performs FME on the constraint list in the argument
         (which is assumed to be all >= constraints and stored in the
         dictionary representation), projecting out each of the variables in
@@ -417,7 +417,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                             "which only appear linearly." % var.name
                         )
             for vid in std_repn.linear:
-                var = self.visitor.var_map[vid]
+                var = visitor.var_map[vid]
                 if var in vars_to_eliminate:
                     if var not in vars_that_appear_set:
                         vars_that_appear.append(var)
@@ -449,7 +449,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     if self.verbose:
                         logger.info(
                             "\t%s <= %s"
-                            % (cons['lower'], cons['body'].to_expression(self.visitor))
+                            % (cons['lower'], cons['body'].to_expression(visitor))
                         )
                     continue
 
@@ -462,13 +462,15 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     if leaving_var_coef < 0:
                         leq_list.append(
                             self._nonneg_scalar_multiply_linear_constraint(
-                                cons, -1.0 / leaving_var_coef
+                                cons, -1.0 / leaving_var_coef,
+                                visitor
                             )
                         )
                     else:
                         geq_list.append(
                             self._nonneg_scalar_multiply_linear_constraint(
-                                cons, 1.0 / leaving_var_coef
+                                cons, 1.0 / leaving_var_coef,
+                                visitor
                             )
                         )
                 else:
@@ -476,7 +478,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                         self._as_integer(
                             leaving_var_coef,
                             self._get_noninteger_coef_error_message,
-                            (the_var.name, leaving_var_coef),
+                            (the_var.name, leaving_var_coef, visitor),
                         )
                     )
             if self.do_integer_arithmetic and len(coefs) > 0:
@@ -488,22 +490,22 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     to_lcm = least_common_mult // abs(int(leaving_var_coef))
                     if leaving_var_coef < 0:
                         leq_list.append(
-                            self._nonneg_scalar_multiply_linear_constraint(cons, to_lcm)
+                            self._nonneg_scalar_multiply_linear_constraint(cons, to_lcm, visitor)
                         )
                     else:
                         geq_list.append(
-                            self._nonneg_scalar_multiply_linear_constraint(cons, to_lcm)
+                            self._nonneg_scalar_multiply_linear_constraint(cons, to_lcm, visitor)
                         )
 
             constraints = waiting_list
             for leq in leq_list:
                 for geq in geq_list:
-                    constraints.append(self._add_linear_constraints(leq, geq))
+                    constraints.append(self._add_linear_constraints(leq, geq, visitor))
                     if self.verbose:
                         cons = constraints[len(constraints) - 1]
                         logger.info(
                             "\t%s <= %s"
-                            % (cons['lower'], cons['body'].to_expression(self.visitor))
+                            % (cons['lower'], cons['body'].to_expression(visitor))
                         )
 
             iteration += 1
@@ -547,17 +549,17 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         else:
             return 0
 
-    def _nonneg_scalar_multiply_linear_constraint_error_msg(self, cons, coef):
+    def _nonneg_scalar_multiply_linear_constraint_error_msg(self, cons, coef, visitor):
         return (
             "The do_integer_arithmetic flag was set to True, but the "
             "lower bound of %s is non-integer within the specified "
             "tolerance, with value %s. \n"
             "Please set do_integer_arithmetic=False, increase "
             "integer_tolerance, or make your data integer."
-            % (cons['body'].to_expression(self.visitor) >= cons['lower'], coef)
+            % (cons['body'].to_expression(visitor) >= cons['lower'], coef)
         )
 
-    def _nonneg_scalar_multiply_linear_constraint(self, cons, scalar):
+    def _nonneg_scalar_multiply_linear_constraint(self, cons, scalar, visitor):
         """Multiplies all coefficients and the RHS of a >= constraint by scalar.
         There is no logic for flipping the equality, so this is just the
         special case with a nonnegative scalar, which is all we need.
@@ -568,9 +570,9 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         """
         body = cons['body']
         for vid, coef in list(body.linear.items()):
-            v = self.visitor.var_map[vid]
+            v = visitor.var_map[vid]
             new_coef = self._multiply(
-                scalar, coef, self._get_noninteger_coef_error_message, (v.name, coef)
+                scalar, coef, self._get_noninteger_coef_error_message, (v.name, coef, visitor)
             )
             body.linear[vid] = new_coef
             cons['map'][v] = new_coef
@@ -584,11 +586,11 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                 scalar,
                 lb,
                 self._nonneg_scalar_multiply_linear_constraint_error_msg,
-                (cons, coef),
+                (cons, coef, visitor),
             )
         return cons
 
-    def _add_linear_constraints_error_msg(self, cons1, cons2):
+    def _add_linear_constraints_error_msg(self, cons1, cons2, visitor):
         return (
             "The do_integer_arithmetic flag was set to True, but while "
             "adding %s and %s, encountered a coefficient that is "
@@ -596,12 +598,12 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
             "Please set do_integer_arithmetic=False, increase "
             "integer_tolerance, or make your data integer."
             % (
-                cons1['body'].to_expression(self.visitor) >= cons1['lower'],
-                cons2['body'].to_expression(self.visitor) >= cons2['lower'],
+                cons1['body'].to_expression(visitor) >= cons1['lower'],
+                cons2['body'].to_expression(visitor) >= cons2['lower'],
             )
         )
 
-    def _add_linear_constraints(self, cons1, cons2):
+    def _add_linear_constraints(self, cons1, cons2, visitor):
         """Adds two >= constraints
 
         Because this is always called after
@@ -614,10 +616,10 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
 
         # Need this to be both deterministic and to account for the fact that
         # Vars aren't hashable.
-        all_vars = [self.visitor.var_map[vid] for vid in cons1_body.linear]
+        all_vars = [visitor.var_map[vid] for vid in cons1_body.linear]
         seen = ComponentSet(all_vars)
         for vid in cons2_body.linear:
-            v = self.visitor.var_map[vid]
+            v = visitor.var_map[vid]
             if v not in seen:
                 all_vars.append(v)
 
@@ -627,7 +629,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                 cons1['map'].get(var, 0),
                 cons2['map'].get(var, 0),
                 self._add_linear_constraints_error_msg,
-                (cons1, cons2),
+                (cons1, cons2, visitor),
             )
             ans['map'][var] = coef
             expr += coef * var
@@ -637,14 +639,14 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
             if cons.nonlinear is not None:
                 expr += cons.nonlinear
 
-        ans['body'] = self.visitor.walk_expression(expr)
+        ans['body'] = visitor.walk_expression(expr)
 
         # upper is None and lower exists, so this gets the constant
         ans['lower'] = self._add(
             cons1['lower'],
             cons2['lower'],
             self._add_linear_constraints_error_msg,
-            (cons1, cons2),
+            (cons1, cons2, visitor),
         )
 
         return ans
