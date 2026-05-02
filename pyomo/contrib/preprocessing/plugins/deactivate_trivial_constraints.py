@@ -24,7 +24,8 @@ from pyomo.core.base.constraint import Constraint
 from pyomo.core.base.transformation import TransformationFactory
 from pyomo.core.expr.numvalue import value
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 logger = logging.getLogger('pyomo.contrib.preprocessing')
 
@@ -96,11 +97,12 @@ class TrivialConstraintDeactivator(IsomorphicTransformation):
 
         # Trivial constraints are those that do not contain any variables, ie.
         # the polynomial degree is 0
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for constr in instance.component_data_objects(
             ctype=Constraint, active=True, descend_into=True
         ):
-            repn = generate_standard_repn(constr.body)
-            if not repn.is_constant():
+            repn = visitor.walk_expression(constr.body)
+            if repn.linear or repn.nonlinear is not None:
                 # This constraint is not trivial
                 continue
 

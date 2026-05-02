@@ -13,7 +13,8 @@ from pyomo.core.base.transformation import TransformationFactory
 from pyomo.core.base.constraint import Constraint
 from pyomo.core.expr.numvalue import value
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn.standard_repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 
 @TransformationFactory.register(
@@ -31,65 +32,54 @@ class ZeroSumPropagator(IsomorphicTransformation):
     """
 
     def _apply_to(self, instance):
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for constr in instance.component_data_objects(
             ctype=Constraint, active=True, descend_into=True
         ):
             if not constr.body.polynomial_degree() == 1:
                 continue  # constraint not linear. Skip.
 
-            repn = generate_standard_repn(constr.body)
-            if constr.has_ub() and (
-                (repn.constant is None and value(constr.upper) == 0)
-                or repn.constant == value(constr.upper)
-            ):
+            repn = visitor.walk_expression(constr.body)
+            if constr.has_ub() and repn.constant == value(constr.upper):
                 # term1 + term2 + term3 + ... <= 0
                 # all var terms need to be non-negative
                 if all(
-                    # variable has 0 coefficient
-                    coef == 0 or
                     # variable is non-negative and has non-negative coefficient
                     (
-                        repn.linear_vars[i].has_lb()
-                        and value(repn.linear_vars[i].lb) >= 0
+                        visitor.var_map[vid].has_lb()
+                        and value(visitor.var_map[vid].lb) >= 0
                         and coef >= 0
                     )
                     or
                     # variable is non-positive and has non-positive coefficient
                     (
-                        repn.linear_vars[i].has_ub()
-                        and value(repn.linear_vars[i].ub) <= 0
+                        visitor.var_map[vid].has_ub()
+                        and value(visitor.var_map[vid].ub) <= 0
                         and coef <= 0
                     )
-                    for i, coef in enumerate(repn.linear_coefs)
+                    for vid, coef in repn.linear.items()
                 ):
-                    for i, coef in enumerate(repn.linear_coefs):
-                        if not coef == 0:
-                            repn.linear_vars[i].fix(0)
+                    for vid in repn.linear:
+                        visitor.var_map[vid].fix(0)
                     continue
-            if constr.has_lb() and (
-                (repn.constant is None and value(constr.lower) == 0)
-                or repn.constant == value(constr.lower)
-            ):
+            if constr.has_lb() and repn.constant == value(constr.lower):
                 # term1 + term2 + term3 + ... >= 0
                 # all var terms need to be non-positive
                 if all(
-                    # variable has 0 coefficient
-                    coef == 0 or
                     # variable is non-negative and has non-positive coefficient
                     (
-                        repn.linear_vars[i].has_lb()
-                        and value(repn.linear_vars[i].lb) >= 0
+                        visitor.var_map[vid].has_lb()
+                        and value(visitor.var_map[vid].lb) >= 0
                         and coef <= 0
                     )
                     or
                     # variable is non-positive and has non-negative coefficient
                     (
-                        repn.linear_vars[i].has_ub()
-                        and value(repn.linear_vars[i].ub) <= 0
+                        visitor.var_map[vid].has_ub()
+                        and value(visitor.var_map[vid].ub) <= 0
                         and coef >= 0
                     )
-                    for i, coef in enumerate(repn.linear_coefs)
+                    for vid, coef in repn.linear.items()
                 ):
-                    for i, coef in enumerate(repn.linear_coefs):
-                        if not coef == 0:
-                            repn.linear_vars[i].fix(0)
+                    for vid in repn.linear:
+                        visitor.var_map[vid].fix(0)

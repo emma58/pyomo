@@ -22,7 +22,8 @@ from pyomo.common.config import (
 from pyomo.core.base.constraint import Constraint
 from pyomo.core.expr.numvalue import value
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 
 @TransformationFactory.register(
@@ -63,20 +64,21 @@ class ConstraintToVarBoundTransform(IsomorphicTransformation):
 
     def _apply_to(self, model, **kwds):
         config = self.CONFIG(kwds)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
 
         for constr in model.component_data_objects(
             ctype=Constraint, active=True, descend_into=True
         ):
             # Check if the constraint is k * x + c1 <= c2 or c2 <= k * x + c1
-            repn = generate_standard_repn(constr.body)
-            if not repn.is_linear() or len(repn.linear_vars) != 1:
+            repn = visitor.walk_expression(constr.body)
+            if repn.nonlinear is not None or len(repn.linear) != 1:
                 # Skip nonlinear constraints, trivial constraints, and those
                 # that involve more than one variable.
                 continue
             else:
-                var = repn.linear_vars[0]
+                vid, coef = next(iter(repn.linear.items()))
+                var = visitor.var_map[vid]
                 const = repn.constant
-                coef = float(repn.linear_coefs[0])
 
             if coef == 0:
                 # Skip trivial constraints

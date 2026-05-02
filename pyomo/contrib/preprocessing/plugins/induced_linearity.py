@@ -43,7 +43,9 @@ from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
 from pyomo.gdp import Disjunct, Disjunction
 from pyomo.opt import TerminationCondition as tc
 from pyomo.opt import SolverFactory
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.quadratic import QuadraticRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 logger = logging.getLogger('pyomo.contrib.preprocessing')
 
@@ -153,22 +155,25 @@ def determine_valid_values(block, discr_var_to_constrs_map, config):
     """
     possible_values = ComponentMap()
 
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     for eff_discr_var, constrs in discr_var_to_constrs_map.items():
         # get the superset of possible values by looking through the
         # constraints
+        eff_discr_var_id = id(eff_discr_var)
         for constr in constrs:
-            repn = generate_standard_repn(constr.body)
+            repn = visitor.walk_expression(constr.body)
             var_coef = sum(
                 coef
-                for i, coef in enumerate(repn.linear_coefs)
-                if repn.linear_vars[i] is eff_discr_var
+                for vid, coef in repn.linear.items()
+                if vid == eff_discr_var_id
             )
             const = -(repn.constant - constr.upper) / var_coef
             possible_vals = set((const,))
-            for i, var in enumerate(repn.linear_vars):
-                if var is eff_discr_var:
+            for vid, coef in repn.linear.items():
+                if vid == eff_discr_var_id:
                     continue
-                coef = -repn.linear_coefs[i] / var_coef
+                var = visitor.var_map[vid]
+                coef = -coef / var_coef
                 if var.is_binary():
                     var_values = (0, coef)
                 elif var.is_integer():
@@ -302,26 +307,28 @@ def _process_bilinear_constraints(block, v1, v2, var_values, bilinear_constrs):
 
 
 def _reformulate_case_2(blk, v1, v2, bilinear_constr):
-    repn = generate_standard_repn(bilinear_constr.body)
-    replace_index = next(
-        i
-        for i, var_tup in enumerate(repn.quadratic_vars)
-        if (var_tup[0] is v1 and var_tup[1] is v2)
-        or (var_tup[0] is v2 and var_tup[1] is v1)
+    visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+    repn = visitor.walk_expression(bilinear_constr.body)
+    v1_id, v2_id = id(v1), id(v2)
+    replace_key = next(
+        key
+        for key in repn.quadratic
+        if set(key) == {v1_id, v2_id}
     )
+    replace_coef = repn.quadratic[replace_key]
     bilinear_constr.set_value(
         (
             bilinear_constr.lower,
-            sum(coef * repn.linear_vars[i] for i, coef in enumerate(repn.linear_coefs))
-            + repn.quadratic_coefs[replace_index]
+            sum(coef * visitor.var_map[vid] for vid, coef in repn.linear.items())
+            + replace_coef
             * sum(val * blk.v_increment[val] for val in blk.valid_values)
             + sum(
-                repn.quadratic_coefs[i] * var_tup[0] * var_tup[1]
-                for i, var_tup in enumerate(repn.quadratic_vars)
-                if not i == replace_index
+                coef * visitor.var_map[vid1] * visitor.var_map[vid2]
+                for (vid1, vid2), coef in repn.quadratic.items()
+                if (vid1, vid2) != replace_key
             )
             + repn.constant
-            + zero_if_None(repn.nonlinear_expr),
+            + zero_if_None(repn.nonlinear),
             bilinear_constr.upper,
         )
     )
@@ -341,14 +348,17 @@ def _bilinear_expressions(model):
     # Bilinear map will be stored in the format:
     # x --> (y --> [constr1, constr2, ...], z --> [constr2, constr3])
     bilinear_map = ComponentMap()
+    visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     for constr in model.component_data_objects(
         Constraint, active=True, descend_into=(Block, Disjunct)
     ):
         if constr.body.polynomial_degree() in (1, 0):
             continue  # Skip trivial and linear constraints
-        repn = generate_standard_repn(constr.body)
-        for pair in repn.quadratic_vars:
-            v1, v2 = pair
+        repn = visitor.walk_expression(constr.body)
+        if repn.quadratic is None:
+            continue
+        for vid1, vid2 in repn.quadratic:
+            v1, v2 = visitor.var_map[vid1], visitor.var_map[vid2]
             v1_pairs = bilinear_map.get(v1, ComponentMap())
             if v2 in v1_pairs:
                 # bilinear term has been found before. Simply add constraint to
@@ -372,6 +382,7 @@ def detect_effectively_discrete_vars(block, equality_tolerance):
     """
     # Map of effectively_discrete var --> inducing constraints
     effectively_discrete = ComponentMap()
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
 
     for constr in block.component_data_objects(Constraint, active=True):
         if constr.lower is None or constr.upper is None:
@@ -380,14 +391,17 @@ def detect_effectively_discrete_vars(block, equality_tolerance):
             continue  # not equality constraint. Skip.
         if constr.body.polynomial_degree() not in (1, 0):
             continue  # skip nonlinear expressions
-        repn = generate_standard_repn(constr.body)
-        if len(repn.linear_vars) < 2:
+        repn = visitor.walk_expression(constr.body)
+        if len(repn.linear) < 2:
             # TODO should this be < 2 or < 1?
             # TODO we should make sure that trivial equality relations are
             # preprocessed before this, or we will end up reformulating
             # expressions that we do not need to here.
             continue
-        non_discrete_vars = list(v for v in repn.linear_vars if v.is_continuous())
+        non_discrete_vars = [
+            visitor.var_map[vid] for vid in repn.linear
+            if visitor.var_map[vid].is_continuous()
+        ]
         if len(non_discrete_vars) == 1:
             # We know that this is an effectively discrete continuous
             # variable. Add it to our identified variable list.

@@ -21,7 +21,8 @@ from pyomo.core.base import (
 from pyomo.core.expr import ExpressionReplacementVisitor
 from pyomo.core.expr.numvalue import value
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 import logging
 
 logger = logging.getLogger('pyomo.contrib.preprocessing')
@@ -40,24 +41,18 @@ def _get_equality_linked_variables(constraint):
         # must be a linear constraint; otherwise, return empty tuple.
         return ()
 
-    # Generate the standard linear representation
-    repn = generate_standard_repn(constraint.body)
-    nonzero_coef_vars = tuple(
-        v
-        for i, v in enumerate(repn.linear_vars)
-        # if coefficient on variable is nonzero
-        if repn.linear_coefs[i] != 0
-    )
-    if len(nonzero_coef_vars) != 2:
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+    repn = visitor.walk_expression(constraint.body)
+    if len(repn.linear) != 2:
         # Expect two variables with nonzero coefficient in constraint;
         # otherwise, return empty tuple.
         return ()
-    if sorted(coef for coef in repn.linear_coefs if coef != 0) != [-1, 1]:
+    if sorted(repn.linear.values()) != [-1, 1]:
         # Expect a constraint of form x == y --> 0 == -1 * x + 1 * y;
         # otherwise, return empty tuple.
         return ()
     # Above checks are satisfied. Return the variables.
-    return nonzero_coef_vars
+    return tuple(visitor.var_map[vid] for vid in repn.linear)
 
 
 def _fix_equality_fixed_variables(model, scaling_tolerance=1e-10):
@@ -83,24 +78,16 @@ def _fix_equality_fixed_variables(model, scaling_tolerance=1e-10):
             # Constraint is not linear. Skip.
             continue
 
-        # Generate the standard linear representation
-        repn = generate_standard_repn(constraint.body)
-        # Generator of tuples with the coefficient and variable object for
-        # nonzero coefficients.
-        nonzero_coef_vars = (
-            (repn.linear_coefs[i], v)
-            for i, v in enumerate(repn.linear_vars)
-            # if coefficient on variable is nonzero
-            if repn.linear_coefs[i] != 0
-        )
-        # get the coefficient and variable object
-        coef, var = next(nonzero_coef_vars)
-        if next(nonzero_coef_vars, None) is not None:
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(constraint.body)
+        if len(repn.linear) != 1:
             # Expect one variable with nonzero coefficient in constraint;
             # otherwise, skip.
             continue
+        vid, coef = next(iter(repn.linear.items()))
+        var = visitor.var_map[vid]
         # Constant term on the constraint body
-        const = repn.constant if repn.constant is not None else 0
+        const = repn.constant
 
         if abs(coef) <= scaling_tolerance:
             logger.warning(

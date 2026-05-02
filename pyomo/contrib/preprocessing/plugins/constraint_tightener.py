@@ -12,7 +12,8 @@ import logging
 from pyomo.common import deprecated
 from pyomo.core import Constraint, value, TransformationFactory
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn.standard_repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 logger = logging.getLogger('pyomo.contrib.preprocessing')
 
@@ -42,11 +43,12 @@ class TightenConstraintFromVars(IsomorphicTransformation):
 
     def _apply_to(self, model):
         """Apply the transformation."""
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for constr in model.component_data_objects(
             ctype=Constraint, active=True, descend_into=True
         ):
-            repn = generate_standard_repn(constr.body)
-            if not repn.is_linear():
+            repn = visitor.walk_expression(constr.body)
+            if repn.nonlinear is not None:
                 continue
 
             # tighten the constraint bound as much as possible
@@ -55,7 +57,8 @@ class TightenConstraintFromVars(IsomorphicTransformation):
                 LB = UB = repn.constant
 
             # loop through each coefficient and variable pair
-            for var, coef in zip(repn.linear_vars, repn.linear_coefs):
+            for vid, coef in repn.linear.items():
+                var = visitor.var_map[vid]
                 # Calculate bounds using interval arithmetic
                 if coef >= 0:
                     if var.has_ub():

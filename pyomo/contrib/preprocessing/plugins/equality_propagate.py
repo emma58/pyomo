@@ -15,7 +15,8 @@ from pyomo.core.base.transformation import TransformationFactory
 from pyomo.core.base.suffix import Suffix
 from pyomo.core.expr.numvalue import value
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn.standard_repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.common.config import (
     ConfigBlock,
     ConfigValue,
@@ -36,6 +37,7 @@ def _build_equality_set(m):
     #: dict: map of var UID to the set of all equality-linked var UIDs
     eq_var_map = ComponentMap()
     relevant_vars = ComponentSet()
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     for constr in m.component_data_objects(
         ctype=Constraint, active=True, descend_into=True
     ):
@@ -45,13 +47,13 @@ def _build_equality_set(m):
             and value(constr.upper) == 0
             and constr.body.polynomial_degree() == 1
         ):
-            repn = generate_standard_repn(constr.body)
-            # only take the variables with nonzero coefficients
-            vars_ = [v for i, v in enumerate(repn.linear_vars) if repn.linear_coefs[i]]
+            repn = visitor.walk_expression(constr.body)
+            # All vars in repn.linear have nonzero coefficients (filtered by visitor)
+            vars_ = [visitor.var_map[vid] for vid in repn.linear]
             if (
                 len(vars_) == 2
                 and repn.constant == 0
-                and sorted(l for l in repn.linear_coefs if l) == [-1, 1]
+                and sorted(repn.linear.values()) == [-1, 1]
             ):
                 # this is an a == b constraint.
                 v1 = vars_[0]
@@ -69,16 +71,17 @@ def _build_equality_set(m):
 def _detect_fixed_variables(m):
     """Detect fixed variables due to constraints of form var = const."""
     new_fixed_vars = ComponentSet()
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     for constr in m.component_data_objects(
         ctype=Constraint, active=True, descend_into=True
     ):
         if constr.equality and constr.body.polynomial_degree() == 1:
-            repn = generate_standard_repn(constr.body)
-            if len(repn.linear_vars) == 1 and repn.linear_coefs[0]:
-                var = repn.linear_vars[0]
-                coef = float(repn.linear_coefs[0])
+            repn = visitor.walk_expression(constr.body)
+            if len(repn.linear) == 1:
+                vid, coef = next(iter(repn.linear.items()))
+                var = visitor.var_map[vid]
                 const = repn.constant
-                var_val = (value(constr.lower) - value(const)) / coef
+                var_val = (value(constr.lower) - const) / coef
                 var.fix(var_val)
                 new_fixed_vars.add(var)
     return new_fixed_vars

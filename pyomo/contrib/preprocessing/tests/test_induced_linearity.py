@@ -29,7 +29,8 @@ from pyomo.environ import (
     exp,
 )
 from pyomo.gdp import Disjunct, Disjunction
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 glpk_available = SolverFactory('glpk').available()
 
@@ -124,9 +125,10 @@ class TestInducedLinearity(unittest.TestCase):
         TransformationFactory('contrib.induced_linearity').apply_to(m)
         xfrmed_blk = m._induced_linearity_info.x0_b_bilinear
         self.assertSetEqual(set(xfrmed_blk.valid_values), set([1, 2, 3, 4, 5]))
-        select_one_repn = generate_standard_repn(xfrmed_blk.select_one_value.body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        select_one_repn = visitor.walk_expression(xfrmed_blk.select_one_value.body)
         self.assertEqual(
-            ComponentSet(select_one_repn.linear_vars),
+            ComponentSet(visitor.var_map[vid] for vid in select_one_repn.linear),
             ComponentSet(xfrmed_blk.x_active[i] for i in xfrmed_blk.valid_values),
         )
 
