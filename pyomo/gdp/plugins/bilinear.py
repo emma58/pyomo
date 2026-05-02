@@ -91,7 +91,9 @@ class Bilinear_Transformation(Transformation):
         return expr
 
     def _replace_bilinear(self, expr, instance):
-        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        visitor = QuadraticRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        )
         terms = visitor.walk_expression(expr)
         # Constant
         e = terms.constant

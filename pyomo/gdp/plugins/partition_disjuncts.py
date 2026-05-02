@@ -786,15 +786,15 @@ class PartitionDisjuncts_Transformation(Transformation):
 
         # this is a list which might have two constraints in it if we had
         # both a lower and upper value.
-        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        visitor = QuadraticRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        )
         leq_constraints = self._get_leq_constraints(cons)
         for body, rhs in leq_constraints:
             repn = visitor.walk_expression(body)
             nonlinear_repn = None
             if repn.nonlinear is not None:
-                nonlinear_repn = _generate_additively_separable_repn(
-                    repn.nonlinear
-                )
+                nonlinear_repn = _generate_additively_separable_repn(repn.nonlinear)
             split_exprs = []
             split_aux_vars = []
             vars_not_accounted_for = ComponentSet(
