@@ -387,8 +387,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         # coefficient here so that we never have to worry about it again during
         # the transformation.
         cons_dict['map'] = ComponentMap(
-            (visitor.var_map[vid], value(coef))
-            for vid, coef in body.linear.items()
+            (visitor.var_map[vid], value(coef)) for vid, coef in body.linear.items()
         )
 
     def _fourier_motzkin_elimination(self, constraints, vars_to_eliminate, visitor):
@@ -462,15 +461,13 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     if leaving_var_coef < 0:
                         leq_list.append(
                             self._nonneg_scalar_multiply_linear_constraint(
-                                cons, -1.0 / leaving_var_coef,
-                                visitor
+                                cons, -1.0 / leaving_var_coef, visitor
                             )
                         )
                     else:
                         geq_list.append(
                             self._nonneg_scalar_multiply_linear_constraint(
-                                cons, 1.0 / leaving_var_coef,
-                                visitor
+                                cons, 1.0 / leaving_var_coef, visitor
                             )
                         )
                 else:
@@ -490,11 +487,15 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                     to_lcm = least_common_mult // abs(int(leaving_var_coef))
                     if leaving_var_coef < 0:
                         leq_list.append(
-                            self._nonneg_scalar_multiply_linear_constraint(cons, to_lcm, visitor)
+                            self._nonneg_scalar_multiply_linear_constraint(
+                                cons, to_lcm, visitor
+                            )
                         )
                     else:
                         geq_list.append(
-                            self._nonneg_scalar_multiply_linear_constraint(cons, to_lcm, visitor)
+                            self._nonneg_scalar_multiply_linear_constraint(
+                                cons, to_lcm, visitor
+                            )
                         )
 
             constraints = waiting_list
@@ -572,7 +573,10 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         for vid, coef in list(body.linear.items()):
             v = visitor.var_map[vid]
             new_coef = self._multiply(
-                scalar, coef, self._get_noninteger_coef_error_message, (v.name, coef, visitor)
+                scalar,
+                coef,
+                self._get_noninteger_coef_error_message,
+                (v.name, coef, visitor),
             )
             body.linear[vid] = new_coef
             cons['map'][v] = new_coef
