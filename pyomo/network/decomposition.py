@@ -546,7 +546,9 @@ class SequentialDecomposition(FOQUSGraph):
                     % (name, port.name, eq_tol)
                 )
         elif member.is_expression_type():
-            visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+            visitor = LinearRepnVisitor(
+                {}, var_recorder=OrderedVarRecorder({}, {}, None)
+            )
             repn = visitor.walk_expression(member - val)
             if repn.nonlinear is None and len(repn.linear) == 1:
                 # fix the value of the single variable
