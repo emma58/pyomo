@@ -12,7 +12,8 @@
 import pyomo.common.unittest as unittest
 from pyomo.environ import ConcreteModel, Constraint, TransformationFactory, Var
 import pyomo.core.expr as EXPR
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.quadratic import QuadraticRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 
 class TestRemoveZeroTerms(unittest.TestCase):
@@ -59,14 +60,11 @@ class TestRemoveZeroTerms(unittest.TestCase):
         # check constraint is unchanged
         self.assertEqual(m.c.lower, 8)
         self.assertIsNone(m.c.upper)
-        repn = generate_standard_repn(m.c.body)
-        self.assertTrue(repn.is_quadratic())
-        self.assertEqual(repn.quadratic_coefs[0], 1)
-        self.assertEqual(repn.quadratic_coefs[1], 1)
-        self.assertIs(repn.quadratic_vars[0][0], m.x)
-        self.assertIs(repn.quadratic_vars[0][1], m.z)
-        self.assertIs(repn.quadratic_vars[1][0], m.y)
-        self.assertIs(repn.quadratic_vars[1][1], m.z)
+        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.c.body)
+        self.assertIsNotNone(repn.quadratic)
+        self.assertEqual(repn.quadratic[(id(m.x), id(m.z))], 1)
+        self.assertEqual(repn.quadratic[(id(m.y), id(m.z))], 1)
         self.assertEqual(repn.constant, 0)
 
 

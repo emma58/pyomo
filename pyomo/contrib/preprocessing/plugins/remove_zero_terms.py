@@ -15,7 +15,8 @@ from pyomo.core.base.constraint import Constraint
 from pyomo.core.base.transformation import TransformationFactory
 import pyomo.core.expr as EXPR
 from pyomo.core.plugins.transform.hierarchy import IsomorphicTransformation
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.common.config import ConfigDict, ConfigValue
 
 
@@ -46,32 +47,26 @@ class RemoveZeroTerms(IsomorphicTransformation):
         """Apply the transformation."""
         config = self.CONFIG(kwargs)
         m = model
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
 
         for constr in m.component_data_objects(
             ctype=Constraint, active=True, descend_into=True
         ):
-            repn = generate_standard_repn(constr.body)
-            if not repn.is_linear() or repn.is_constant():
+            repn = visitor.walk_expression(constr.body)
+            # Check repn is nonlinear and non-constant
+            if repn.nonlinear is not None or not repn.linear:
                 continue  # we currently only process linear constraints, and we
                 # assume that trivial constraints have already been
                 # deactivated or will be deactivated in a different
                 # step
 
             original_expr = constr.expr
-            # get the index of all nonzero coefficient variables
-            nonzero_vars_idx = [
-                i
-                for i, _ in enumerate(repn.linear_vars)
-                if not repn.linear_coefs[i] == 0
-            ]
             const = repn.constant
 
-            # reconstitute the constraint, including only variable terms with
-            # nonzero coefficients
+            # reconstitute the constraint, keeping only nonzero-coefficient terms
+            # (LinearRepnVisitor already filters zero coefficients in finalizeResult)
             constr_body = (
-                quicksum(
-                    repn.linear_coefs[i] * repn.linear_vars[i] for i in nonzero_vars_idx
-                )
+                quicksum(coef * visitor.var_map[vid] for vid, coef in repn.linear.items())
                 + const
             )
             if constr.equality:
