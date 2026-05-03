@@ -46,7 +46,6 @@ from pyomo.core.expr.compare import (
 )
 import pyomo.core.expr as EXPR
 from pyomo.core.base import constraint
-from pyomo.repn import generate_standard_repn
 from pyomo.repn.linear import LinearRepnVisitor
 from pyomo.repn.quadratic import QuadraticRepnVisitor
 from pyomo.repn.util import OrderedVarRecorder
@@ -153,9 +152,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         cons = disj1c[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertFalse(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 1)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNotNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 1)
         # This is a weak test, but as good as any to ensure that the
         # substitution was done correctly
         EPS_1 = 1 - EPS
@@ -256,9 +256,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         # has only lb
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, disjBlock[1].disaggregatedVars.x, -1)
         ct.check_linear_coef(self, repn, m.d[1].indicator_var, 2)
         self.assertEqual(repn.constant, 0)
@@ -271,9 +272,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         # 'eq' is preserved
         self.assertEqual(cons.lower, 0)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, disjBlock[1].disaggregatedVars.w, 1)
         ct.check_linear_coef(self, repn, m.d[1].indicator_var, -3)
         self.assertEqual(repn.constant, 0)
@@ -287,9 +289,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         cons = c3[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, disjBlock[1].disaggregatedVars.x, -1)
         ct.check_linear_coef(self, repn, m.d[1].indicator_var, 1)
         self.assertEqual(repn.constant, 0)
@@ -298,9 +301,10 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         cons = c3[1]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, disjBlock[1].disaggregatedVars.x, 1)
         ct.check_linear_coef(self, repn, m.d[1].indicator_var, -3)
         self.assertEqual(repn.constant, 0)
@@ -313,20 +317,22 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         varlb = cons['lb']
         self.assertIsNone(varlb.lower)
         self.assertEqual(varlb.upper, 0)
-        repn = generate_standard_repn(varlb.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(varlb.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, indvar, lb)
         ct.check_linear_coef(self, repn, disvar, -1)
 
         varub = cons['ub']
         self.assertIsNone(varub.lower)
         self.assertEqual(varub.upper, 0)
-        repn = generate_standard_repn(varub.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(varub.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, indvar, -ub)
         ct.check_linear_coef(self, repn, disvar, 1)
 
@@ -335,19 +341,21 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
     ):
         self.assertIsNone(varlb.lower)
         self.assertEqual(varlb.upper, 0)
-        repn = generate_standard_repn(varlb.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(varlb.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, lb)
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, indvar, -lb)
         ct.check_linear_coef(self, repn, disvar, -1)
 
         self.assertIsNone(varub.lower)
         self.assertEqual(varub.upper, 0)
-        repn = generate_standard_repn(varub.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(varub.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, -ub)
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, indvar, ub)
         ct.check_linear_coef(self, repn, disvar, 1)
 
@@ -577,16 +585,18 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         lb = cons['lb']
         self.assertIsNone(lb.lower)
         self.assertEqual(value(lb.upper), 0)
-        repn = generate_standard_repn(lb.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(lb.body)
+        self.assertIsNone(repn.nonlinear)
         ct.check_linear_coef(self, repn, m.disj2.indicator_var, 1)
         ct.check_linear_coef(self, repn, y_disagg, -1)
 
         ub = cons['ub']
         self.assertIsNone(ub.lower)
         self.assertEqual(value(ub.upper), 0)
-        repn = generate_standard_repn(ub.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(ub.body)
+        self.assertIsNone(repn.nonlinear)
         ct.check_linear_coef(self, repn, y_disagg, 1)
         ct.check_linear_coef(self, repn, m.disj2.indicator_var, -3)
 
@@ -965,39 +975,33 @@ class MultiTermDisj(unittest.TestCase, CommonTests):
         # -2(1 - d1.indicator_var) <= x2
         self.assertIsNone(bounds['lb'].lower)
         self.assertEqual(bounds['lb'].upper, 0)
-        repn = generate_standard_repn(bounds['lb'].body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
-        self.assertIs(repn.linear_vars[1], x2)
-        self.assertIs(repn.linear_vars[0], m.d1.indicator_var.get_associated_binary())
-        self.assertEqual(repn.linear_coefs[0], 2)
-        self.assertEqual(repn.linear_coefs[1], -1)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(bounds['lb'].body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
+        ct.check_linear_coef(self, repn, x2, -1)
+        ct.check_linear_coef(self, repn, m.d1.indicator_var.get_associated_binary(), 2)
         self.assertEqual(repn.constant, -2)
         # x2 <= 8(1 - d1.indicator_var)
         self.assertIsNone(bounds['ub'].lower)
         self.assertEqual(bounds['ub'].upper, 0)
-        repn = generate_standard_repn(bounds['ub'].body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
-        self.assertIs(repn.linear_vars[0], x2)
-        self.assertIs(repn.linear_vars[1], m.d1.indicator_var.get_associated_binary())
-        self.assertEqual(repn.linear_coefs[1], 8)
-        self.assertEqual(repn.linear_coefs[0], 1)
+        repn = visitor.walk_expression(bounds['ub'].body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
+        ct.check_linear_coef(self, repn, x2, 1)
+        ct.check_linear_coef(self, repn, m.d1.indicator_var.get_associated_binary(), 8)
         self.assertEqual(repn.constant, -8)
 
         # check the disaggregation constraint
         c = hull.get_disaggregation_constraint(m.x, m.disjunction)
         self.assertEqual(c.lower, 0)
         self.assertEqual(c.upper, 0)
-        repn = generate_standard_repn(c.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 3)
-        self.assertIs(repn.linear_vars[0], m.x)
-        self.assertIs(repn.linear_vars[1], x2)
-        self.assertIs(repn.linear_vars[2], x1)
-        self.assertEqual(repn.linear_coefs[0], 1)
-        self.assertEqual(repn.linear_coefs[1], -1)
-        self.assertEqual(repn.linear_coefs[2], -1)
+        repn = visitor.walk_expression(c.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 3)
+        ct.check_linear_coef(self, repn, m.x, 1)
+        ct.check_linear_coef(self, repn, x2, -1)
+        ct.check_linear_coef(self, repn, x1, -1)
         self.assertEqual(repn.constant, 0)
 
 
@@ -1031,10 +1035,13 @@ class IndexedDisjunction(unittest.TestCase, CommonTests):
             cons = hull.get_disaggregation_constraint(m.x[i], m.disjunction[i])
             self.assertEqual(cons.lower, 0)
             self.assertEqual(cons.upper, 0)
-            repn = generate_standard_repn(cons.body)
-            self.assertTrue(repn.is_linear())
+            visitor = LinearRepnVisitor(
+                {}, var_recorder=OrderedVarRecorder({}, {}, None)
+            )
+            repn = visitor.walk_expression(cons.body)
+            self.assertIsNone(repn.nonlinear)
             self.assertEqual(repn.constant, 0)
-            self.assertEqual(len(repn.linear_vars), 3)
+            self.assertEqual(len(repn.linear), 3)
             ct.check_linear_coef(self, repn, m.x[i], 1)
             ct.check_linear_coef(self, repn, disVars[0], -1)
             ct.check_linear_coef(self, repn, disVars[1], -1)
@@ -1069,12 +1076,15 @@ class IndexedDisjunction(unittest.TestCase, CommonTests):
             self.assertEqual(cons.lower, 0)
             self.assertEqual(cons.upper, 0)
             # NOTE: fixed variables are evaluated here.
-            repn = generate_standard_repn(cons.body)
-            self.assertTrue(repn.is_linear())
+            visitor = LinearRepnVisitor(
+                {}, var_recorder=OrderedVarRecorder({}, {}, None)
+            )
+            repn = visitor.walk_expression(cons.body)
+            self.assertIsNone(repn.nonlinear)
             self.assertEqual(repn.constant, 0)
             # The flag=1 disjunct disaggregated variable is fixed to 0, so the
             # below is actually correct:
-            self.assertEqual(len(repn.linear_vars), 2)
+            self.assertEqual(len(repn.linear), 2)
             ct.check_linear_coef(self, repn, m.a[i], 1)
             ct.check_linear_coef(self, repn, disVars[0], -1)
             self.assertTrue(disVars[1].is_fixed())
@@ -1531,8 +1541,9 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         self.assertTrue(cons.active)
         self.assertEqual(cons.lower, 0)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
         ct.check_linear_coef(self, repn, rhs, 1)
         ct.check_linear_coef(self, repn, hull.get_disaggregated_var(var, disj1), -1)
@@ -1546,10 +1557,11 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         self.assertTrue(constraint['ub'].active)
         self.assertEqual(constraint['ub'].upper, 0)
         self.assertIsNone(constraint['ub'].lower)
-        repn = generate_standard_repn(constraint['ub'].body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(constraint['ub'].body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, dis_var, 1)
         ct.check_linear_coef(self, repn, ind_var, -ub)
         self.assertIs(constraint, hull.get_var_bounds_constraint(dis_var))
@@ -1561,10 +1573,11 @@ class NestedDisjunction(unittest.TestCase, CommonTests):
         self.assertTrue(cons.active)
         self.assertIsNone(cons.lower)
         self.assertEqual(value(cons.upper), 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertEqual(len(repn.linear), 2)
         ct.check_linear_coef(self, repn, dis, -1)
         ct.check_linear_coef(self, repn, ind_var, lb)
 
@@ -2262,11 +2275,12 @@ class TestErrors(unittest.TestCase):
         )
         self.assertEqual(len(relaxed_xor), 1)
         relaxed_xor = relaxed_xor[0]
-        repn = generate_standard_repn(relaxed_xor.body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(relaxed_xor.body)
         self.assertEqual(value(relaxed_xor.lower), 0)
         self.assertEqual(value(relaxed_xor.upper), 0)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 3)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 3)
         # constraint says that the disaggregated indicator variables of the
         # nested disjuncts sum to the indicator variable of the outer disjunct.
         ct.check_linear_coef(self, repn, m.disjunction.disjuncts[0].indicator_var, -1)
@@ -2280,18 +2294,20 @@ class TestErrors(unittest.TestCase):
         d3_ind_dis_cons = transBlock.disaggregationConstraints[1]
         self.assertEqual(d3_ind_dis_cons.lower, 0)
         self.assertEqual(d3_ind_dis_cons.upper, 0)
-        repn = generate_standard_repn(d3_ind_dis_cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(d3_ind_dis_cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         self.assertEqual(repn.constant, 0)
         ct.check_linear_coef(self, repn, d3_ind_dis, -1)
         ct.check_linear_coef(self, repn, transBlock._disaggregatedVars[0], -1)
         d4_ind_dis_cons = transBlock.disaggregationConstraints[2]
         self.assertEqual(d4_ind_dis_cons.lower, 0)
         self.assertEqual(d4_ind_dis_cons.upper, 0)
-        repn = generate_standard_repn(d4_ind_dis_cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(d4_ind_dis_cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         self.assertEqual(repn.constant, 0)
         ct.check_linear_coef(self, repn, d4_ind_dis, -1)
         ct.check_linear_coef(self, repn, transBlock._disaggregatedVars[1], -1)
@@ -2452,21 +2468,22 @@ class BlocksOnDisjuncts(unittest.TestCase):
         self.assertIs(cons.ctype, Constraint)
         self.assertIsNone(cons.lower)
         self.assertEqual(value(cons.upper), 0)
-        repn = generate_standard_repn(cons.body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
         self.assertEqual(
-            str(repn.nonlinear_expr),
+            str(repn.nonlinear),
             "(0.9999*disj1.binary_indicator_var + 0.0001)*"
             "(_pyomo_gdp_hull_reformulation.relaxedDisjuncts[0]."
             "disaggregatedVars.y/"
             "(0.9999*disj1.binary_indicator_var + 0.0001))**2",
         )
-        self.assertEqual(len(repn.nonlinear_vars), 2)
-        self.assertIs(repn.nonlinear_vars[0], m.disj1.binary_indicator_var)
-        self.assertIs(repn.nonlinear_vars[1], hull.get_disaggregated_var(m.y, m.disj1))
+        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
+        self.assertEqual(len(nl_var_ids), 2)
+        self.assertIn(id(m.disj1.binary_indicator_var), nl_var_ids)
+        self.assertIn(id(hull.get_disaggregated_var(m.y, m.disj1)), nl_var_ids)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 1)
-        self.assertIs(repn.linear_vars[0], m.disj1.binary_indicator_var)
-        self.assertEqual(repn.linear_coefs[0], -4)
+        self.assertEqual(len(repn.linear), 1)
+        ct.check_linear_coef(self, repn, m.disj1.binary_indicator_var, -4)
 
         nonlin_lb_list = hull.get_transformed_constraints(m.disj2.non_lin_lb)
         self.assertEqual(len(nonlin_lb_list), 1)
@@ -2474,22 +2491,22 @@ class BlocksOnDisjuncts(unittest.TestCase):
         self.assertIs(cons.ctype, Constraint)
         self.assertIsNone(cons.lower)
         self.assertEqual(value(cons.upper), 0)
-        repn = generate_standard_repn(cons.body)
+        repn = visitor.walk_expression(cons.body)
         self.assertEqual(
-            str(repn.nonlinear_expr),
+            str(repn.nonlinear),
             "- ((0.9999*disj2.binary_indicator_var + 0.0001)*"
-            "log(1 + "
+            "log("
             "_pyomo_gdp_hull_reformulation.relaxedDisjuncts[1]."
             "disaggregatedVars.y/"
-            "(0.9999*disj2.binary_indicator_var + 0.0001)))",
+            "(0.9999*disj2.binary_indicator_var + 0.0001) + 1))",
         )
-        self.assertEqual(len(repn.nonlinear_vars), 2)
-        self.assertIs(repn.nonlinear_vars[0], m.disj2.binary_indicator_var)
-        self.assertIs(repn.nonlinear_vars[1], hull.get_disaggregated_var(m.y, m.disj2))
+        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
+        self.assertEqual(len(nl_var_ids), 2)
+        self.assertIn(id(m.disj2.binary_indicator_var), nl_var_ids)
+        self.assertIn(id(hull.get_disaggregated_var(m.y, m.disj2)), nl_var_ids)
         self.assertEqual(repn.constant, 0)
-        self.assertEqual(len(repn.linear_vars), 1)
-        self.assertIs(repn.linear_vars[0], m.disj2.binary_indicator_var)
-        self.assertEqual(repn.linear_coefs[0], 1)
+        self.assertEqual(len(repn.linear), 1)
+        ct.check_linear_coef(self, repn, m.disj2.binary_indicator_var, 1)
 
 
 class DisaggregatingFixedVars(unittest.TestCase):
@@ -2627,6 +2644,7 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         m = models.makeLogicalConstraintsOnDisjuncts()
         hull = TransformationFactory('gdp.hull')
         hull.apply_to(m)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
 
         y1 = m.Y[1].get_associated_binary()
         y2 = m.Y[2].get_associated_binary()
@@ -2649,11 +2667,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         # dis_z1 + dis_y1 = d[1].ind_var
         self.assertEqual(c.lower, 0)
         self.assertEqual(c.upper, 0)
-        repn = generate_standard_repn(c.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(c.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self, simplified, dis_z1 + dis_y1 - m.d[1].binary_indicator_var
@@ -2697,11 +2714,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self, simplified, -m.d[4].binary_indicator_var + z1d + y1d - y2d
@@ -2716,11 +2732,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self, simplified, m.d[4].binary_indicator_var - y1d - z1d
@@ -2735,11 +2750,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(self, simplified, y2d - z1d)
 
@@ -2752,11 +2766,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self, simplified, -m.d[4].binary_indicator_var + z2d + y2d - y1d
@@ -2771,11 +2784,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(self, simplified, y1d - z2d)
 
@@ -2788,11 +2800,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self, simplified, m.d[4].binary_indicator_var - y2d - z2d
@@ -2807,11 +2818,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(self, simplified, z3d - z1d)
 
@@ -2824,11 +2834,10 @@ class LogicalConstraintsOnDisjuncts(unittest.TestCase):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(self, simplified, z3d - z2d)
 

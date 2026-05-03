@@ -46,7 +46,6 @@ nonlinear_solvers = pyomo.opt.check_available_solvers('ipopt')
 
 
 def check_linear_coef(self, repn, var, coef):
-    # Map logical variables to their Boolean counterparts
     if isinstance(var, BooleanVar):
         var = var.get_associated_binary()
 
