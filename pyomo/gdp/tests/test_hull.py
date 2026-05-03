@@ -16,6 +16,7 @@ from io import StringIO
 import pyomo.common.unittest as unittest
 import unittest.mock as mock
 
+from pyomo.common.collections import ComponentSet
 from pyomo.common.dependencies import dill_available, numpy_available
 from pyomo.common.log import LoggingIntercept
 from pyomo.common.fileutils import this_file_dir
@@ -2470,17 +2471,18 @@ class BlocksOnDisjuncts(unittest.TestCase):
         self.assertEqual(value(cons.upper), 0)
         visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(cons.body)
-        self.assertEqual(
-            str(repn.nonlinear),
-            "(0.9999*disj1.binary_indicator_var + 0.0001)*"
-            "(_pyomo_gdp_hull_reformulation.relaxedDisjuncts[0]."
-            "disaggregatedVars.y/"
-            "(0.9999*disj1.binary_indicator_var + 0.0001))**2",
+        assertExpressionsEqual(
+            self,
+            repn.nonlinear,
+            (0.9999*m.disj1.binary_indicator_var + 0.0001)*
+            (m._pyomo_gdp_hull_reformulation.relaxedDisjuncts[0].
+            disaggregatedVars.y/
+            (0.9999*m.disj1.binary_indicator_var + 0.0001))**2
         )
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 2)
-        self.assertIn(id(m.disj1.binary_indicator_var), nl_var_ids)
-        self.assertIn(id(hull.get_disaggregated_var(m.y, m.disj1)), nl_var_ids)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 2)
+        self.assertIn(m.disj1.binary_indicator_var, nl_vars)
+        self.assertIn(hull.get_disaggregated_var(m.y, m.disj1), nl_vars)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
         ct.check_linear_coef(self, repn, m.disj1.binary_indicator_var, -4)
@@ -2492,18 +2494,19 @@ class BlocksOnDisjuncts(unittest.TestCase):
         self.assertIsNone(cons.lower)
         self.assertEqual(value(cons.upper), 0)
         repn = visitor.walk_expression(cons.body)
-        self.assertEqual(
-            str(repn.nonlinear),
-            "- ((0.9999*disj2.binary_indicator_var + 0.0001)*"
-            "log("
-            "_pyomo_gdp_hull_reformulation.relaxedDisjuncts[1]."
-            "disaggregatedVars.y/"
-            "(0.9999*disj2.binary_indicator_var + 0.0001) + 1))",
+        assertExpressionsEqual(
+            self,
+            repn.nonlinear,
+            (-1) * ((0.9999*m.disj2.binary_indicator_var + 0.0001)*
+            log(
+            m._pyomo_gdp_hull_reformulation.relaxedDisjuncts[1].
+            disaggregatedVars.y/
+            (0.9999*m.disj2.binary_indicator_var + 0.0001) + 1)),
         )
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 2)
-        self.assertIn(id(m.disj2.binary_indicator_var), nl_var_ids)
-        self.assertIn(id(hull.get_disaggregated_var(m.y, m.disj2)), nl_var_ids)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 2)
+        self.assertIn(m.disj2.binary_indicator_var, nl_vars)
+        self.assertIn(hull.get_disaggregated_var(m.y, m.disj2), nl_vars)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
         ct.check_linear_coef(self, repn, m.disj2.binary_indicator_var, 1)

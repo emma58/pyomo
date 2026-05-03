@@ -8,6 +8,7 @@
 # ____________________________________________________________________________________
 
 import pyomo.common.unittest as unittest
+from pyomo.common.collections import ComponentSet
 from pyomo.environ import (
     TransformationFactory,
     Constraint,
@@ -57,7 +58,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
     def check_disj_constraint(self, c1, upper, auxVar1, auxVar2):
         self.assertIsNone(c1.lower)
         self.assertEqual(value(c1.upper), upper)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c1.body)
@@ -847,7 +848,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(value(c1.upper), 1)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c1.body)
@@ -863,7 +864,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c2 = c[0]
         self.assertIsNone(c2.lower)
         self.assertEqual(value(c2.upper), -35)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c2.body)
@@ -1534,7 +1535,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 1)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c1.body)
@@ -1549,7 +1550,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c2 = c[0]
         self.assertIsNone(c2.lower)
         self.assertEqual(value(c2.upper), 1)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c2.body)
@@ -1565,17 +1566,17 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c1.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 2)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 2)
         ct.check_linear_coef(self, repn, aux_vars1[0], -1)
-        self.assertIn(id(m.x[1]), nl_var_ids)
-        self.assertIn(id(m.x[2]), nl_var_ids)
+        self.assertIn(m.x[1], nl_vars)
+        self.assertIn(m.x[2], nl_vars)
         self.assertIsInstance(repn.nonlinear, EXPR.PowExpression)
         self.assertEqual(repn.nonlinear.args[1], 0.25)
         self.assertIsInstance(repn.nonlinear.args[0], EXPR.SumExpression)
@@ -1590,17 +1591,17 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c2.lower)
         self.assertEqual(c2.upper, 0)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 2)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 2)
         ct.check_linear_coef(self, repn, aux_vars1[1], -1)
-        self.assertIn(id(m.x[3]), nl_var_ids)
-        self.assertIn(id(m.x[4]), nl_var_ids)
+        self.assertIn(m.x[3], nl_vars)
+        self.assertIn(m.x[4], nl_vars)
         self.assertIsInstance(repn.nonlinear, EXPR.PowExpression)
         self.assertEqual(repn.nonlinear.args[1], 0.25)
         self.assertIsInstance(repn.nonlinear.args[0], EXPR.SumExpression)
@@ -1617,17 +1618,17 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c1.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 2)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 2)
         ct.check_linear_coef(self, repn, aux_vars2[0], -1)
-        self.assertIn(id(m.x[1]), nl_var_ids)
-        self.assertIn(id(m.x[2]), nl_var_ids)
+        self.assertIn(m.x[1], nl_vars)
+        self.assertIn(m.x[2], nl_vars)
         self.assertIsInstance(repn.nonlinear, EXPR.PowExpression)
         self.assertEqual(repn.nonlinear.args[1], 0.25)
         self.assertIsInstance(repn.nonlinear.args[0], EXPR.SumExpression)
@@ -1661,17 +1662,17 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 2)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 2)
         ct.check_linear_coef(self, repn, aux_vars2[1], -1)
-        self.assertIn(id(m.x[3]), nl_var_ids)
-        self.assertIn(id(m.x[4]), nl_var_ids)
+        self.assertIn(m.x[3], nl_vars)
+        self.assertIn(m.x[4], nl_vars)
         self.assertIsInstance(repn.nonlinear, EXPR.PowExpression)
         self.assertEqual(repn.nonlinear.args[1], 0.25)
         self.assertIsInstance(repn.nonlinear.args[0], EXPR.SumExpression)
@@ -1804,7 +1805,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0.5)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(cons.body)
@@ -1821,16 +1822,16 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        visitor = QuadraticRepnVisitor(
+        visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
         repn = visitor.walk_expression(cons.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
         ct.check_linear_coef(self, repn, aux_vars2[0], -1)
-        nl_var_ids = {id(v) for v in EXPR.identify_variables(repn.nonlinear)}
-        self.assertEqual(len(nl_var_ids), 1)
-        self.assertIn(id(m.x[1]), nl_var_ids)
+        nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
+        self.assertEqual(len(nl_vars), 1)
+        self.assertIn(m.x[1], nl_vars)
         nonlinear = repn.nonlinear
         self.assertIsInstance(nonlinear, EXPR.PowExpression)
         self.assertIs(nonlinear.args[0], m.x[1])
