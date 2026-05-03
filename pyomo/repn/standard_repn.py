@@ -1620,6 +1620,11 @@ def _generate_linear_standard_repn(expr, idMap=None, compute_values=True, verbos
 ##-----------------------------------------------------------------------
 
 
+@deprecated(
+    "preprocess_block_objectives is deprecated since generate_standard_repn "
+    "is also.",
+    version="6.10.1.dev0",
+)
 def preprocess_block_objectives(block, idMap=None):
     # Get/Create the ComponentMap for the repn
     if not hasattr(block, '_repn'):
@@ -1648,6 +1653,12 @@ def preprocess_block_objectives(block, idMap=None):
         block_repn[objective_data] = repn
 
 
+@deprecated(
+    "preprocess_block_constraints is deprecated since generate_standard_repn "
+    "is also.",
+    version="6.10.1.dev0",
+)
+
 def preprocess_block_constraints(block, idMap=None):
     # Get/Create the ComponentMap for the repn
     if not hasattr(block, '_repn'):
@@ -1660,6 +1671,11 @@ def preprocess_block_constraints(block, idMap=None):
         preprocess_constraint(block, constraint, idMap=idMap, block_repn=block_repn)
 
 
+@deprecated(
+    "preprocess_constraint is deprecated since generate_standard_repn "
+    "is also.",
+    version="6.10.1.dev0",
+)
 def preprocess_constraint(block, constraint, idMap=None, block_repn=None):
     from pyomo.repn.beta.matrix import MatrixConstraint
 
@@ -1694,6 +1710,11 @@ def preprocess_constraint(block, constraint, idMap=None, block_repn=None):
         block_repn[constraint_data] = repn
 
 
+@deprecated(
+    "preprocess_constraint_data is deprecated since generate_standard_repn "
+    "is also.",
+    version="6.10.1.dev0",
+)
 def preprocess_constraint_data(block, constraint_data, idMap=None, block_repn=None):
     # Get/Create the ComponentMap for the repn
     if not hasattr(block, '_repn'):
