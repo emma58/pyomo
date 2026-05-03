@@ -28,7 +28,8 @@ from pyomo.environ import (
     Param,
     NonNegativeIntegers,
 )
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.gdp import Disjunction
 
 
@@ -322,14 +323,15 @@ Constructing component 'q' from data=None failed:
         lor = disj0.transformed_constraints[1]
         self.assertEqual(lor.lower, 1)
         self.assertIsNone(lor.upper)
-        repn = generate_standard_repn(lor.body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(lor.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
-        self.assertIs(repn.linear_vars[0], x1)
-        self.assertIs(repn.linear_vars[1], x2)
-        self.assertEqual(repn.linear_coefs[0], 1)
-        self.assertEqual(repn.linear_coefs[1], 1)
+        self.assertEqual(len(repn.linear), 2)
+        self.assertIn(id(x1), repn.linear)
+        self.assertEqual(repn.linear[id(x1)], 1)
+        self.assertIn(id(x2), repn.linear)
+        self.assertEqual(repn.linear[id(x2)], 1)
 
     @unittest.skipUnless(sympy_available, "Sympy not available")
     def test_statement_in_Disjunct_with_logical_to_linear(self):

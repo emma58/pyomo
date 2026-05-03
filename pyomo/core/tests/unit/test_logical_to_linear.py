@@ -27,7 +27,6 @@ from pyomo.environ import (
     Var,
     Constraint,
     ExternalFunction,
-    ComponentMap,
     value,
     BooleanSet,
     land,
@@ -40,7 +39,8 @@ from pyomo.environ import (
     LogicalConstraintList,
 )
 from pyomo.gdp import Disjunct, Disjunction
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from io import StringIO
 
 
@@ -75,24 +75,22 @@ def _constrs_contained_within(test_case, test_constr_tuples, constraint_list):
         return value(lower), repn, value(upper)
 
     def _repns_match(repn, test_repn):
-        if not len(repn.linear_vars) == len(test_repn.linear_vars):
+        if len(repn.linear) != len(test_repn.linear):
             return False
-        coef_map = ComponentMap(
-            (var, coef) for var, coef in zip(repn.linear_vars, repn.linear_coefs)
-        )
-        for var, coef in zip(test_repn.linear_vars, test_repn.linear_coefs):
-            if not coef_map.get(var, 0) == coef:
+        for vid, coef in test_repn.linear.items():
+            if repn.linear.get(vid, 0) != coef:
                 return False
         return True
 
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     constr_list_tuples = [
         _move_const_from_body(
-            constr.lower, generate_standard_repn(constr.body), constr.upper
+            constr.lower, visitor.walk_expression(constr.body), constr.upper
         )
         for constr in constraint_list.values()
     ]
     for test_lower, test_body, test_upper in test_constr_tuples:
-        test_repn = generate_standard_repn(test_body)
+        test_repn = visitor.walk_expression(test_body)
         test_lower, test_repn, test_upper = _move_const_from_body(
             test_lower, test_repn, test_upper
         )

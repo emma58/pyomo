@@ -32,7 +32,8 @@ from pyomo.core.expr.numvalue import as_numeric
 from pyomo.core.expr.compare import compare_expressions
 from pyomo.core.expr.relational_expr import InequalityExpression
 
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.quadratic import QuadraticRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 
 @unittest.skipUnless(numpy_available, 'numpy is not available')
@@ -77,14 +78,15 @@ class TestNumPy(unittest.TestCase):
         )
         # model.pprint()
 
-        repn = generate_standard_repn(model.error.expr, compute_values=True)
-        self.assertIsNone(repn.nonlinear_expr)
-        self.assertEqual(len(repn.quadratic_vars), 3)
-        for i in range(3):
-            self.assertGreater(repn.quadratic_coefs[i], 0)
-        self.assertEqual(len(repn.linear_vars), 2)
-        for i in range(2):
-            self.assertLess(repn.linear_coefs[i], 0)
+        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(model.error.expr)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.quadratic), 3)
+        for coef in repn.quadratic.values():
+            self.assertGreater(coef, 0)
+        self.assertEqual(len(repn.linear), 2)
+        for coef in repn.linear.values():
+            self.assertLess(coef, 0)
         self.assertGreater(repn.constant, 0)
 
     def test_create_objective_from_numpy(self):

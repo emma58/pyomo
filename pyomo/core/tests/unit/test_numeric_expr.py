@@ -112,7 +112,8 @@ from pyomo.core.expr.template_expr import IndexTemplate
 from pyomo.core.expr import expr_common
 from pyomo.core.base.var import VarData
 
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.core.expr.numvalue import NumericValue
 
 
@@ -5599,11 +5600,11 @@ class TestDirect_LinearExpression(unittest.TestCase):
         # test that the expression evaluates correctly
         self.assertAlmostEqual(value(m.obj), N + 1)
 
-        # test that the standard repn can be constructed
-        repn = generate_standard_repn(m.obj.expr)
+        # test that the repn can be constructed
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.obj.expr)
         self.assertAlmostEqual(repn.constant, 1.0)
-        self.assertTrue(len(repn.linear_coefs) == N)
-        self.assertTrue(len(repn.linear_vars) == N)
+        self.assertEqual(len(repn.linear), N)
 
     def test_LinearExpression_Number(self):
         m = ConcreteModel()
@@ -5621,11 +5622,11 @@ class TestDirect_LinearExpression(unittest.TestCase):
         # test that the expression evaluates correctly
         self.assertAlmostEqual(value(m.obj), N + 1)
 
-        # test that the standard repn can be constructed
-        repn = generate_standard_repn(m.obj.expr)
+        # test that the repn can be constructed
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.obj.expr)
         self.assertAlmostEqual(repn.constant, 1.0)
-        self.assertTrue(len(repn.linear_coefs) == N)
-        self.assertTrue(len(repn.linear_vars) == N)
+        self.assertEqual(len(repn.linear), N)
 
     def test_LinearExpression_MutableParam(self):
         m = ConcreteModel()
@@ -5644,11 +5645,11 @@ class TestDirect_LinearExpression(unittest.TestCase):
         # test that the expression evaluates correctly
         self.assertAlmostEqual(value(m.obj), N + 1)
 
-        # test that the standard repn can be constructed
-        repn = generate_standard_repn(m.obj.expr)
+        # test that the repn can be constructed
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.obj.expr)
         self.assertAlmostEqual(repn.constant, 1.0)
-        self.assertTrue(len(repn.linear_coefs) == N)
-        self.assertTrue(len(repn.linear_vars) == N)
+        self.assertEqual(len(repn.linear), N)
 
     def test_LinearExpression_expression(self):
         m = ConcreteModel()
@@ -5667,11 +5668,11 @@ class TestDirect_LinearExpression(unittest.TestCase):
         # test that the expression evaluates correctly
         self.assertAlmostEqual(value(m.obj), sum(i for i in S) + 1)
 
-        # test that the standard repn can be constructed
-        repn = generate_standard_repn(m.obj.expr)
+        # test that the repn can be constructed
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.obj.expr)
         self.assertAlmostEqual(repn.constant, 1.0)
-        self.assertTrue(len(repn.linear_coefs) == N)
-        self.assertTrue(len(repn.linear_vars) == N)
+        self.assertEqual(len(repn.linear), N)
 
     def test_LinearExpression_polynomial_degree(self):
         m = ConcreteModel()

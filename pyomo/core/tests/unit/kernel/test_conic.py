@@ -36,6 +36,8 @@ from pyomo.core.kernel.conic import (
     primal_geomean,
     dual_geomean,
 )
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 
 class _conic_tester_base:
@@ -850,12 +852,11 @@ class TestMisc(unittest.TestCase):
         self.assertEqual(list(c[2].terms)[1][1], -1)
         self.assertIs(type(c[3]), constraint)
         self.assertEqual(c[3].rhs, 0)
-        from pyomo.repn import generate_standard_repn
-
-        repn = generate_standard_repn(c[3].body)
-        self.assertEqual(len(repn.linear_vars), 1)
-        self.assertIs(repn.linear_vars[0], vaux[3])
-        self.assertEqual(repn.linear_coefs[0], 1)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(c[3].body)
+        self.assertEqual(len(repn.linear), 1)
+        self.assertIn(id(vaux[3]), repn.linear)
+        self.assertEqual(repn.linear[id(vaux[3])], 1)
         self.assertEqual(repn.constant, -1)
 
 
