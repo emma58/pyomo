@@ -12,6 +12,7 @@ import sys
 import logging
 import itertools
 
+from pyomo.common.deprecation import deprecated
 from pyomo.common.numeric_types import native_types, native_numeric_types
 from pyomo.core.base import Constraint, Objective, ComponentMap
 
@@ -255,6 +256,11 @@ to a solver and then be deleted.
 
 
 # @profile
+@deprecated(
+    "generate_standard_repn is deprecated. Please use the LinearRepnVisitor or "
+    "the QuadraticRepnVisitor.",
+    version="6.10.1.dev0"
+)
 def generate_standard_repn(
     expr, idMap=None, compute_values=True, verbose=False, quadratic=True, repn=None
 ):
