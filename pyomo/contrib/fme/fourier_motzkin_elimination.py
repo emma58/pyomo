@@ -573,10 +573,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
         for vid, coef in list(body.linear.items()):
             v = visitor.var_map[vid]
             new_coef = self._multiply(
-                scalar,
-                coef,
-                self._get_noninteger_coef_error_message,
-                (v.name, coef),
+                scalar, coef, self._get_noninteger_coef_error_message, (v.name, coef)
             )
             body.linear[vid] = new_coef
             cons['map'][v] = new_coef
