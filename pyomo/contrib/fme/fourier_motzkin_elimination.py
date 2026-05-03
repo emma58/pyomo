@@ -475,7 +475,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                         self._as_integer(
                             leaving_var_coef,
                             self._get_noninteger_coef_error_message,
-                            (the_var.name, leaving_var_coef, visitor),
+                            (the_var.name, leaving_var_coef),
                         )
                     )
             if self.do_integer_arithmetic and len(coefs) > 0:
@@ -576,7 +576,7 @@ class Fourier_Motzkin_Elimination_Transformation(Transformation):
                 scalar,
                 coef,
                 self._get_noninteger_coef_error_message,
-                (v.name, coef, visitor),
+                (v.name, coef),
             )
             body.linear[vid] = new_coef
             cons['map'][v] = new_coef
