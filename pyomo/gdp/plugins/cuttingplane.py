@@ -43,6 +43,9 @@ from pyomo.core.expr import differentiate, identify_variables
 from pyomo.common.collections import ComponentSet
 from pyomo.opt import SolverFactory
 
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
+
 from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.gdp.util import (
     verify_successful_solve,
@@ -960,6 +963,7 @@ class CuttingPlane_Transformation(Transformation):
         #
         fme = TransformationFactory('contrib.fourier_motzkin_elimination')
         rBigM_linear_constraints = []
+        visitor = LinearRepnVisitor({}, OrderedVarRecorder({}, {}, None))
         for cons in instance_rBigM.component_data_objects(
             Constraint,
             descend_into=Block,
@@ -973,7 +977,7 @@ class CuttingPlane_Transformation(Transformation):
                 continue
 
             # TODO: Guess this shouldn't have been private...
-            rBigM_linear_constraints.extend(fme._process_constraint(cons))
+            rBigM_linear_constraints.extend(fme._process_constraint(cons, visitor))
 
         # [ESJ Aug 13 2020] NOTE: We actually don't need to worry about variable
         # bounds here because the FME transformation will take care of them
