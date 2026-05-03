@@ -1065,10 +1065,8 @@ class IndexedDisjunction(unittest.TestCase, CommonTests):
                 hull.get_disaggregated_var(m.a[2, 'B'], m.disjunct[1, 2, 'B']),
             ],
         }
-        
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
+
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         for i, disVars in disaggregatedVars.items():
             cons = hull.get_disaggregation_constraint(m.a[i], m.disjunction[i])
             self.assertEqual(cons.lower, 0)
@@ -2466,10 +2464,12 @@ class BlocksOnDisjuncts(unittest.TestCase):
         assertExpressionsEqual(
             self,
             repn.nonlinear,
-            (0.9999*m.disj1.binary_indicator_var + 0.0001)*
-            (m._pyomo_gdp_hull_reformulation.relaxedDisjuncts[0].
-            disaggregatedVars.y/
-            (0.9999*m.disj1.binary_indicator_var + 0.0001))**2
+            (0.9999 * m.disj1.binary_indicator_var + 0.0001)
+            * (
+                m._pyomo_gdp_hull_reformulation.relaxedDisjuncts[0].disaggregatedVars.y
+                / (0.9999 * m.disj1.binary_indicator_var + 0.0001)
+            )
+            ** 2,
         )
         nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
         self.assertEqual(len(nl_vars), 2)
@@ -2489,11 +2489,17 @@ class BlocksOnDisjuncts(unittest.TestCase):
         assertExpressionsEqual(
             self,
             repn.nonlinear,
-            (-1) * ((0.9999*m.disj2.binary_indicator_var + 0.0001)*
-            log(
-            m._pyomo_gdp_hull_reformulation.relaxedDisjuncts[1].
-            disaggregatedVars.y/
-            (0.9999*m.disj2.binary_indicator_var + 0.0001) + 1)),
+            (-1)
+            * (
+                (0.9999 * m.disj2.binary_indicator_var + 0.0001)
+                * log(
+                    m._pyomo_gdp_hull_reformulation.relaxedDisjuncts[
+                        1
+                    ].disaggregatedVars.y
+                    / (0.9999 * m.disj2.binary_indicator_var + 0.0001)
+                    + 1
+                )
+            ),
         )
         nl_vars = ComponentSet(v for v in EXPR.identify_variables(repn.nonlinear))
         self.assertEqual(len(nl_vars), 2)

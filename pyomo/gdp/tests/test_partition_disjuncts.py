@@ -58,9 +58,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
     def check_disj_constraint(self, c1, upper, auxVar1, auxVar2):
         self.assertIsNone(c1.lower)
         self.assertEqual(value(c1.upper), upper)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(c1.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -1514,9 +1512,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 1)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(c1.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -1757,9 +1753,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0.5)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
