@@ -29,7 +29,8 @@ from pyomo.gdp import Disjunct, Disjunction, GDP_Error
 from pyomo.core.expr.compare import assertExpressionsEqual
 from pyomo.core.base import constraint, ComponentUID
 from pyomo.core.base.block import BlockData
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 import pyomo.core.expr as EXPR
 import pyomo.gdp.tests.models as models
 from io import StringIO
@@ -44,17 +45,10 @@ nonlinear_solvers = pyomo.opt.check_available_solvers('ipopt')
 
 
 def check_linear_coef(self, repn, var, coef):
-    # Map logical variables to their Boolean counterparts
     if isinstance(var, BooleanVar):
         var = var.get_associated_binary()
-
-    # utility used to check a variable-coefficient pair in a standard_repn
-    var_id = None
-    for i, v in enumerate(repn.linear_vars):
-        if v is var:
-            var_id = i
-    self.assertIsNotNone(var_id)
-    self.assertAlmostEqual(repn.linear_coefs[var_id], coef)
+    self.assertIn(id(var), repn.linear)
+    self.assertAlmostEqual(repn.linear[id(var)], coef)
 
 
 def check_quadratic_coef(self, repn, v1, v2, coef):
@@ -62,27 +56,16 @@ def check_quadratic_coef(self, repn, v1, v2, coef):
         v1 = v1.get_associated_binary()
     if isinstance(v2, BooleanVar):
         v2 = v2.get_associated_binary()
-
-    v1id = id(v1)
-    v2id = id(v2)
-
-    qcoef_map = dict()
-    for (_v1, _v2), _coef in zip(repn.quadratic_vars, repn.quadratic_coefs):
-        qcoef_map[id(_v1), id(_v2)] = _coef
-        qcoef_map[id(_v2), id(_v1)] = _coef
-
-    self.assertIn((v1id, v2id), qcoef_map)
-    self.assertAlmostEqual(qcoef_map[v1id, v2id], coef)
+    v1id, v2id = id(v1), id(v2)
+    found = repn.quadratic.get((v1id, v2id), repn.quadratic.get((v2id, v1id)))
+    self.assertIsNotNone(found)
+    self.assertAlmostEqual(found, coef)
 
 
 def check_squared_term_coef(self, repn, var, coef):
-    var_id = None
-    for i, (v1, v2) in enumerate(repn.quadratic_vars):
-        if v1 is var and v2 is var:
-            var_id = i
-            break
-    self.assertIsNotNone(var_id)
-    self.assertEqual(repn.quadratic_coefs[var_id], coef)
+    vid = id(var)
+    self.assertIn((vid, vid), repn.quadratic)
+    self.assertEqual(repn.quadratic[vid, vid], coef)
 
 
 def diff_apply_to_and_create_using(self, model, transformation, **kwargs):
@@ -450,11 +433,12 @@ def check_indexed_xor_constraints(self, transformation):
         "disjunction_xor"
     )
     self.assertIsInstance(xor, Constraint)
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     for i in m.disjunction.index_set():
-        repn = generate_standard_repn(xor[i].body)
+        repn = visitor.walk_expression(xor[i].body)
         self.assertEqual(repn.constant, 0)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
         check_linear_coef(self, repn, m.disjunction[i].disjuncts[0].indicator_var, 1)
         check_linear_coef(self, repn, m.disjunction[i].disjuncts[1].indicator_var, 1)
         self.assertEqual(xor[i].lower, 1)
@@ -474,11 +458,12 @@ def check_indexed_xor_constraints_with_targets(self, transformation):
     self.assertEqual(len(xorC), 2)
 
     # check the constraints
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
     for i in [1, 3]:
         self.assertEqual(xorC[i].lower, 1)
         self.assertEqual(xorC[i].upper, 1)
-        repn = generate_standard_repn(xorC[i].body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(xorC[i].body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, m.disjunct[i, 0].indicator_var, 1)
         check_linear_coef(self, repn, m.disjunct[i, 1].indicator_var, 1)
@@ -499,17 +484,18 @@ def check_three_term_xor_constraint(self, transformation):
     self.assertEqual(xor[2].lower, 1)
     self.assertEqual(xor[2].upper, 1)
 
-    repn = generate_standard_repn(xor[1].body)
-    self.assertTrue(repn.is_linear())
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+    repn = visitor.walk_expression(xor[1].body)
+    self.assertIsNone(repn.nonlinear)
     self.assertEqual(repn.constant, 0)
-    self.assertEqual(len(repn.linear_vars), 3)
+    self.assertEqual(len(repn.linear), 3)
     for i in range(3):
         check_linear_coef(self, repn, m.disjunct[i, 1].indicator_var, 1)
 
-    repn = generate_standard_repn(xor[2].body)
-    self.assertTrue(repn.is_linear())
+    repn = visitor.walk_expression(xor[2].body)
+    self.assertIsNone(repn.nonlinear)
     self.assertEqual(repn.constant, 0)
-    self.assertEqual(len(repn.linear_vars), 3)
+    self.assertEqual(len(repn.linear), 3)
     for i in range(3):
         check_linear_coef(self, repn, m.disjunct[i, 2].indicator_var, 1)
 
@@ -1486,8 +1472,10 @@ def setup_infeasible_xor_because_all_disjuncts_deactivated(self, transformation)
     self.assertIsInstance(xor, Constraint)
     self.assertEqual(value(xor.lower), 1)
     self.assertEqual(value(xor.upper), 1)
-    repn = generate_standard_repn(xor.body)
-    for v in repn.linear_vars:
+    visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+    repn = visitor.walk_expression(xor.body)
+    for vid in repn.linear:
+        v = visitor.var_map[vid]
         self.assertTrue(v.is_fixed())
         self.assertEqual(value(v), 0)
 

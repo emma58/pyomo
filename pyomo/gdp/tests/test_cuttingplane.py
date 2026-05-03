@@ -24,7 +24,8 @@ from pyomo.gdp.plugins.cuttingplane import create_cuts_fme
 
 import pyomo.opt
 import pyomo.gdp.tests.models as models
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.gdp.tests.common_tests import diff_apply_to_and_create_using
 
 solvers = pyomo.opt.check_available_solvers('ipopt', 'gurobi')
@@ -571,13 +572,14 @@ class TwoTermDisj(unittest.TestCase):
         cut = m.cuts[0]
         self.assertEqual(cut.lower, 0)
         self.assertIsNone(cut.upper)
-        repn = generate_standard_repn(cut.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 2)
-        self.assertIs(repn.linear_vars[0], m.disj1.binary_indicator_var)
-        self.assertEqual(repn.linear_coefs[0], 1)
-        self.assertIs(repn.linear_vars[1], m.x)
-        self.assertEqual(repn.linear_coefs[1], -1)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cut.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 2)
+        self.assertIn(id(m.disj1.binary_indicator_var), repn.linear)
+        self.assertEqual(repn.linear[id(m.disj1.binary_indicator_var)], 1)
+        self.assertIn(id(m.x), repn.linear)
+        self.assertEqual(repn.linear[id(m.x)], -1)
 
 
 class Grossmann_TestCases(unittest.TestCase):

@@ -20,7 +20,8 @@ from pyomo.environ import (
 )
 from pyomo.gdp import Disjunct, Disjunction
 from pyomo.core.expr.compare import assertExpressionsEqual
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.quadratic import QuadraticRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 from pyomo.core.expr.compare import assertExpressionsEqual
 
 import pyomo.core.expr as EXPR
@@ -286,10 +287,13 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         transformedC = binary_multiplication.get_transformed_constraints(m.disj2.cons)
         self.assertEqual(len(transformedC), 1)
         eq = transformedC[0]
-        repn = generate_standard_repn(eq.body)
-        self.assertIsNone(repn.nonlinear_expr)
-        self.assertEqual(len(repn.linear_coefs), 1)
-        self.assertEqual(len(repn.quadratic_coefs), 2)
+        visitor = QuadraticRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        )
+        repn = visitor.walk_expression(eq.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 1)
+        self.assertEqual(len(repn.quadratic), 2)
         ct.check_linear_coef(self, repn, m.disj2.indicator_var, -3)
         ct.check_quadratic_coef(self, repn, m.x, m.disj2.indicator_var, 1)
         ct.check_quadratic_coef(self, repn, m.disj2.y, m.disj2.indicator_var, 1)

@@ -43,7 +43,8 @@ from pyomo.gdp.tests.common_tests import (
     check_pprint_equal,
 )
 from pyomo.gdp.tests.models import make_indexed_equality_model
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 gurobi_available = (
     SolverFactory('gurobi').available(exception_flag=False)
@@ -60,9 +61,10 @@ class CommonTests(unittest.TestCase):
     def check_pretty_bound_constraints(self, cons, var, bounds, lb):
         self.assertEqual(value(cons.upper), 0)
         self.assertIsNone(cons.lower)
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), len(bounds) + 1)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), len(bounds) + 1)
         self.assertEqual(repn.constant, 0)
         if lb:
             check_linear_coef(self, repn, var, -1)
@@ -125,9 +127,10 @@ class LinearModelDecisionTreeExample(CommonTests):
     def check_untightened_bounds_constraint(
         self, cons, var, parent_disj, disjunction, Ms, lower=None, upper=None
     ):
-        repn = generate_standard_repn(cons.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 3)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(cons.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 3)
         self.assertIsNone(cons.lower)
         self.assertEqual(value(cons.upper), 0)
         if lower is not None:
@@ -234,6 +237,8 @@ class LinearModelDecisionTreeExample(CommonTests):
         if Ms is None:
             Ms = self.get_Ms(m)
 
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+
         # d1.func
         cons = mbm.get_transformed_constraints(m.d1.func)
         self.assertEqual(len(cons), 2)
@@ -241,9 +246,9 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, lower)
         self.assertEqual(value(lower.upper), 0)
         self.assertIsNone(lower.lower)
-        repn = generate_standard_repn(lower.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 5)
+        repn = visitor.walk_expression(lower.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 5)
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, m.x1, -1)
         check_linear_coef(self, repn, m.x2, -1)
@@ -254,9 +259,9 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, upper)
         self.assertEqual(value(upper.upper), 0)
         self.assertIsNone(upper.lower)
-        repn = generate_standard_repn(upper.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 5)
+        repn = visitor.walk_expression(upper.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 5)
         self.assertEqual(repn.constant, 0)
         check_linear_coef(self, repn, m.x1, 1)
         check_linear_coef(self, repn, m.x2, 1)
@@ -275,9 +280,9 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, lower)
         self.assertEqual(value(lower.upper), 0)
         self.assertIsNone(lower.lower)
-        repn = generate_standard_repn(lower.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 5)
+        repn = visitor.walk_expression(lower.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 5)
         self.assertEqual(repn.constant, -7)
         check_linear_coef(self, repn, m.x1, -2)
         check_linear_coef(self, repn, m.x2, -4)
@@ -288,9 +293,9 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, upper)
         self.assertEqual(value(upper.upper), 0)
         self.assertIsNone(upper.lower)
-        repn = generate_standard_repn(upper.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 5)
+        repn = visitor.walk_expression(upper.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 5)
         self.assertEqual(repn.constant, 7)
         check_linear_coef(self, repn, m.x1, 2)
         check_linear_coef(self, repn, m.x2, 4)
@@ -309,9 +314,9 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, lower)
         self.assertEqual(value(lower.upper), 0)
         self.assertIsNone(lower.lower)
-        repn = generate_standard_repn(lower.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 5)
+        repn = visitor.walk_expression(lower.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 5)
         self.assertEqual(repn.constant, 3)
         check_linear_coef(self, repn, m.x1, -1)
         check_linear_coef(self, repn, m.x2, 5)
@@ -322,9 +327,9 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, upper)
         self.assertEqual(value(upper.upper), 0)
         self.assertIsNone(upper.lower)
-        repn = generate_standard_repn(upper.body)
-        self.assertTrue(repn.is_linear())
-        self.assertEqual(len(repn.linear_vars), 5)
+        repn = visitor.walk_expression(upper.body)
+        self.assertIsNone(repn.nonlinear)
+        self.assertEqual(len(repn.linear), 5)
         self.assertEqual(repn.constant, -3)
         check_linear_coef(self, repn, m.x1, 1)
         check_linear_coef(self, repn, m.x2, -5)
@@ -433,10 +438,11 @@ class LinearModelDecisionTreeExample(CommonTests):
 
         self.assertEqual(value(xor.lower), 1)
         self.assertEqual(value(xor.upper), 1)
-        repn = generate_standard_repn(xor.body)
-        self.assertTrue(repn.is_linear())
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(xor.body)
+        self.assertIsNone(repn.nonlinear)
         self.assertEqual(value(repn.constant), 0)
-        self.assertEqual(len(repn.linear_vars), 3)
+        self.assertEqual(len(repn.linear), 3)
         check_linear_coef(self, repn, m.d1.binary_indicator_var, 1)
         check_linear_coef(self, repn, m.d2.binary_indicator_var, 1)
         check_linear_coef(self, repn, m.d3.binary_indicator_var, 1)
@@ -693,6 +699,7 @@ class LinearModelDecisionTreeExample(CommonTests):
         y = m.d1.Y.get_associated_binary()
         z = m.d1.Z.get_associated_binary()
         z1 = m.d1._logical_to_disjunctive.auxiliary_vars[3]
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
 
         # MbigM transformation of: (1 - z1) + (1 - y) + z >= 1
         # (1 - z1) + (1 - y) + z >= 1 - d2.ind_var - d3.ind_var
@@ -704,11 +711,10 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, c)
         self.assertIsNone(c.lower)
         self.assertEqual(value(c.upper), 0)
-        repn = generate_standard_repn(c.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(c.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self,
@@ -726,11 +732,10 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, c)
         self.assertIsNone(c.lower)
         self.assertEqual(value(c.upper), 0)
-        repn = generate_standard_repn(c.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(c.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self,
@@ -748,11 +753,10 @@ class LinearModelDecisionTreeExample(CommonTests):
         check_obj_in_active_tree(self, c)
         self.assertIsNone(c.lower)
         self.assertEqual(value(c.upper), 0)
-        repn = generate_standard_repn(c.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(c.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsStructurallyEqual(
             self,
@@ -761,6 +765,7 @@ class LinearModelDecisionTreeExample(CommonTests):
         )
 
     def check_traditionally_bigmed_constraints(self, m, mbm, Ms):
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         cons = mbm.get_transformed_constraints(m.d1.func)
         self.assertEqual(len(cons), 2)
         lb = cons[0]
@@ -775,14 +780,13 @@ class LinearModelDecisionTreeExample(CommonTests):
         # when they get constructed in the transformation (because they come
         # after the lb constraints), there are nested SumExpressions. Instead of
         # trying to reproduce them I am just building a "flat" SumExpression
-        # with generate_standard_repn and comparing that.
+        # with LinearRepnVisitor and comparing that.
         self.assertIsNone(ub.lower)
         self.assertEqual(ub.upper, 0)
-        repn = generate_standard_repn(ub.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(ub.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsEqual(
             self,
@@ -806,11 +810,10 @@ class LinearModelDecisionTreeExample(CommonTests):
         )
         self.assertIsNone(ub.lower)
         self.assertEqual(ub.upper, 0)
-        repn = generate_standard_repn(ub.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(ub.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsEqual(
             self,
@@ -838,11 +841,10 @@ class LinearModelDecisionTreeExample(CommonTests):
         )
         self.assertIsNone(ub.lower)
         self.assertEqual(ub.upper, 0)
-        repn = generate_standard_repn(ub.body)
-        self.assertTrue(repn.is_linear())
+        repn = visitor.walk_expression(ub.body)
+        self.assertIsNone(repn.nonlinear)
         simplified = repn.constant + sum(
-            repn.linear_coefs[i] * repn.linear_vars[i]
-            for i in range(len(repn.linear_vars))
+            coef * visitor.var_map[vid] for vid, coef in repn.linear.items()
         )
         assertExpressionsEqual(
             self,
