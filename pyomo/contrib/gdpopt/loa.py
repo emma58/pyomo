@@ -47,7 +47,8 @@ from pyomo.core.expr import differentiate
 from pyomo.core.expr.visitor import identify_variables
 from pyomo.gdp import Disjunct
 from pyomo.opt.base import SolverFactory
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 MAX_SYMBOLIC_DERIV_SIZE = 1000
 JacInfo = namedtuple('JacInfo', ['mode', 'vars', 'jac'])
@@ -208,12 +209,16 @@ class GDP_LOA_Solver(_GDPoptAlgorithm, _OAAlgorithmMixIn):
         counter = 0
         if not hasattr(discrete_problem_util_block, 'jacobians'):
             discrete_problem_util_block.jacobians = ComponentMap()
+        visitor = LinearRepnVisitor({}, OrderedVarRecorder({}, {}, None))
         for constr, subprob_constr in zip(
             discrete_problem_util_block.constraint_list,
             subproblem_util_block.constraint_list,
         ):
             dual_value = nlp.dual.get(subprob_constr, None)
-            if dual_value is None or generate_standard_repn(constr.body).is_linear():
+            if (
+                dual_value is None
+                or visitor.walk_expression(constr.body).nonlinear is None
+            ):
                 continue
 
             # Determine if the user pre-specified that OA cuts should not be
