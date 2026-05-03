@@ -273,7 +273,6 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         # 'eq' is preserved
         self.assertEqual(cons.lower, 0)
         self.assertEqual(cons.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -290,7 +289,6 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         cons = c3[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -302,7 +300,6 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         cons = c3[1]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -329,7 +326,6 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         varub = cons['ub']
         self.assertIsNone(varub.lower)
         self.assertEqual(varub.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(varub.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, 0)
@@ -352,7 +348,6 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
 
         self.assertIsNone(varub.lower)
         self.assertEqual(varub.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(varub.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(repn.constant, -ub)
@@ -595,7 +590,6 @@ class TwoTermDisj(unittest.TestCase, CommonTests):
         ub = cons['ub']
         self.assertIsNone(ub.lower)
         self.assertEqual(value(ub.upper), 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(ub.body)
         self.assertIsNone(repn.nonlinear)
         ct.check_linear_coef(self, repn, y_disagg, 1)
@@ -1071,15 +1065,15 @@ class IndexedDisjunction(unittest.TestCase, CommonTests):
                 hull.get_disaggregated_var(m.a[2, 'B'], m.disjunct[1, 2, 'B']),
             ],
         }
-
+        
+        visitor = LinearRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        )
         for i, disVars in disaggregatedVars.items():
             cons = hull.get_disaggregation_constraint(m.a[i], m.disjunction[i])
             self.assertEqual(cons.lower, 0)
             self.assertEqual(cons.upper, 0)
             # NOTE: fixed variables are evaluated here.
-            visitor = LinearRepnVisitor(
-                {}, var_recorder=OrderedVarRecorder({}, {}, None)
-            )
             repn = visitor.walk_expression(cons.body)
             self.assertIsNone(repn.nonlinear)
             self.assertEqual(repn.constant, 0)
@@ -2295,7 +2289,6 @@ class TestErrors(unittest.TestCase):
         d3_ind_dis_cons = transBlock.disaggregationConstraints[1]
         self.assertEqual(d3_ind_dis_cons.lower, 0)
         self.assertEqual(d3_ind_dis_cons.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(d3_ind_dis_cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -2305,7 +2298,6 @@ class TestErrors(unittest.TestCase):
         d4_ind_dis_cons = transBlock.disaggregationConstraints[2]
         self.assertEqual(d4_ind_dis_cons.lower, 0)
         self.assertEqual(d4_ind_dis_cons.upper, 0)
-        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
         repn = visitor.walk_expression(d4_ind_dis_cons.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)

@@ -782,9 +782,6 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = QuadraticRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c1.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 2)
@@ -848,10 +845,10 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(value(c1.upper), 1)
-        visitor = LinearRepnVisitor(
+        linear_visitor = LinearRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
-        repn = visitor.walk_expression(c1.body)
+        repn = linear_visitor.walk_expression(c1.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 3)
         self.assertEqual(repn.constant, 0)
@@ -864,10 +861,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c2 = c[0]
         self.assertIsNone(c2.lower)
         self.assertEqual(value(c2.upper), -35)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        repn = visitor.walk_expression(c2.body)
+        repn = linear_visitor.walk_expression(c2.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 3)
         self.assertEqual(repn.constant, 0)
@@ -885,10 +879,10 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c2.lower)
         self.assertEqual(c2.upper, 0)
-        visitor = QuadraticRepnVisitor(
+        quadratic_visitor = QuadraticRepnVisitor(
             {}, var_recorder=OrderedVarRecorder({}, {}, None)
         )
-        repn = visitor.walk_expression(c2.body)
+        repn = quadratic_visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
         self.assertEqual(len(repn.quadratic), 1)
@@ -898,10 +892,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c3 = c[2]
         self.assertIsNone(c3.lower)
         self.assertEqual(c3.upper, 0)
-        visitor = QuadraticRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        repn = visitor.walk_expression(c3.body)
+        repn = quadratic_visitor.walk_expression(c3.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
         self.assertEqual(len(repn.quadratic), 1)
@@ -917,10 +908,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c2.lower)
         self.assertEqual(c2.upper, 0)
-        visitor = QuadraticRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        repn = visitor.walk_expression(c2.body)
+        repn = quadratic_visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 2)
         self.assertEqual(len(repn.quadratic), 1)
@@ -931,10 +919,7 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c3 = c[2]
         self.assertIsNone(c3.lower)
         self.assertEqual(c3.upper, 0)
-        visitor = QuadraticRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        repn = visitor.walk_expression(c3.body)
+        repn = quadratic_visitor.walk_expression(c3.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 2)
         self.assertEqual(len(repn.quadratic), 1)
@@ -1031,9 +1016,6 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c2.lower)
         self.assertEqual(c2.upper, 0)
-        visitor = QuadraticRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
@@ -1063,9 +1045,6 @@ class PaperTwoCircleExample(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c2.lower)
         self.assertEqual(c2.upper, 0)
-        visitor = QuadraticRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 2)
@@ -1550,9 +1529,6 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c2 = c[0]
         self.assertIsNone(c2.lower)
         self.assertEqual(value(c2.upper), 1)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c2.body)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.linear), 2)
@@ -1566,9 +1542,6 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c1.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
@@ -1591,9 +1564,6 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c2.lower)
         self.assertEqual(c2.upper, 0)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
@@ -1618,9 +1588,6 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c1 = c[0]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c1.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
@@ -1637,10 +1604,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         self.assertIsInstance(repn.nonlinear.args[0].args[1], EXPR.PowExpression)
         sum_expr = repn.nonlinear.args[0].args[0].args[0]
         self.assertIsInstance(sum_expr, EXPR.SumExpression)
-        sum_visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        sum_repn = sum_visitor.walk_expression(sum_expr)
+        sum_repn = visitor.walk_expression(sum_expr)
         self.assertEqual(sum_repn.constant, 3)
         self.assertIsNone(sum_repn.nonlinear)
         self.assertEqual(len(sum_repn.linear), 1)
@@ -1649,10 +1613,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         self.assertIsInstance(repn.nonlinear.args[0].args[1], EXPR.PowExpression)
         sum_expr = repn.nonlinear.args[0].args[1].args[0]
         self.assertIsInstance(sum_expr, EXPR.SumExpression)
-        sum_visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        sum_repn = sum_visitor.walk_expression(sum_expr)
+        sum_repn = visitor.walk_expression(sum_expr)
         self.assertEqual(sum_repn.constant, 3)
         self.assertIsNone(sum_repn.nonlinear)
         self.assertEqual(len(sum_repn.linear), 1)
@@ -1662,9 +1623,6 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         c2 = c[1]
         self.assertIsNone(c1.lower)
         self.assertEqual(c1.upper, 0)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(c2.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
@@ -1681,10 +1639,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         self.assertIsInstance(repn.nonlinear.args[0].args[1], EXPR.PowExpression)
         sum_expr = repn.nonlinear.args[0].args[0].args[0]
         self.assertIsInstance(sum_expr, EXPR.SumExpression)
-        sum_visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        sum_repn = sum_visitor.walk_expression(sum_expr)
+        sum_repn = visitor.walk_expression(sum_expr)
         self.assertEqual(sum_repn.constant, 3)
         self.assertIsNone(sum_repn.nonlinear)
         self.assertEqual(len(sum_repn.linear), 1)
@@ -1693,10 +1648,7 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         self.assertIsInstance(repn.nonlinear.args[0].args[1], EXPR.PowExpression)
         sum_expr = repn.nonlinear.args[0].args[1].args[0]
         self.assertIsInstance(sum_expr, EXPR.SumExpression)
-        sum_visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
-        sum_repn = sum_visitor.walk_expression(sum_expr)
+        sum_repn = visitor.walk_expression(sum_expr)
         self.assertEqual(sum_repn.constant, 3)
         self.assertIsNone(sum_repn.nonlinear)
         self.assertEqual(len(sum_repn.linear), 1)
@@ -1822,9 +1774,6 @@ class NonQuadraticNonlinear(unittest.TestCase, CommonTests):
         cons = cons[0]
         self.assertIsNone(cons.lower)
         self.assertEqual(cons.upper, 0)
-        visitor = LinearRepnVisitor(
-            {}, var_recorder=OrderedVarRecorder({}, {}, None)
-        )
         repn = visitor.walk_expression(cons.body)
         self.assertEqual(repn.constant, 0)
         self.assertEqual(len(repn.linear), 1)
