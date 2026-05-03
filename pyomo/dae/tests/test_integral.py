@@ -20,7 +20,8 @@ from pyomo.environ import ConcreteModel, Var, Set, TransformationFactory, Expres
 from pyomo.dae import ContinuousSet, Integral
 from pyomo.dae.diffvar import DAE_Error
 
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 currdir = dirname(abspath(__file__)) + os.sep
 
@@ -73,22 +74,32 @@ class TestIntegral(unittest.TestCase):
         self.assertTrue(m.int3.ctype is Integral)
         self.assertTrue(m.int4.ctype is Integral)
 
-        repn = generate_standard_repn(m.int1.expr)
-        self.assertEqual(repn.linear_coefs, (0.5, 0.5))
-        self.assertTrue(repn.linear_vars[0] is m.v[1])
-        self.assertTrue(repn.linear_vars[1] is m.v[0])
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
 
-        repn = generate_standard_repn(m.int2[1].expr)
-        self.assertEqual(repn.linear_coefs, (0.5, 0.5))
-        self.assertTrue(repn.linear_vars[0] is m.v2[1, 1])
-        self.assertTrue(repn.linear_vars[1] is m.v2[1, 0])
+        repn = visitor.walk_expression(m.int1.expr)
+        self.assertEqual(len(repn.linear), 2)
+        self.assertIn(id(m.v[1]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v[1])], 0.5)
+        self.assertIn(id(m.v[0]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v[0])], 0.5)
 
-        repn = generate_standard_repn(m.int4.expr)
-        self.assertEqual(repn.linear_coefs, (1.25, 1.25, 1.25, 1.25))
-        self.assertTrue(repn.linear_vars[0] is m.v3[1, 10])
-        self.assertTrue(repn.linear_vars[1] is m.v3[0, 10])
-        self.assertTrue(repn.linear_vars[2] is m.v3[1, 5])
-        self.assertTrue(repn.linear_vars[3] is m.v3[0, 5])
+        repn = visitor.walk_expression(m.int2[1].expr)
+        self.assertEqual(len(repn.linear), 2)
+        self.assertIn(id(m.v2[1, 1]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v2[1, 1])], 0.5)
+        self.assertIn(id(m.v2[1, 0]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v2[1, 0])], 0.5)
+
+        repn = visitor.walk_expression(m.int4.expr)
+        self.assertEqual(len(repn.linear), 4)
+        self.assertIn(id(m.v3[1, 10]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v3[1, 10])], 1.25)
+        self.assertIn(id(m.v3[0, 10]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v3[0, 10])], 1.25)
+        self.assertIn(id(m.v3[1, 5]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v3[1, 5])], 1.25)
+        self.assertIn(id(m.v3[0, 5]), repn.linear)
+        self.assertEqual(repn.linear[id(m.v3[0, 5])], 1.25)
 
     # test invalid declarations
     def test_invalid(self):

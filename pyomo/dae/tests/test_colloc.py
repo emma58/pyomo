@@ -14,7 +14,8 @@ from pyomo.environ import Var, Set, ConcreteModel, TransformationFactory, pyomo
 from pyomo.dae import ContinuousSet, DerivativeVar
 from pyomo.dae.diffvar import DAE_Error
 
-from pyomo.repn import generate_standard_repn
+from pyomo.repn.linear import LinearRepnVisitor
+from pyomo.repn.util import OrderedVarRecorder
 
 from io import StringIO
 
@@ -27,10 +28,7 @@ exdir = normpath(join(currdir, '..', '..', '..', 'examples', 'dae'))
 
 
 def repn_to_rounded_dict(repn, digits):
-    temp = dict()
-    for i, v in enumerate(repn.linear_vars):
-        temp[id(v)] = round(repn.linear_coefs[i], digits)
-    return temp
+    return {vid: round(coef, digits) for vid, coef in repn.linear.items()}
 
 
 class TestCollocation(unittest.TestCase):
@@ -100,7 +98,8 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[2.0]): -2.5,
         }
 
-        repn = generate_standard_repn(m.dv1_disc_eq[2.0].body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.dv1_disc_eq[2.0].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -112,7 +111,7 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[4.0]): -2.5,
         }
 
-        repn = generate_standard_repn(m.dv1_disc_eq[4.0].body)
+        repn = visitor.walk_expression(m.dv1_disc_eq[4.0].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -139,7 +138,8 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[5.0]): -0.12,
         }
 
-        repn = generate_standard_repn(m.dv1dt2_disc_eq[5.0].body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.dv1dt2_disc_eq[5.0].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -150,7 +150,7 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[10]): -0.12,
         }
 
-        repn = generate_standard_repn(m.dv1dt2_disc_eq[10.0].body)
+        repn = visitor.walk_expression(m.dv1dt2_disc_eq[10.0].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -231,7 +231,8 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[3.774597]): -0.36374,
         }
 
-        repn = generate_standard_repn(m.dv1_disc_eq[3.0].body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.dv1_disc_eq[3.0].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -243,7 +244,7 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[5.774597]): -0.36374,
         }
 
-        repn = generate_standard_repn(m.dv1_disc_eq[5.0].body)
+        repn = visitor.walk_expression(m.dv1_disc_eq[5.0].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -272,7 +273,8 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[3.943376]): -0.17569,
         }
 
-        repn = generate_standard_repn(m.dv1dt2_disc_eq[1.056624].body)
+        visitor = LinearRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        repn = visitor.walk_expression(m.dv1dt2_disc_eq[1.056624].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
@@ -283,7 +285,7 @@ class TestCollocation(unittest.TestCase):
             id(m.v1[8.943376]): -0.17569,
         }
 
-        repn = generate_standard_repn(m.dv1dt2_disc_eq[6.056624].body)
+        repn = visitor.walk_expression(m.dv1dt2_disc_eq[6.056624].body)
         repn_gen = repn_to_rounded_dict(repn, 5)
         self.assertEqual(repn_baseline, repn_gen)
 
