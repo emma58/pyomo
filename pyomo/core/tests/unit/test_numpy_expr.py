@@ -78,7 +78,9 @@ class TestNumPy(unittest.TestCase):
         )
         # model.pprint()
 
-        visitor = QuadraticRepnVisitor({}, var_recorder=OrderedVarRecorder({}, {}, None))
+        visitor = QuadraticRepnVisitor(
+            {}, var_recorder=OrderedVarRecorder({}, {}, None)
+        )
         repn = visitor.walk_expression(model.error.expr)
         self.assertIsNone(repn.nonlinear)
         self.assertEqual(len(repn.quadratic), 3)
