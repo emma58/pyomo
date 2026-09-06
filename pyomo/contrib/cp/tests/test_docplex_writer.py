@@ -10,17 +10,9 @@
 import pyomo.common.unittest as unittest
 from pyomo.common.fileutils import Executable
 
-from pyomo.contrib.cp import (
-    IntervalVar,
-    SequenceVar,
-    Pulse,
-    Step,
-    AlwaysIn,
-    first_in_sequence,
-    predecessor_to,
-    no_overlap,
-)
+from pyomo.contrib.cp import IntervalVar
 from pyomo.contrib.cp.repn.docplex_writer import LogicalToDoCplex
+from pyomo.contrib.cp.tests import common_tests as ct
 from pyomo.environ import (
     all_different,
     count_if,
@@ -30,7 +22,6 @@ from pyomo.environ import (
     Integers,
     Param,
     LogicalConstraint,
-    implies,
     value,
     TerminationCondition,
     Constraint,
@@ -130,80 +121,12 @@ class TestWriteModel(unittest.TestCase):
 @unittest.skipIf(not cpoptimizer_available, "CP optimizer is not available")
 class TestSolveModel(unittest.TestCase):
     def test_solve_scheduling_problem(self):
-        m = ConcreteModel()
-        m.eat_cookie = IntervalVar([0, 1], length=8, end=(0, 24), optional=False)
-        m.eat_cookie[0].start_time.bounds = (0, 4)
-        m.eat_cookie[1].start_time.bounds = (5, 20)
+        results = ct.check_solve_mice_and_cookies_model(self, 'cp_optimizer')
 
-        m.read_story = IntervalVar(start=(15, 24), end=(0, 24), length=(2, 3))
-        m.sweep_crumbs = IntervalVar(optional=True, length=1, end=(0, 24))
-        m.do_dishes = IntervalVar(optional=True, length=5, end=(0, 24))
-
-        m.num_crumbs = Var(domain=Integers, bounds=(0, 100))
-
-        ## Precedence
-        m.cookies = LogicalConstraint(
-            expr=m.eat_cookie[1].start_time.after(m.eat_cookie[0].end_time)
-        )
-        m.cookies_imply_crumbs = LogicalConstraint(
-            expr=m.eat_cookie[0].is_present.implies(m.num_crumbs == 5)
-        )
-        m.good_mouse = LogicalConstraint(
-            expr=implies(m.num_crumbs >= 3, m.sweep_crumbs.is_present)
-        )
-        m.sweep_after = LogicalConstraint(
-            expr=m.sweep_crumbs.start_time.after(m.eat_cookie[1].end_time)
-        )
-
-        m.mice_occupied = (
-            sum(Pulse((m.eat_cookie[i], 1)) for i in range(2))
-            + Step(m.read_story.start_time, 1)
-            + Pulse((m.sweep_crumbs, 1))
-            - Pulse((m.do_dishes, 1))
-        )
-
-        # Must keep exactly one mouse occupied for a 25-hour day
-        m.treat_your_mouse_well = LogicalConstraint(
-            expr=AlwaysIn(cumul_func=m.mice_occupied, bounds=(1, 1), times=(0, 24))
-        )
-
-        results = SolverFactory('cp_optimizer').solve(
-            m, symbolic_solver_labels=True, tee=True
-        )
-
-        self.assertEqual(
-            results.solver.termination_condition, TerminationCondition.feasible
-        )
-
-        # check solution
-        self.assertTrue(value(m.eat_cookie[0].is_present))
-        self.assertTrue(value(m.eat_cookie[1].is_present))
-        # That means there were crumbs:
-        self.assertEqual(value(m.num_crumbs), 5)
-        # So there was sweeping:
-        self.assertTrue(value(m.sweep_crumbs.is_present))
-
-        # start with the first cookie:
-        self.assertEqual(value(m.eat_cookie[0].start_time), 0)
-        self.assertEqual(value(m.eat_cookie[0].end_time), 8)
-        self.assertEqual(value(m.eat_cookie[0].length), 8)
-        # Proceed to second cookie:
-        self.assertEqual(value(m.eat_cookie[1].start_time), 8)
-        self.assertEqual(value(m.eat_cookie[1].end_time), 16)
-        self.assertEqual(value(m.eat_cookie[1].length), 8)
-        # Sweep
-        self.assertEqual(value(m.sweep_crumbs.start_time), 16)
-        self.assertEqual(value(m.sweep_crumbs.end_time), 17)
-        self.assertEqual(value(m.sweep_crumbs.length), 1)
-        # End with read story, as it keeps exactly one mouse occupied
-        # indefinitely (in this particular retelling)
-        self.assertEqual(value(m.read_story.start_time), 17)
-
-        # Since doing the dishes actually *bores* a mouse, we leave the dishes
-        # in the sink
-        self.assertFalse(value(m.do_dishes.is_present))
-
-        self.assertEqual(results.problem.number_of_objectives, 0)
+        # docplex-specific problem-size stats (these aren't something we'd
+        # expect to match across backends, since different writers encode
+        # the same model with different numbers of native variables/
+        # constraints)
         self.assertEqual(results.problem.number_of_constraints, 5)
         self.assertEqual(results.problem.number_of_integer_vars, 1)
         self.assertEqual(results.problem.number_of_interval_vars, 5)
@@ -400,23 +323,4 @@ class TestSolveModel(unittest.TestCase):
         self.assertEqual(value(m.obj), perfect)
 
     def test_scheduling_with_sequence_vars(self):
-        m = ConcreteModel()
-        m.Steps = Set(initialize=[1, 2, 3])
-
-        def length_rule(m, j):
-            return 2 * j
-
-        m.i = IntervalVar(m.Steps, start=(0, 12), end=(0, 12), length=length_rule)
-        m.seq = SequenceVar(expr=[m.i[j] for j in m.Steps])
-        m.first = LogicalConstraint(expr=first_in_sequence(m.i[1], m.seq))
-        m.seq_order1 = LogicalConstraint(expr=predecessor_to(m.i[1], m.i[2], m.seq))
-        m.seq_order2 = LogicalConstraint(expr=predecessor_to(m.i[2], m.i[3], m.seq))
-        m.no_ovlerpa = LogicalConstraint(expr=no_overlap(m.seq))
-
-        results = SolverFactory('cp_optimizer').solve(m)
-        self.assertEqual(
-            results.solver.termination_condition, TerminationCondition.feasible
-        )
-        self.assertEqual(value(m.i[1].start_time), 0)
-        self.assertEqual(value(m.i[2].start_time), 2)
-        self.assertEqual(value(m.i[3].start_time), 6)
+        ct.check_solve_three_step_sequence_model(self, 'cp_optimizer')

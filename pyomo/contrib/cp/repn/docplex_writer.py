@@ -9,13 +9,11 @@
 
 from pyomo.common.dependencies import attempt_import
 
-import itertools
 import logging
-from operator import attrgetter
 
 from pyomo.common import DeveloperError
 from pyomo.common.config import ConfigDict, ConfigValue
-from pyomo.common.collections import ComponentMap
+from pyomo.common.deprecation import deprecated
 from pyomo.common.fileutils import Executable
 
 from pyomo.contrib.cp import IntervalVar
@@ -59,18 +57,23 @@ from pyomo.contrib.cp.scheduling_expr.step_function_expressions import (
     NegatedStepFunction,
 )
 
+from pyomo.contrib.cp.repn.util import (
+    _GENERAL,
+    CPExpressionVisitorBase,
+    before_named_expression as _before_named_expression,
+    categorize_cp_model,
+    getitem_arg_domain,
+    handle_named_expression_node as _handle_named_expression_node,
+)
 from pyomo.core.base import (
     minimize,
     maximize,
     SortComponents,
-    Block,
     Objective,
     Constraint,
     Var,
-    Param,
     BooleanVar,
     LogicalConstraint,
-    Suffix,
     value,
 )
 from pyomo.core.base.boolean_var import (
@@ -82,17 +85,9 @@ from pyomo.core.base.expression import ScalarExpression, ExpressionData
 from pyomo.core.base.param import IndexedParam, ScalarParam, ParamData
 from pyomo.core.base.var import ScalarVar, VarData, IndexedVar
 import pyomo.core.expr as EXPR
-from pyomo.core.expr.visitor import StreamBasedExpressionVisitor, identify_variables
-from pyomo.core.base import Set, RangeSet
 from pyomo.core.base.set import SetProduct
-from pyomo.repn.util import ExitNodeDispatcher
+from pyomo.repn.util import ExitNodeDispatcher, categorize_valid_components
 from pyomo.opt import WriterFactory, SolverFactory, TerminationCondition, SolverResults
-
-### FIXME: Remove the following as soon as non-active components no
-### longer report active==True
-from pyomo.network import Port
-
-###
 
 
 def _finalize_docplex(module, available):
@@ -125,9 +120,8 @@ docplex_available = _cp_model & _cp_solver
 logger = logging.getLogger('pyomo.contrib.cp')
 
 
-# These are things that don't need special handling:
-class _GENERAL:
-    pass
+# _GENERAL (things that don't need special handling) is defined in
+# repn/util.py and shared with the other CP writer(s).
 
 
 # These are operations that need to be deferred sometimes, usually because of
@@ -188,24 +182,6 @@ class _EQUIVALENT_TO:
     pass
 
 
-def _check_var_domain(visitor, node, var):
-    if not var.domain.isdiscrete():
-        # Note: in the context of the current writer, this should be unreachable
-        # because we can't handle non-discrete variables at all, so there will
-        # already be errors handling the children of this expression.
-        raise ValueError(
-            "Variable indirection '%s' contains argument '%s', "
-            "which is not a discrete variable" % (node, var)
-        )
-    bnds = var.bounds
-    if None in bnds:
-        raise ValueError(
-            "Variable indirection '%s' contains argument '%s', "
-            "which is not restricted to a finite discrete domain" % (node, var)
-        )
-    return var.domain & RangeSet(*bnds)
-
-
 def _handle_getitem(visitor, node, *data):
     # First we need to determine the range for each of the the
     # arguments.  They can be:
@@ -213,64 +189,23 @@ def _handle_getitem(visitor, node, *data):
     #  - simple values
     #  - docplex integer variables
     #  - docplex integer expressions
+    #
+    # Determining each argument's domain (and, where relevant, the (min, max,
+    # step) "scale" of that domain) is solver-agnostic, so it's implemented
+    # once, in repn/util.py, and shared with the other CP writer(s).
     arg_domain = []
     arg_scale = []
     expr = 0
     mult = 1
     # Note: skipping the first argument: that should be the IndexedComponent
     for i, arg in enumerate(data[1:]):
-        if arg[1].__class__ in EXPR.native_types:
-            arg_set = Set(initialize=[arg[1]])
-            arg_set.construct()
-            arg_domain.append(arg_set)
-            arg_scale.append(None)
-        elif node.arg(i + 1).is_expression_type():
-            # This argument is an expression.  It could be any
-            # combination of any number of integer variables, as long as
-            # the resulting expression is still an IntExpression.  We
-            # can't really rely on FBBT here, because we need to know
-            # that the expression returns values in a regular domain
-            # (i.e., the set of possible values has to have a start,
-            # end, and finite, regular step).
-            #
-            # We will brute force it: go through every combination of
-            # every variable and record the resulting expression value.
-            arg_expr = node.arg(i + 1)
-            var_list = list(identify_variables(arg_expr, include_fixed=False))
-            var_domain = [list(_check_var_domain(visitor, node, v)) for v in var_list]
-            arg_vals = set()
-            for var_vals in itertools.product(*var_domain):
-                for v, val in zip(var_list, var_vals):
-                    v.set_value(val)
-                arg_vals.add(arg_expr())
-            # Now that we have all the values that define the domain of
-            # the result of the expression, stick them into a set and
-            # rely on the Set infrastructure to calculate (and verify)
-            # the interval.
-            arg_set = Set(initialize=sorted(arg_vals))
-            arg_set.construct()
-            interval = arg_set.get_interval()
-            if not interval[2]:
-                raise ValueError(
-                    "Variable indirection '%s' contains argument expression "
-                    "'%s' that does not evaluate to a simple discrete set"
-                    % (node, arg_expr)
-                )
-            arg_domain.append(arg_set)
-            arg_scale.append(interval)
-        else:
-            # This had better be a simple variable over a regular
-            # discrete domain.  When we add support for categorical
-            # variables, we will need to ensure that the categoricals
-            # have already been converted to simple integer domains by
-            # this point.
-            var = node.arg(i + 1)
-            arg_domain.append(_check_var_domain(visitor, node, var))
-            arg_scale.append(arg_domain[-1].get_interval())
+        arg_set, scale = getitem_arg_domain(node, i, arg[1])
+        arg_domain.append(arg_set)
+        arg_scale.append(scale)
         # Build the expression that maps arguments to GetItem() to a
         # position in the elements list
-        if arg_scale[-1] is not None:
-            _min, _max, _step = arg_scale[-1]
+        if scale is not None:
+            _min, _max, _step = scale
             # ESJ: Have to use integer division here because otherwise, later,
             # when we construct the element constraint, docplex won't believe
             # the index is an integer expression.
@@ -285,7 +220,7 @@ def _handle_getitem(visitor, node, *data):
             # lower and upper bounds were part of the step.  That
             # *should* be the case for Set, but I am suffering from a
             # crisis of confidence at the moment.
-            mult *= len(arg_domain[-1])
+            mult *= len(arg_set)
     # Get the list of all elements selectable by the argument
     # expression(s); fill in new variables for any indices allowable by
     # the argument expression(s) but not present in the IndexedComponent
@@ -367,7 +302,7 @@ def _before_boolean_var(visitor, child):
         # return a Boolean expression (in docplex land) so this can be used as
         # an argument to logical expressions later
         visitor.var_map[_id] = cpx_var == 1
-        visitor.pyomo_to_docplex[child] = cpx_var
+        visitor.pyomo_to_native[child] = cpx_var
     return False, (_GENERAL, visitor.var_map[_id])
 
 
@@ -380,7 +315,7 @@ def _before_indexed_boolean_var(visitor, child):
         cpx_var = cp.binary_var(name=v.name if visitor.symbolic_solver_labels else None)
         visitor.cpx.add(cpx_var)
         visitor.var_map[id(v)] = cpx_var == 1
-        visitor.pyomo_to_docplex[v] = cpx_var
+        visitor.pyomo_to_native[v] = cpx_var
         cpx_vars[i] = cpx_var == 1
     return False, (_GENERAL, cpx_vars)
 
@@ -431,7 +366,7 @@ def _before_var(visitor, child):
         )
         visitor.cpx.add(cpx_var)
         visitor.var_map[_id] = cpx_var
-        visitor.pyomo_to_docplex[child] = cpx_var
+        visitor.pyomo_to_native[child] = cpx_var
     return False, (_GENERAL, visitor.var_map[_id])
 
 
@@ -443,21 +378,9 @@ def _before_indexed_var(visitor, child):
         )
         visitor.cpx.add(cpx_var)
         visitor.var_map[id(v)] = cpx_var
-        visitor.pyomo_to_docplex[v] = cpx_var
+        visitor.pyomo_to_native[v] = cpx_var
         cpx_vars[i] = cpx_var
     return False, (_GENERAL, cpx_vars)
-
-
-def _handle_named_expression_node(visitor, node, expr):
-    visitor._named_expressions[id(node)] = expr[1]
-    return expr
-
-
-def _before_named_expression(visitor, child):
-    _id = id(child)
-    if _id not in visitor._named_expressions:
-        return True, None
-    return False, (_GENERAL, visitor._named_expressions[_id])
 
 
 def _create_docplex_interval_var(visitor, interval_var):
@@ -466,7 +389,7 @@ def _create_docplex_interval_var(visitor, interval_var):
     nm = interval_var.name if visitor.symbolic_solver_labels else None
     cpx_interval_var = cp.interval_var(name=nm)
     visitor.var_map[id(interval_var)] = cpx_interval_var
-    visitor.pyomo_to_docplex[interval_var] = cpx_interval_var
+    visitor.pyomo_to_native[interval_var] = cpx_interval_var
 
     # Figure out if it exists
     if interval_var.is_present.fixed and not interval_var.is_present.value:
@@ -546,7 +469,7 @@ def _before_sequence_var(visitor, child):
     if _id not in visitor.var_map:
         cpx_seq_var = _get_docplex_sequence_var(visitor, child)
         visitor.var_map[_id] = cpx_seq_var
-        visitor.pyomo_to_docplex[child] = cpx_seq_var
+        visitor.pyomo_to_native[child] = cpx_seq_var
 
     return False, (_GENERAL, visitor.var_map[_id])
 
@@ -556,7 +479,7 @@ def _before_interval_var(visitor, child):
     if _id not in visitor.var_map:
         cpx_interval_var = _get_docplex_interval_var(visitor, child)
         visitor.var_map[_id] = cpx_interval_var
-        visitor.pyomo_to_docplex[child] = cpx_interval_var
+        visitor.pyomo_to_native[child] = cpx_interval_var
 
     return False, (_GENERAL, visitor.var_map[_id])
 
@@ -566,7 +489,7 @@ def _before_indexed_interval_var(visitor, child):
     for i, v in child.items():
         cpx_interval_var = _get_docplex_interval_var(visitor, v)
         visitor.var_map[id(v)] = cpx_interval_var
-        visitor.pyomo_to_docplex[v] = cpx_interval_var
+        visitor.pyomo_to_native[v] = cpx_interval_var
         cpx_vars[i] = cpx_interval_var
     return False, (_GENERAL, cpx_vars)
 
@@ -1040,12 +963,12 @@ _operator_handles = {
 }
 
 
-class LogicalToDoCplex(StreamBasedExpressionVisitor):
+class LogicalToDoCplex(CPExpressionVisitorBase):
     exit_node_dispatcher = ExitNodeDispatcher(_operator_handles)
     # NOTE: Because of indirection, we can encounter indexed Params and Vars in
     # expressions
 
-    _var_handles = {
+    var_handles = {
         IntervalVarStartTime: _before_interval_var_start_time,
         IntervalVarEndTime: _before_interval_var_end_time,
         IntervalVarLength: _before_interval_var_length,
@@ -1067,62 +990,39 @@ class LogicalToDoCplex(StreamBasedExpressionVisitor):
         ScalarParam: _before_param,
         ParamData: _before_param,
     }
+    step_function_handles = _step_function_handles
 
     def __init__(self, cpx_model, symbolic_solver_labels=False):
+        super().__init__(symbolic_solver_labels=symbolic_solver_labels)
         self.cpx = cpx_model
-        self.symbolic_solver_labels = symbolic_solver_labels
-        self._process_node = self._process_node_bx
-
-        self.var_map = {}
-        self._named_expressions = {}
-        self.pyomo_to_docplex = ComponentMap()
-
-    def initializeWalker(self, expr):
-        expr, src, src_idx = expr
-        walk, result = self.beforeChild(None, expr, 0)
-        if not walk:
-            return False, result
-        return True, expr
-
-    def beforeChild(self, node, child, child_idx):
-        # Return native types
-        if child.__class__ in EXPR.native_types:
-            return False, (_GENERAL, child)
-
-        if child.__class__ in step_func_expression_types:
-            return _step_function_handles[child.__class__](self, child)
-
-        # Convert Vars Logical vars to docplex equivalents
-        if not child.is_expression_type() or child.is_named_expression_type():
-            return self._var_handles[child.__class__](self, child)
-
-        return True, None
-
-    def exitNode(self, node, data):
-        return self.exit_node_dispatcher[node.__class__](self, node, *data)
-
-    finalizeResult = None
 
 
-# [ESJ 11/7/22]: TODO: We should revisit this method in the future, as it is not
-# very efficient.
-def collect_valid_components(model, active=True, sort=None, valid=set(), targets=set()):
-    assert active in (True, None)
-    unrecognized = {}
-    components = {k: [] for k in targets}
-    for obj in model.component_data_objects(active=True, descend_into=True, sort=sort):
-        # HACK around #3045
-        if not hasattr(obj, 'ctype'):
-            continue
-        ctype = obj.ctype
-        if ctype in components:
-            components[ctype].append(obj)
-        elif ctype not in valid:
-            if ctype not in unrecognized:
-                unrecognized[ctype] = [obj]
-            else:
-                unrecognized[ctype].append(obj)
-
+@deprecated(
+    "collect_valid_components() is deprecated. Use "
+    "pyomo.repn.util.categorize_valid_components() instead. Note that its "
+    "component_map maps a component type to the *blocks* that contain "
+    "components of that type, not to the component data objects "
+    "themselves (as this function's 'components' return value did), so "
+    "callers need an additional loop over "
+    "block.component_data_objects(...) to recover a component-data list.",
+    version='6.10.2',
+)
+def collect_valid_components(model, active=True, sort=None, valid=None, targets=None):
+    if valid is None:
+        valid = set()
+    if targets is None:
+        targets = set()
+    component_map, unrecognized = categorize_valid_components(
+        model, active=active, sort=sort, valid=valid, targets=targets
+    )
+    components = {ctype: [] for ctype in targets}
+    for ctype, blocks in component_map.items():
+        for block in blocks:
+            components[ctype].extend(
+                block.component_data_objects(
+                    ctype, active=True, descend_into=False, sort=sort
+                )
+            )
     return components, unrecognized
 
 
@@ -1146,44 +1046,7 @@ class DocplexWriter:
     def write(self, model, **options):
         config = options.pop('config', self.config)(options)
 
-        components, unknown = collect_valid_components(
-            model,
-            active=True,
-            sort=SortComponents.deterministic,
-            valid={
-                Block,
-                Objective,
-                Constraint,
-                Var,
-                Param,
-                BooleanVar,
-                LogicalConstraint,
-                Suffix,
-                # FIXME: Non-active components should not report as Active
-                Set,
-                RangeSet,
-                Port,
-            },
-            targets={
-                Objective,
-                Constraint,
-                LogicalConstraint,
-                IntervalVar,
-                SequenceVar,
-            },
-        )
-        if unknown:
-            raise ValueError(
-                "The model ('%s') contains the following active components "
-                "that the docplex writer does not know how to process:\n\t%s"
-                % (
-                    model.name,
-                    "\n\t".join(
-                        "%s:\n\t\t%s" % (k, "\n\t\t".join(map(attrgetter('name'), v)))
-                        for k, v in unknown.items()
-                    ),
-                )
-            )
+        components = categorize_cp_model(model, sort=SortComponents.deterministic)
 
         cpx_model = cp.CpoModel()
         visitor = LogicalToDoCplex(
@@ -1242,7 +1105,7 @@ class DocplexWriter:
                 cpx_model.add(expr[1])
 
         # That's all, folks.
-        return cpx_model, visitor.pyomo_to_docplex
+        return cpx_model, visitor.pyomo_to_native
 
 
 @SolverFactory.register('cp_optimizer', doc='Direct interface to CPLEX CP Optimizer')
