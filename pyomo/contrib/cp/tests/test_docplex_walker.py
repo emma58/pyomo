@@ -98,9 +98,9 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
             expr[1].equals(cpx_x + cp.start_of(cpx_i) + cp.length_of(cpx_i2))
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], cpx_x)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], cpx_i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], cpx_i2)
+        self.assertIs(visitor.pyomo_to_native[m.x], cpx_x)
+        self.assertIs(visitor.pyomo_to_native[m.i], cpx_i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], cpx_i2)
 
     def test_write_subtraction(self):
         m = self.get_model()
@@ -117,8 +117,8 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(x + (-1 * a1)))
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.a[1]], a1)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.a[1]], a1)
 
     def test_write_product(self):
         m = self.get_model()
@@ -135,8 +135,8 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(x * (a1 + 1)))
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.a[1]], a1)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.a[1]], a1)
 
     def test_write_floating_point_division(self):
         m = self.get_model()
@@ -153,8 +153,8 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(x / (a1 + 1)))
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.a[1]], a1)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.a[1]], a1)
 
     def test_write_power_expression(self):
         m = self.get_model()
@@ -167,7 +167,7 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
         # .equals checks the equality of two expressions in docplex.
         self.assertTrue(expr[1].equals(cpx_x**2))
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], cpx_x)
+        self.assertIs(visitor.pyomo_to_native[m.x], cpx_x)
 
     def test_write_absolute_value_expression(self):
         m = self.get_model()
@@ -182,7 +182,7 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.abs(a1) + 1))
 
-        self.assertIs(visitor.pyomo_to_docplex[m.a[1]], a1)
+        self.assertIs(visitor.pyomo_to_native[m.a[1]], a1)
 
     def test_write_min_expression(self):
         m = self.get_model()
@@ -195,7 +195,7 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(expr[1].equals(cp.min(a[i] for i in m.I)))
 
@@ -210,7 +210,7 @@ class TestCPExpressionWalker_AlgebraicExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(expr[1].equals(cp.max(a[i] for i in m.I)))
 
@@ -279,8 +279,8 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
         # map by checking that we can build an expression that is the same as b
         # (because b is actually "b == 1" since docplex doesn't believe in
         # Booleans)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertTrue(b2b.equals(visitor.pyomo_to_docplex[m.b2['b']] == 1))
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertTrue(b2b.equals(visitor.pyomo_to_native[m.b2['b']] == 1))
 
     def test_write_logical_or(self):
         m = self.get_model()
@@ -295,8 +295,8 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.logical_or(b, cp.presence_of(i))))
 
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
     def test_write_xor(self):
         m = self.get_model()
@@ -315,8 +315,8 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             expr[1].equals(cp.count([b, cp.less_or_equal(5, cp.start_of(i22))], 1) == 1)
         )
 
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
 
     def test_write_logical_not(self):
         m = self.get_model()
@@ -329,7 +329,7 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.logical_not(b2a)))
 
-        self.assertTrue(b2a.equals(visitor.pyomo_to_docplex[m.b2['a']] == 1))
+        self.assertTrue(b2a.equals(visitor.pyomo_to_native[m.b2['a']] == 1))
 
     def test_equivalence(self):
         m = self.get_model()
@@ -344,8 +344,8 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.equal(cp.logical_not(b2a), b)))
 
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertTrue(b2a.equals(visitor.pyomo_to_docplex[m.b2['a']] == 1))
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertTrue(b2a.equals(visitor.pyomo_to_native[m.b2['a']] == 1))
 
     def test_equality(self):
         m = self.get_model()
@@ -362,8 +362,8 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.if_then(b, cp.equal(a3, 4))))
 
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertIs(visitor.pyomo_to_docplex[m.a[3]], a3)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.a[3]], a3)
 
     def test_inequality(self):
         m = self.get_model()
@@ -382,9 +382,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.if_then(b, cp.less_or_equal(a4, a3))))
 
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertIs(visitor.pyomo_to_docplex[m.a[3]], a3)
-        self.assertIs(visitor.pyomo_to_docplex[m.a[4]], a4)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.a[3]], a3)
+        self.assertIs(visitor.pyomo_to_native[m.a[4]], a4)
 
     def test_ranged_inequality(self):
         m = self.get_model()
@@ -416,9 +416,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.if_then(b, a3 != a4)))
 
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
-        self.assertIs(visitor.pyomo_to_docplex[m.a[3]], a3)
-        self.assertIs(visitor.pyomo_to_docplex[m.a[4]], a4)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.a[3]], a3)
+        self.assertIs(visitor.pyomo_to_native[m.a[4]], a4)
 
     def test_exactly_expression(self):
         m = self.get_model()
@@ -432,7 +432,7 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(
             expr[1].equals(cp.equal(cp.count([a[i] == 4 for i in m.I], 1), 3))
@@ -450,7 +450,7 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(
             expr[1].equals(
@@ -470,7 +470,7 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(
             expr[1].equals(cp.less_or_equal(cp.count([a[i] == 4 for i in m.I], 1), 3))
@@ -489,7 +489,7 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(expr[1].equals(cp.all_diff(a[i] for i in m.I)))
 
@@ -506,7 +506,7 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
         for i in m.I:
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertTrue(expr[1].equals(cp.count((a[i] == i for i in m.I), 1) == 5))
 
@@ -525,8 +525,8 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
 
         self.assertTrue(expr[1].equals(cp.if_then(cp.presence_of(i), a1 == 5)))
 
-        self.assertIs(visitor.pyomo_to_docplex[m.a[1]], a1)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.a[1]], a1)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
     def test_interval_var_is_present_indirection(self):
         m = self.get_model()
@@ -561,10 +561,10 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.a[1]], a1)
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.a[1]], a1)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
 
     def test_is_present_indirection_and_length(self):
         m = self.get_model()
@@ -600,9 +600,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
 
     def test_handle_getattr_lor(self):
         m = self.get_model()
@@ -635,10 +635,10 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
 
     def test_handle_getattr_xor(self):
         m = self.get_model()
@@ -678,10 +678,10 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
 
     def test_handle_getattr_equivalent_to(self):
         m = self.get_model()
@@ -714,10 +714,10 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
 
     def test_logical_or_on_indirection(self):
         m = ConcreteModel()
@@ -748,10 +748,10 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertTrue(b3.equals(visitor.pyomo_to_docplex[m.b[3]] == 1))
-        self.assertTrue(b4.equals(visitor.pyomo_to_docplex[m.b[4]] == 1))
-        self.assertTrue(b5.equals(visitor.pyomo_to_docplex[m.b[5]] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertTrue(b3.equals(visitor.pyomo_to_native[m.b[3]] == 1))
+        self.assertTrue(b4.equals(visitor.pyomo_to_native[m.b[4]] == 1))
+        self.assertTrue(b5.equals(visitor.pyomo_to_native[m.b[5]] == 1))
 
     def test_logical_xor_on_indirection(self):
         m = ConcreteModel()
@@ -787,9 +787,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             )
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertTrue(b3.equals(visitor.pyomo_to_docplex[m.b[3]] == 1))
-        self.assertTrue(b5.equals(visitor.pyomo_to_docplex[m.b[5]] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertTrue(b3.equals(visitor.pyomo_to_native[m.b[3]] == 1))
+        self.assertTrue(b5.equals(visitor.pyomo_to_native[m.b[5]] == 1))
 
     def test_using_precedence_expr_as_boolean_expr(self):
         m = self.get_model()
@@ -810,9 +810,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             expr[1].equals(cp.if_then(b, cp.start_of(i22) + 0 <= cp.start_of(i21)))
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
 
     def test_using_precedence_expr_as_boolean_expr_positive_delay(self):
         m = self.get_model()
@@ -833,9 +833,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             expr[1].equals(cp.if_then(b, cp.start_of(i22) + 4 <= cp.start_of(i21)))
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
 
     def test_using_precedence_expr_as_boolean_expr_negative_delay(self):
         m = self.get_model()
@@ -856,9 +856,9 @@ class TestCPExpressionWalker_LogicalExpressions(CommonTest):
             expr[1].equals(cp.if_then(b, cp.start_of(i22) + (-3) == cp.start_of(i21)))
         )
 
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertTrue(b.equals(visitor.pyomo_to_docplex[m.b] == 1))
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertTrue(b.equals(visitor.pyomo_to_native[m.b] == 1))
 
 
 @unittest.skipIf(not docplex_available, "docplex is not available")
@@ -873,7 +873,7 @@ class TestCPExpressionWalker_IntervalVars(CommonTest):
         i = visitor.var_map[id(m.i)]
         # Check that docplex knows it's optional
         self.assertTrue(i.is_optional())
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         # Now fix it to absent
         m.i.is_present.fix(False)
@@ -884,10 +884,10 @@ class TestCPExpressionWalker_IntervalVars(CommonTest):
 
         self.assertIn(id(m.i2[1]), visitor.var_map)
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
         self.assertIn(id(m.i), visitor.var_map)
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         # Check that we passed on the presence info to docplex
         self.assertTrue(i.is_absent())
@@ -906,7 +906,7 @@ class TestCPExpressionWalker_IntervalVars(CommonTest):
 
         self.assertIn(id(m.i), visitor.var_map)
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(i.is_optional())
         self.assertEqual(i.get_length(), (4, 4))
@@ -924,7 +924,7 @@ class TestCPExpressionWalker_IntervalVars(CommonTest):
 
         self.assertIn(id(m.i), visitor.var_map)
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertFalse(i.is_optional())
         self.assertEqual(i.get_start(), (3, 3))
@@ -942,14 +942,14 @@ class TestCPExpressionWalker_SequenceVars(CommonTest):
     def check_scalar_sequence_var(self, m, visitor):
         self.assertIn(id(m.seq), visitor.var_map)
         seq = visitor.var_map[id(m.seq)]
-        self.assertIs(visitor.pyomo_to_docplex[m.seq], seq)
+        self.assertIs(visitor.pyomo_to_native[m.seq], seq)
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
 
         ivs = seq.get_interval_variables()
         self.assertEqual(len(ivs), 3)
@@ -1016,8 +1016,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.start_before_start(i, i21, 0)))
 
@@ -1032,8 +1032,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.start_before_end(i, i21, 3)))
 
@@ -1048,8 +1048,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.end_before_start(i, i21, -2)))
 
@@ -1064,8 +1064,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.end_before_end(i, i21, 6)))
 
@@ -1080,8 +1080,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.start_at_start(i, i21, 0)))
 
@@ -1096,8 +1096,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.start_at_end(i, i21, 3)))
 
@@ -1112,8 +1112,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.end_at_start(i, i21, -2)))
 
@@ -1128,8 +1128,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
 
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
 
         self.assertTrue(expr[1].equals(cp.end_at_end(i, i21, 6)))
 
@@ -1154,10 +1154,10 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(
@@ -1184,10 +1184,10 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(
@@ -1215,10 +1215,10 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(
@@ -1246,10 +1246,10 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(
@@ -1275,10 +1275,10 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(
@@ -1304,10 +1304,10 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(
@@ -1342,13 +1342,13 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i33 = visitor.var_map[id(m.i3[1, 3])]
         i34 = visitor.var_map[id(m.i3[1, 4])]
         i35 = visitor.var_map[id(m.i3[1, 5])]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 3]], i33)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 4]], i34)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 5]], i35)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 3]], i33)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 4]], i34)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 5]], i35)
 
         self.assertTrue(
             expr[1].equals(
@@ -1386,13 +1386,13 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i33 = visitor.var_map[id(m.i3[1, 3])]
         i34 = visitor.var_map[id(m.i3[1, 4])]
         i35 = visitor.var_map[id(m.i3[1, 5])]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 3]], i33)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 4]], i34)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 5]], i35)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 3]], i33)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 4]], i34)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 5]], i35)
 
         self.assertTrue(
             expr[1].equals(
@@ -1428,13 +1428,13 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         i33 = visitor.var_map[id(m.i3[1, 3])]
         i34 = visitor.var_map[id(m.i3[1, 4])]
         i35 = visitor.var_map[id(m.i3[1, 5])]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 3]], i33)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 4]], i34)
-        self.assertIs(visitor.pyomo_to_docplex[m.i3[1, 5]], i35)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 3]], i33)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 4]], i34)
+        self.assertIs(visitor.pyomo_to_native[m.i3[1, 5]], i35)
 
         self.assertTrue(
             expr[1].equals(
@@ -1482,8 +1482,8 @@ class TestCPExpressionWalker_PrecedenceExpressions(CommonTest):
         self.assertIn(id(m.a), visitor.var_map)
         x = visitor.var_map[id(m.x)]
         a = visitor.var_map[id(m.a)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
-        self.assertIs(visitor.pyomo_to_docplex[m.a], a)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.a], a)
 
         self.assertTrue(expr[1].equals(cp.element([2, 4, 6], 0 + 1 * (x - 1) // 2) / a))
 
@@ -1515,7 +1515,7 @@ class TestCPExpressionWalker_HierarchicalScheduling(CommonTest):
 
         self.assertIn(id(m.whole_enchilada), visitor.var_map)
         whole_enchilada = visitor.var_map[id(m.whole_enchilada)]
-        self.assertIs(visitor.pyomo_to_docplex[m.whole_enchilada], whole_enchilada)
+        self.assertIs(visitor.pyomo_to_native[m.whole_enchilada], whole_enchilada)
 
         iv = {}
         for i in [1, 2, 3]:
@@ -1535,7 +1535,7 @@ class TestCPExpressionWalker_HierarchicalScheduling(CommonTest):
 
         self.assertIn(id(m.whole_enchilada), visitor.var_map)
         whole_enchilada = visitor.var_map[id(m.whole_enchilada)]
-        self.assertIs(visitor.pyomo_to_docplex[m.whole_enchilada], whole_enchilada)
+        self.assertIs(visitor.pyomo_to_native[m.whole_enchilada], whole_enchilada)
 
         iv = {}
         for i in [1, 2, 3]:
@@ -1555,7 +1555,7 @@ class TestCPExpressionWalker_HierarchicalScheduling(CommonTest):
 
         self.assertIn(id(m.whole_enchilada), visitor.var_map)
         whole_enchilada = visitor.var_map[id(m.whole_enchilada)]
-        self.assertIs(visitor.pyomo_to_docplex[m.whole_enchilada], whole_enchilada)
+        self.assertIs(visitor.pyomo_to_native[m.whole_enchilada], whole_enchilada)
 
         iv = {}
         for i in [1, 2, 3]:
@@ -1588,9 +1588,9 @@ class TestCPExpressionWalker_CumulFuncExpressions(CommonTest):
         i = visitor.var_map[id(m.i)]
         i21 = visitor.var_map[id(m.i2[1])]
         i22 = visitor.var_map[id(m.i2[2])]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[1]], i21)
-        self.assertIs(visitor.pyomo_to_docplex[m.i2[2]], i22)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i2[1]], i21)
+        self.assertIs(visitor.pyomo_to_native[m.i2[2]], i22)
 
         self.assertTrue(
             expr[1].equals(
@@ -1618,7 +1618,7 @@ class TestCPExpressionWalker_CumulFuncExpressions(CommonTest):
         self.assertIn(id(m.i), visitor.var_map)
 
         i = visitor.var_map[id(m.i)]
-        self.assertIs(visitor.pyomo_to_docplex[m.i], i)
+        self.assertIs(visitor.pyomo_to_native[m.i], i)
 
         self.assertTrue(
             expr[1].equals(cp.always_in(cp.pulse(i, 3), interval=(0, 10), min=0, max=3))
@@ -1637,7 +1637,7 @@ class TestCPExpressionWalker_NamedExpressions(CommonTest):
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
 
         self.assertTrue(expr[1].equals(x**2 + 7))
 
@@ -1651,7 +1651,7 @@ class TestCPExpressionWalker_NamedExpressions(CommonTest):
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
 
         self.assertTrue(expr[1].equals(x**2 + 7 + (-1) * (8 * (x**2 + 7))))
 
@@ -1682,7 +1682,7 @@ class TestCPExpressionWalker_Vars(CommonTest):
 
         self.assertIn(id(m.a[2]), visitor.var_map)
         a2 = visitor.var_map[id(m.a[2])]
-        self.assertIs(visitor.pyomo_to_docplex[m.a[2]], a2)
+        self.assertIs(visitor.pyomo_to_native[m.a[2]], a2)
 
         self.assertTrue(expr[1].equals(3 + a2))
 
@@ -1697,7 +1697,7 @@ class TestCPExpressionWalker_Vars(CommonTest):
 
         self.assertIn(id(m.b2['b']), visitor.var_map)
         b2b = visitor.var_map[id(m.b2['b'])]
-        self.assertTrue(b2b.equals(visitor.pyomo_to_docplex[m.b2['b']] == 1))
+        self.assertTrue(b2b.equals(visitor.pyomo_to_native[m.b2['b']] == 1))
 
         self.assertTrue(expr[1].equals(cp.logical_or(False, cp.logical_and(True, b2b))))
 
@@ -1711,7 +1711,7 @@ class TestCPExpressionWalker_Vars(CommonTest):
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
         a = []
         # only need indices 6, 7, and 8 from a, since that's what x is capable
         # of selecting.
@@ -1719,7 +1719,7 @@ class TestCPExpressionWalker_Vars(CommonTest):
             v = m.a[idx]
             self.assertIn(id(v), visitor.var_map)
             cpx_v = visitor.var_map[id(v)]
-            self.assertIs(visitor.pyomo_to_docplex[v], cpx_v)
+            self.assertIs(visitor.pyomo_to_native[v], cpx_v)
             a.append(cpx_v)
         # since x is between 6 and 8, we subtract 6 from it for it to be the
         # right index
@@ -1738,10 +1738,10 @@ class TestCPExpressionWalker_Vars(CommonTest):
         for i in [6, 7, 8]:
             self.assertIn(id(m.z[i, 3]), visitor.var_map)
             z[i, 3] = visitor.var_map[id(m.z[i, 3])]
-            self.assertIs(visitor.pyomo_to_docplex[m.z[i, 3]], z[i, 3])
+            self.assertIs(visitor.pyomo_to_native[m.z[i, 3]], z[i, 3])
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
 
         self.assertTrue(
             expr[1].equals(
@@ -1762,11 +1762,11 @@ class TestCPExpressionWalker_Vars(CommonTest):
         for i in [6, 7, 8]:
             self.assertIn(id(m.z[3, i]), visitor.var_map)
             z[3, i] = visitor.var_map[id(m.z[3, i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.z[3, i]], z[3, i])
+            self.assertIs(visitor.pyomo_to_native[m.z[3, i]], z[3, i])
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
 
         self.assertTrue(
             expr[1].equals(
@@ -1788,11 +1788,11 @@ class TestCPExpressionWalker_Vars(CommonTest):
             for j in [6, 7, 8]:
                 self.assertIn(id(m.z[i, j]), visitor.var_map)
                 z[i, j] = visitor.var_map[id(m.z[i, j])]
-                self.assertIs(visitor.pyomo_to_docplex[m.z[i, j]], z[i, j])
+                self.assertIs(visitor.pyomo_to_native[m.z[i, j]], z[i, j])
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
 
         self.assertTrue(
             expr[1].equals(
@@ -1818,15 +1818,15 @@ class TestCPExpressionWalker_Vars(CommonTest):
             for j in [1, 3, 5]:
                 self.assertIn(id(m.z[i, j]), visitor.var_map)
                 z[i, j] = visitor.var_map[id(m.z[i, j])]
-                self.assertIs(visitor.pyomo_to_docplex[m.z[i, j]], z[i, j])
+                self.assertIs(visitor.pyomo_to_native[m.z[i, j]], z[i, j])
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
 
         self.assertIn(id(m.y), visitor.var_map)
         y = visitor.var_map[id(m.y)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
 
         self.assertTrue(
             expr[1].equals(
@@ -1851,14 +1851,14 @@ class TestCPExpressionWalker_Vars(CommonTest):
         for i in range(1, 8):
             self.assertIn(id(m.a[i]), visitor.var_map)
             a[i] = visitor.var_map[id(m.a[i])]
-            self.assertIs(visitor.pyomo_to_docplex[m.a[i]], a[i])
+            self.assertIs(visitor.pyomo_to_native[m.a[i]], a[i])
 
         self.assertIn(id(m.x), visitor.var_map)
         x = visitor.var_map[id(m.x)]
-        self.assertIs(visitor.pyomo_to_docplex[m.x], x)
+        self.assertIs(visitor.pyomo_to_native[m.x], x)
         self.assertIn(id(m.y), visitor.var_map)
         y = visitor.var_map[id(m.y)]
-        self.assertIs(visitor.pyomo_to_docplex[m.y], y)
+        self.assertIs(visitor.pyomo_to_native[m.y], y)
 
         self.assertTrue(
             expr[1].equals(
