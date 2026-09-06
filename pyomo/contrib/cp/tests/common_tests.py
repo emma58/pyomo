@@ -16,16 +16,20 @@ check exercises every backend's writer against a shared, once-written model.
 from pyomo.contrib.cp.tests import models
 from pyomo.environ import SolverFactory, TerminationCondition, value
 
+# For a pure satisfaction (no-objective) model, "solved successfully" isn't
+# reported the same way by every backend: CP Optimizer reports `feasible`
+# (there being no objective to have proven optimal), while CP-SAT reports
+# `optimal` (a feasible solution to a problem with no objective is,
+# trivially, optimal). Both mean the same thing here, so checks accept
+# either rather than assuming one solver's convention is universal.
+_SOLVED = {TerminationCondition.optimal, TerminationCondition.feasible}
+
 
 def check_solve_mice_and_cookies_model(self, solver_name):
     m = models.mice_and_cookies_model()
-    results = SolverFactory(solver_name).solve(
-        m, symbolic_solver_labels=True, tee=True
-    )
+    results = SolverFactory(solver_name).solve(m, symbolic_solver_labels=True, tee=True)
 
-    self.assertEqual(
-        results.solver.termination_condition, TerminationCondition.feasible
-    )
+    self.assertIn(results.solver.termination_condition, _SOLVED)
 
     # check solution
     self.assertTrue(value(m.eat_cookie[0].is_present))
@@ -64,9 +68,7 @@ def check_solve_three_step_sequence_model(self, solver_name):
     m = models.three_step_sequence_model()
 
     results = SolverFactory(solver_name).solve(m)
-    self.assertEqual(
-        results.solver.termination_condition, TerminationCondition.feasible
-    )
+    self.assertIn(results.solver.termination_condition, _SOLVED)
     self.assertEqual(value(m.i[1].start_time), 0)
     self.assertEqual(value(m.i[2].start_time), 2)
     self.assertEqual(value(m.i[3].start_time), 6)

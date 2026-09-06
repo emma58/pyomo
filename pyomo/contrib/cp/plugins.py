@@ -11,4 +11,5 @@
 def load():
     from . import interval_var
     from .repn import docplex_writer
+    from .repn import cpsat_writer
     from .transform import logical_to_disjunctive_program
